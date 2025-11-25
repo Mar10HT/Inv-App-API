@@ -1,0 +1,199 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// User model for authentication
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  name      String?
+  role      UserRole @default(USER)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  inventoryItems   InventoryItem[]      @relation("CreatedItems")
+  assignedItems    InventoryItem[]      @relation("AssignedItems")
+  auditLogs        AuditLog[]
+  transactions     Transaction[]
+
+  @@map("users")
+}
+
+enum UserRole {
+  ADMIN
+  USER
+  VIEWER
+  EXTERNAL  // No permissions, only for tracking names
+}
+
+// Warehouse model
+model Warehouse {
+  id          String   @id @default(cuid())
+  name        String
+  location    String
+  description String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  inventoryItems        InventoryItem[]
+  sourceTransactions    Transaction[]    @relation("SourceTransactions")
+  destinationTransactions Transaction[] @relation("DestinationTransactions")
+
+  @@map("warehouses")
+}
+
+// Inventory Item model
+model InventoryItem {
+  id           String            @id @default(cuid())
+  name         String
+  description  String?
+  quantity     Int               @default(0)
+  minQuantity  Int               @default(10) // For low stock alerts
+  category     String
+  status       InventoryStatus   @default(IN_STOCK)
+  price        Float?
+  currency     Currency          @default(USD) // Currency type
+  sku          String?           @unique
+  barcode      String?
+  imageUrl     String?
+
+  // Item type fields
+  itemType     ItemType          @default(BULK) // UNIQUE or BULK
+  serviceTag   String?           @unique // For unique items (PCs, laptops, etc.)
+  serialNumber String?           // Alternative to serviceTag
+
+  // Warehouse relationship
+  warehouse    Warehouse         @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+  warehouseId  String
+
+  // Supplier relationship (optional)
+  supplier     Supplier?         @relation(fields: [supplierId], references: [id])
+  supplierId   String?
+
+  // Assignment tracking for UNIQUE items
+  assignedToUser   User?         @relation("AssignedItems", fields: [assignedToUserId], references: [id])
+  assignedToUserId String?
+  assignedAt       DateTime?
+
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+  createdBy    User?             @relation("CreatedItems", fields: [createdById], references: [id])
+  createdById  String?
+
+  // Relations
+  auditLogs         AuditLog[]
+  transactionItems  TransactionItem[]
+
+  @@index([category])
+  @@index([status])
+  @@index([currency])
+  @@index([warehouseId])
+  @@index([itemType])
+  @@index([supplierId])
+  @@index([assignedToUserId])
+  @@map("inventory_items")
+}
+
+enum InventoryStatus {
+  IN_STOCK
+  LOW_STOCK
+  OUT_OF_STOCK
+}
+
+enum Currency {
+  USD  // United States Dollar
+  HNL  // Honduran Lempira
+}
+
+enum ItemType {
+  UNIQUE  // Serialized items (PCs, laptops) - each unit is tracked individually
+  BULK    // Accumulated items (screws, nails) - tracked by total quantity
+}
+
+// Audit Log for tracking changes
+model AuditLog {
+  id        String   @id @default(cuid())
+  action    String   // CREATE, UPDATE, DELETE
+  entity    String   // InventoryItem, User, etc.
+  entityId  String
+  changes   Json?    // Store old and new values
+  createdAt DateTime @default(now())
+  user      User?    @relation(fields: [userId], references: [id])
+  userId    String?
+  item      InventoryItem? @relation(fields: [itemId], references: [id])
+  itemId    String?
+
+  @@index([entityId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+// Supplier model for tracking vendors
+model Supplier {
+  id          String   @id @default(cuid())
+  name        String
+  location    String
+  phone       String?
+  email       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  inventoryItems InventoryItem[]
+
+  @@map("suppliers")
+}
+
+// Transaction model for tracking item movements between warehouses
+model Transaction {
+  id                     String    @id @default(cuid())
+  type                   String    // TRANSFER, IN, OUT
+  sourceWarehouseId      String?
+  destinationWarehouseId String?
+  userId                 String
+  date                   DateTime
+  notes                  String?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+
+  // Relations
+  sourceWarehouse      Warehouse? @relation("SourceTransactions", fields: [sourceWarehouseId], references: [id])
+  destinationWarehouse Warehouse? @relation("DestinationTransactions", fields: [destinationWarehouseId], references: [id])
+  user                 User       @relation(fields: [userId], references: [id])
+  items                TransactionItem[]
+
+  @@index([sourceWarehouseId])
+  @@index([destinationWarehouseId])
+  @@index([userId])
+  @@index([date])
+  @@map("transactions")
+}
+
+// TransactionItem model for tracking individual items in a transaction
+model TransactionItem {
+  id              String   @id @default(cuid())
+  transactionId   String
+  inventoryItemId String
+  quantity        Int
+  notes           String?
+
+  // Relations
+  transaction   Transaction   @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  inventoryItem InventoryItem @relation(fields: [inventoryItemId], references: [id])
+
+  @@index([transactionId])
+  @@index([inventoryItemId])
+  @@map("transaction_items")
+}
