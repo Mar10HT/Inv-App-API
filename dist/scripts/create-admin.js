@@ -54,7 +54,7 @@ async function main() {
             email,
             password: hashedPassword,
             name: 'Administrator',
-            role: client_1.UserRole.ADMIN,
+            role: client_1.UserRole.SYSTEM_ADMIN,
         },
     });
     console.log('✅ Admin user created successfully!');

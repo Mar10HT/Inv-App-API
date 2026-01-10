@@ -38,8 +38,8 @@ export declare class TransactionsController {
         } & {
             id: string;
             quantity: number;
-            notes: string | null;
             inventoryItemId: string;
+            notes: string | null;
             transactionId: string;
         })[];
         sourceWarehouse: {
@@ -64,12 +64,12 @@ export declare class TransactionsController {
         id: string;
         createdAt: Date;
         updatedAt: Date;
+        notes: string | null;
         type: string;
         sourceWarehouseId: string | null;
         destinationWarehouseId: string | null;
         userId: string;
         date: Date;
-        notes: string | null;
     }>;
     findAll(): Promise<({
         user: {
@@ -105,8 +105,8 @@ export declare class TransactionsController {
         } & {
             id: string;
             quantity: number;
-            notes: string | null;
             inventoryItemId: string;
+            notes: string | null;
             transactionId: string;
         })[];
         sourceWarehouse: {
@@ -131,12 +131,12 @@ export declare class TransactionsController {
         id: string;
         createdAt: Date;
         updatedAt: Date;
+        notes: string | null;
         type: string;
         sourceWarehouseId: string | null;
         destinationWarehouseId: string | null;
         userId: string;
         date: Date;
-        notes: string | null;
     })[]>;
     findRecent(limit?: string): Promise<({
         user: {
@@ -172,8 +172,8 @@ export declare class TransactionsController {
         } & {
             id: string;
             quantity: number;
-            notes: string | null;
             inventoryItemId: string;
+            notes: string | null;
             transactionId: string;
         })[];
         sourceWarehouse: {
@@ -198,12 +198,12 @@ export declare class TransactionsController {
         id: string;
         createdAt: Date;
         updatedAt: Date;
+        notes: string | null;
         type: string;
         sourceWarehouseId: string | null;
         destinationWarehouseId: string | null;
         userId: string;
         date: Date;
-        notes: string | null;
     })[]>;
     findOne(id: string): Promise<{
         user: {
@@ -239,8 +239,8 @@ export declare class TransactionsController {
         } & {
             id: string;
             quantity: number;
-            notes: string | null;
             inventoryItemId: string;
+            notes: string | null;
             transactionId: string;
         })[];
         sourceWarehouse: {
@@ -265,12 +265,12 @@ export declare class TransactionsController {
         id: string;
         createdAt: Date;
         updatedAt: Date;
+        notes: string | null;
         type: string;
         sourceWarehouseId: string | null;
         destinationWarehouseId: string | null;
         userId: string;
         date: Date;
-        notes: string | null;
     }>;
     update(id: string, updateTransactionDto: UpdateTransactionDto): Promise<{
         user: {
@@ -306,8 +306,8 @@ export declare class TransactionsController {
         } & {
             id: string;
             quantity: number;
-            notes: string | null;
             inventoryItemId: string;
+            notes: string | null;
             transactionId: string;
         })[];
         sourceWarehouse: {
@@ -332,12 +332,12 @@ export declare class TransactionsController {
         id: string;
         createdAt: Date;
         updatedAt: Date;
+        notes: string | null;
         type: string;
         sourceWarehouseId: string | null;
         destinationWarehouseId: string | null;
         userId: string;
         date: Date;
-        notes: string | null;
     }>;
     remove(id: string): Promise<void>;
 }

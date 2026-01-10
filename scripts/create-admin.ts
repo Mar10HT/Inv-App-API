@@ -26,7 +26,7 @@ async function main() {
       email,
       password: hashedPassword,
       name: 'Administrator',
-      role: UserRole.ADMIN,
+      role: UserRole.SYSTEM_ADMIN,
     },
   });
 
