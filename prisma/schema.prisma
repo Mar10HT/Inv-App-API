@@ -16,7 +16,7 @@ model User {
   email     String   @unique
   password  String
   name      String?
-  role      UserRole @default(USER)
+  role      UserRole @default(VIEWER)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -30,10 +30,11 @@ model User {
 }
 
 enum UserRole {
-  ADMIN
-  USER
-  VIEWER
-  EXTERNAL  // No permissions, only for tracking names
+  SYSTEM_ADMIN      // Full access to everything
+  WAREHOUSE_MANAGER // Manage inventory, warehouses, transactions
+  USER              // Basic access to view and create items
+  VIEWER            // Read-only access
+  EXTERNAL          // Minimal access, for external users/contractors
 }
 
 // Warehouse model

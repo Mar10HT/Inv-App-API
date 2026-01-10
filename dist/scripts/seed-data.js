@@ -197,8 +197,8 @@ async function main() {
         data: {
             email: 'admin@example.com',
             password: hashedPassword,
-            name: 'Administrator',
-            role: client_1.UserRole.ADMIN,
+            name: 'System Administrator',
+            role: client_1.UserRole.SYSTEM_ADMIN,
         },
     });
     console.log(`✅ Created admin user: ${adminUser.email}`);

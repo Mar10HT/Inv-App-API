@@ -10,34 +10,16 @@ export declare class TransactionsController {
             email: string;
             name: string | null;
         };
-        sourceWarehouse: {
-            id: string;
-            createdAt: Date;
-            updatedAt: Date;
-            name: string;
-            location: string;
-            description: string | null;
-            isActive: boolean;
-        } | null;
-        destinationWarehouse: {
-            id: string;
-            createdAt: Date;
-            updatedAt: Date;
-            name: string;
-            location: string;
-            description: string | null;
-            isActive: boolean;
-        } | null;
         items: ({
             inventoryItem: {
-                category: string;
                 id: string;
+                name: string;
                 createdAt: Date;
                 updatedAt: Date;
-                quantity: number;
-                name: string;
                 description: string | null;
+                quantity: number;
                 minQuantity: number;
+                category: string;
                 status: import("@prisma/client").$Enums.InventoryStatus;
                 price: number | null;
                 currency: import("@prisma/client").$Enums.Currency;
@@ -47,29 +29,47 @@ export declare class TransactionsController {
                 itemType: import("@prisma/client").$Enums.ItemType;
                 serviceTag: string | null;
                 serialNumber: string | null;
+                assignedAt: Date | null;
                 warehouseId: string;
                 supplierId: string | null;
                 assignedToUserId: string | null;
-                assignedAt: Date | null;
                 createdById: string | null;
             };
         } & {
             id: string;
-            notes: string | null;
             quantity: number;
+            notes: string | null;
             inventoryItemId: string;
             transactionId: string;
         })[];
+        sourceWarehouse: {
+            id: string;
+            name: string;
+            createdAt: Date;
+            updatedAt: Date;
+            location: string;
+            description: string | null;
+            isActive: boolean;
+        } | null;
+        destinationWarehouse: {
+            id: string;
+            name: string;
+            createdAt: Date;
+            updatedAt: Date;
+            location: string;
+            description: string | null;
+            isActive: boolean;
+        } | null;
     } & {
         id: string;
-        type: string;
-        date: Date;
-        notes: string | null;
         createdAt: Date;
         updatedAt: Date;
+        type: string;
         sourceWarehouseId: string | null;
         destinationWarehouseId: string | null;
         userId: string;
+        date: Date;
+        notes: string | null;
     }>;
     findAll(): Promise<({
         user: {
@@ -77,34 +77,16 @@ export declare class TransactionsController {
             email: string;
             name: string | null;
         };
-        sourceWarehouse: {
-            id: string;
-            createdAt: Date;
-            updatedAt: Date;
-            name: string;
-            location: string;
-            description: string | null;
-            isActive: boolean;
-        } | null;
-        destinationWarehouse: {
-            id: string;
-            createdAt: Date;
-            updatedAt: Date;
-            name: string;
-            location: string;
-            description: string | null;
-            isActive: boolean;
-        } | null;
         items: ({
             inventoryItem: {
-                category: string;
                 id: string;
+                name: string;
                 createdAt: Date;
                 updatedAt: Date;
-                quantity: number;
-                name: string;
                 description: string | null;
+                quantity: number;
                 minQuantity: number;
+                category: string;
                 status: import("@prisma/client").$Enums.InventoryStatus;
                 price: number | null;
                 currency: import("@prisma/client").$Enums.Currency;
@@ -114,29 +96,47 @@ export declare class TransactionsController {
                 itemType: import("@prisma/client").$Enums.ItemType;
                 serviceTag: string | null;
                 serialNumber: string | null;
+                assignedAt: Date | null;
                 warehouseId: string;
                 supplierId: string | null;
                 assignedToUserId: string | null;
-                assignedAt: Date | null;
                 createdById: string | null;
             };
         } & {
             id: string;
-            notes: string | null;
             quantity: number;
+            notes: string | null;
             inventoryItemId: string;
             transactionId: string;
         })[];
+        sourceWarehouse: {
+            id: string;
+            name: string;
+            createdAt: Date;
+            updatedAt: Date;
+            location: string;
+            description: string | null;
+            isActive: boolean;
+        } | null;
+        destinationWarehouse: {
+            id: string;
+            name: string;
+            createdAt: Date;
+            updatedAt: Date;
+            location: string;
+            description: string | null;
+            isActive: boolean;
+        } | null;
     } & {
         id: string;
-        type: string;
-        date: Date;
-        notes: string | null;
         createdAt: Date;
         updatedAt: Date;
+        type: string;
         sourceWarehouseId: string | null;
         destinationWarehouseId: string | null;
         userId: string;
+        date: Date;
+        notes: string | null;
     })[]>;
     findRecent(limit?: string): Promise<({
         user: {
@@ -144,34 +144,16 @@ export declare class TransactionsController {
             email: string;
             name: string | null;
         };
-        sourceWarehouse: {
-            id: string;
-            createdAt: Date;
-            updatedAt: Date;
-            name: string;
-            location: string;
-            description: string | null;
-            isActive: boolean;
-        } | null;
-        destinationWarehouse: {
-            id: string;
-            createdAt: Date;
-            updatedAt: Date;
-            name: string;
-            location: string;
-            description: string | null;
-            isActive: boolean;
-        } | null;
         items: ({
             inventoryItem: {
-                category: string;
                 id: string;
+                name: string;
                 createdAt: Date;
                 updatedAt: Date;
-                quantity: number;
-                name: string;
                 description: string | null;
+                quantity: number;
                 minQuantity: number;
+                category: string;
                 status: import("@prisma/client").$Enums.InventoryStatus;
                 price: number | null;
                 currency: import("@prisma/client").$Enums.Currency;
@@ -181,29 +163,47 @@ export declare class TransactionsController {
                 itemType: import("@prisma/client").$Enums.ItemType;
                 serviceTag: string | null;
                 serialNumber: string | null;
+                assignedAt: Date | null;
                 warehouseId: string;
                 supplierId: string | null;
                 assignedToUserId: string | null;
-                assignedAt: Date | null;
                 createdById: string | null;
             };
         } & {
             id: string;
-            notes: string | null;
             quantity: number;
+            notes: string | null;
             inventoryItemId: string;
             transactionId: string;
         })[];
+        sourceWarehouse: {
+            id: string;
+            name: string;
+            createdAt: Date;
+            updatedAt: Date;
+            location: string;
+            description: string | null;
+            isActive: boolean;
+        } | null;
+        destinationWarehouse: {
+            id: string;
+            name: string;
+            createdAt: Date;
+            updatedAt: Date;
+            location: string;
+            description: string | null;
+            isActive: boolean;
+        } | null;
     } & {
         id: string;
-        type: string;
-        date: Date;
-        notes: string | null;
         createdAt: Date;
         updatedAt: Date;
+        type: string;
         sourceWarehouseId: string | null;
         destinationWarehouseId: string | null;
         userId: string;
+        date: Date;
+        notes: string | null;
     })[]>;
     findOne(id: string): Promise<{
         user: {
@@ -211,34 +211,16 @@ export declare class TransactionsController {
             email: string;
             name: string | null;
         };
-        sourceWarehouse: {
-            id: string;
-            createdAt: Date;
-            updatedAt: Date;
-            name: string;
-            location: string;
-            description: string | null;
-            isActive: boolean;
-        } | null;
-        destinationWarehouse: {
-            id: string;
-            createdAt: Date;
-            updatedAt: Date;
-            name: string;
-            location: string;
-            description: string | null;
-            isActive: boolean;
-        } | null;
         items: ({
             inventoryItem: {
-                category: string;
                 id: string;
+                name: string;
                 createdAt: Date;
                 updatedAt: Date;
-                quantity: number;
-                name: string;
                 description: string | null;
+                quantity: number;
                 minQuantity: number;
+                category: string;
                 status: import("@prisma/client").$Enums.InventoryStatus;
                 price: number | null;
                 currency: import("@prisma/client").$Enums.Currency;
@@ -248,29 +230,47 @@ export declare class TransactionsController {
                 itemType: import("@prisma/client").$Enums.ItemType;
                 serviceTag: string | null;
                 serialNumber: string | null;
+                assignedAt: Date | null;
                 warehouseId: string;
                 supplierId: string | null;
                 assignedToUserId: string | null;
-                assignedAt: Date | null;
                 createdById: string | null;
             };
         } & {
             id: string;
-            notes: string | null;
             quantity: number;
+            notes: string | null;
             inventoryItemId: string;
             transactionId: string;
         })[];
+        sourceWarehouse: {
+            id: string;
+            name: string;
+            createdAt: Date;
+            updatedAt: Date;
+            location: string;
+            description: string | null;
+            isActive: boolean;
+        } | null;
+        destinationWarehouse: {
+            id: string;
+            name: string;
+            createdAt: Date;
+            updatedAt: Date;
+            location: string;
+            description: string | null;
+            isActive: boolean;
+        } | null;
     } & {
         id: string;
-        type: string;
-        date: Date;
-        notes: string | null;
         createdAt: Date;
         updatedAt: Date;
+        type: string;
         sourceWarehouseId: string | null;
         destinationWarehouseId: string | null;
         userId: string;
+        date: Date;
+        notes: string | null;
     }>;
     update(id: string, updateTransactionDto: UpdateTransactionDto): Promise<{
         user: {
@@ -278,34 +278,16 @@ export declare class TransactionsController {
             email: string;
             name: string | null;
         };
-        sourceWarehouse: {
-            id: string;
-            createdAt: Date;
-            updatedAt: Date;
-            name: string;
-            location: string;
-            description: string | null;
-            isActive: boolean;
-        } | null;
-        destinationWarehouse: {
-            id: string;
-            createdAt: Date;
-            updatedAt: Date;
-            name: string;
-            location: string;
-            description: string | null;
-            isActive: boolean;
-        } | null;
         items: ({
             inventoryItem: {
-                category: string;
                 id: string;
+                name: string;
                 createdAt: Date;
                 updatedAt: Date;
-                quantity: number;
-                name: string;
                 description: string | null;
+                quantity: number;
                 minQuantity: number;
+                category: string;
                 status: import("@prisma/client").$Enums.InventoryStatus;
                 price: number | null;
                 currency: import("@prisma/client").$Enums.Currency;
@@ -315,29 +297,47 @@ export declare class TransactionsController {
                 itemType: import("@prisma/client").$Enums.ItemType;
                 serviceTag: string | null;
                 serialNumber: string | null;
+                assignedAt: Date | null;
                 warehouseId: string;
                 supplierId: string | null;
                 assignedToUserId: string | null;
-                assignedAt: Date | null;
                 createdById: string | null;
             };
         } & {
             id: string;
-            notes: string | null;
             quantity: number;
+            notes: string | null;
             inventoryItemId: string;
             transactionId: string;
         })[];
+        sourceWarehouse: {
+            id: string;
+            name: string;
+            createdAt: Date;
+            updatedAt: Date;
+            location: string;
+            description: string | null;
+            isActive: boolean;
+        } | null;
+        destinationWarehouse: {
+            id: string;
+            name: string;
+            createdAt: Date;
+            updatedAt: Date;
+            location: string;
+            description: string | null;
+            isActive: boolean;
+        } | null;
     } & {
         id: string;
-        type: string;
-        date: Date;
-        notes: string | null;
         createdAt: Date;
         updatedAt: Date;
+        type: string;
         sourceWarehouseId: string | null;
         destinationWarehouseId: string | null;
         userId: string;
+        date: Date;
+        notes: string | null;
     }>;
     remove(id: string): Promise<void>;
 }
