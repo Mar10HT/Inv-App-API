@@ -16,8 +16,12 @@ const class_transformer_1 = require("class-transformer");
 class FilterInventoryDto {
     search;
     category;
-    location;
     status;
+    itemType;
+    currency;
+    warehouseId;
+    supplierId;
+    assignedToUserId;
     page = 1;
     limit = 10;
     sortBy = 'createdAt';
@@ -35,15 +39,35 @@ __decorate([
     __metadata("design:type", String)
 ], FilterInventoryDto.prototype, "category", void 0);
 __decorate([
-    (0, class_validator_1.IsString)(),
-    (0, class_validator_1.IsOptional)(),
-    __metadata("design:type", String)
-], FilterInventoryDto.prototype, "location", void 0);
-__decorate([
     (0, class_validator_1.IsEnum)(client_1.InventoryStatus),
     (0, class_validator_1.IsOptional)(),
     __metadata("design:type", String)
 ], FilterInventoryDto.prototype, "status", void 0);
+__decorate([
+    (0, class_validator_1.IsEnum)(client_1.ItemType),
+    (0, class_validator_1.IsOptional)(),
+    __metadata("design:type", String)
+], FilterInventoryDto.prototype, "itemType", void 0);
+__decorate([
+    (0, class_validator_1.IsEnum)(client_1.Currency),
+    (0, class_validator_1.IsOptional)(),
+    __metadata("design:type", String)
+], FilterInventoryDto.prototype, "currency", void 0);
+__decorate([
+    (0, class_validator_1.IsString)(),
+    (0, class_validator_1.IsOptional)(),
+    __metadata("design:type", String)
+], FilterInventoryDto.prototype, "warehouseId", void 0);
+__decorate([
+    (0, class_validator_1.IsString)(),
+    (0, class_validator_1.IsOptional)(),
+    __metadata("design:type", String)
+], FilterInventoryDto.prototype, "supplierId", void 0);
+__decorate([
+    (0, class_validator_1.IsString)(),
+    (0, class_validator_1.IsOptional)(),
+    __metadata("design:type", String)
+], FilterInventoryDto.prototype, "assignedToUserId", void 0);
 __decorate([
     (0, class_validator_1.IsInt)(),
     (0, class_validator_1.Min)(1),

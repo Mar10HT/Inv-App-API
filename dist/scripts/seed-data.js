@@ -1,6 +1,40 @@
 "use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 Object.defineProperty(exports, "__esModule", { value: true });
 const client_1 = require("@prisma/client");
+const bcrypt = __importStar(require("bcrypt"));
 const prisma = new client_1.PrismaClient();
 const HNL_TO_USD_RATE = 0.04;
 const categories = [
@@ -11,86 +45,95 @@ const categories = [
     'Computer Components',
     'Accessories',
 ];
-const locations = [
-    'Warehouse A',
-    'Warehouse B',
-    'Store Front',
-    'Storage Room 1',
-    'Storage Room 2',
-    'Distribution Center',
+const warehouseData = [
+    { name: 'Bodega Principal', location: 'Tegucigalpa Centro', description: 'Bodega principal de almacenamiento' },
+    { name: 'Bodega Norte', location: 'San Pedro Sula', description: 'Bodega regional norte' },
+    { name: 'Bodega Sur', location: 'Choluteca', description: 'Bodega regional sur' },
+];
+const supplierData = [
+    { name: 'Tech Solutions HN', location: 'Tegucigalpa', phone: '+504 2222-1111', email: 'ventas@techsolutions.hn' },
+    { name: 'Office Depot Honduras', location: 'San Pedro Sula', phone: '+504 2550-3333', email: 'info@officedepot.hn' },
+    { name: 'Importadora La Economia', location: 'Tegucigalpa', phone: '+504 2232-4444', email: 'compras@laeconomia.hn' },
+    { name: 'Distribuidora Central', location: 'Comayagua', phone: '+504 2770-5555', email: 'ventas@distcentral.hn' },
+];
+const externalUserData = [
+    { name: 'Carlos Martinez', email: 'carlos.m@external.hn', role: client_1.UserRole.EXTERNAL },
+    { name: 'Ana Lopez', email: 'ana.l@external.hn', role: client_1.UserRole.EXTERNAL },
+    { name: 'Roberto Sanchez', email: 'roberto.s@external.hn', role: client_1.UserRole.EXTERNAL },
+    { name: 'Maria Fernandez', email: 'maria.f@external.hn', role: client_1.UserRole.EXTERNAL },
 ];
 const products = {
     Electronics: [
-        { name: 'Laptop Dell XPS', basePrice: 1200, variation: 500 },
-        { name: 'Laptop HP Pavilion', basePrice: 800, variation: 300 },
-        { name: 'Monitor Samsung 27"', basePrice: 300, variation: 200 },
-        { name: 'Monitor LG UltraWide', basePrice: 500, variation: 300 },
-        { name: 'Keyboard Mechanical', basePrice: 120, variation: 80 },
-        { name: 'Mouse Logitech MX', basePrice: 80, variation: 40 },
-        { name: 'Webcam Logitech C920', basePrice: 100, variation: 50 },
-        { name: 'Headset HyperX Cloud', basePrice: 90, variation: 60 },
-        { name: 'Tablet Samsung Galaxy', basePrice: 400, variation: 300 },
-        { name: 'Smartphone iPhone', basePrice: 800, variation: 600 },
+        { name: 'Laptop Dell XPS', basePrice: 1200, variation: 500, isUnique: true },
+        { name: 'Laptop HP Pavilion', basePrice: 800, variation: 300, isUnique: true },
+        { name: 'PC Desktop Dell OptiPlex', basePrice: 900, variation: 400, isUnique: true },
+        { name: 'Monitor Samsung 27"', basePrice: 300, variation: 200, isUnique: true },
+        { name: 'Monitor LG UltraWide', basePrice: 500, variation: 300, isUnique: true },
+        { name: 'Keyboard Mechanical', basePrice: 120, variation: 80, isUnique: false },
+        { name: 'Mouse Logitech MX', basePrice: 80, variation: 40, isUnique: false },
+        { name: 'Webcam Logitech C920', basePrice: 100, variation: 50, isUnique: false },
+        { name: 'Headset HyperX Cloud', basePrice: 90, variation: 60, isUnique: false },
+        { name: 'Tablet Samsung Galaxy', basePrice: 400, variation: 300, isUnique: true },
     ],
     Furniture: [
-        { name: 'Office Chair Ergonomic', basePrice: 250, variation: 200 },
-        { name: 'Standing Desk', basePrice: 500, variation: 300 },
-        { name: 'Conference Table', basePrice: 800, variation: 500 },
-        { name: 'Filing Cabinet', basePrice: 150, variation: 100 },
-        { name: 'Bookshelf 5-Tier', basePrice: 120, variation: 80 },
-        { name: 'Office Desk L-Shape', basePrice: 400, variation: 250 },
-        { name: 'Reception Desk', basePrice: 600, variation: 400 },
-        { name: 'Executive Chair Leather', basePrice: 450, variation: 300 },
-        { name: 'Meeting Room Chair', basePrice: 180, variation: 120 },
-        { name: 'Storage Cabinet', basePrice: 200, variation: 150 },
+        { name: 'Office Chair Ergonomic', basePrice: 250, variation: 200, isUnique: false },
+        { name: 'Standing Desk', basePrice: 500, variation: 300, isUnique: false },
+        { name: 'Conference Table', basePrice: 800, variation: 500, isUnique: false },
+        { name: 'Filing Cabinet', basePrice: 150, variation: 100, isUnique: false },
+        { name: 'Bookshelf 5-Tier', basePrice: 120, variation: 80, isUnique: false },
+        { name: 'Office Desk L-Shape', basePrice: 400, variation: 250, isUnique: false },
+        { name: 'Reception Desk', basePrice: 600, variation: 400, isUnique: false },
+        { name: 'Executive Chair Leather', basePrice: 450, variation: 300, isUnique: false },
+        { name: 'Meeting Room Chair', basePrice: 180, variation: 120, isUnique: false },
+        { name: 'Storage Cabinet', basePrice: 200, variation: 150, isUnique: false },
     ],
     Hardware: [
-        { name: 'Screws Phillips M4x20mm (Box 100)', basePrice: 5, variation: 3 },
-        { name: 'Screws Flathead M5x30mm (Box 100)', basePrice: 6, variation: 3 },
-        { name: 'Bolts Hex M8x40mm (Box 50)', basePrice: 12, variation: 5 },
-        { name: 'Nuts Hex M8 (Box 100)', basePrice: 8, variation: 4 },
-        { name: 'Washers M8 (Box 200)', basePrice: 5, variation: 2 },
-        { name: 'Anchors Wall Plastic (Box 50)', basePrice: 4, variation: 2 },
-        { name: 'Drill Bits Set HSS', basePrice: 35, variation: 20 },
-        { name: 'Hammer Claw 16oz', basePrice: 25, variation: 15 },
-        { name: 'Screwdriver Set 10pc', basePrice: 30, variation: 20 },
-        { name: 'Pliers Set 3pc', basePrice: 40, variation: 25 },
+        { name: 'Screws Phillips M4x20mm (Box 100)', basePrice: 5, variation: 3, isUnique: false },
+        { name: 'Screws Flathead M5x30mm (Box 100)', basePrice: 6, variation: 3, isUnique: false },
+        { name: 'Bolts Hex M8x40mm (Box 50)', basePrice: 12, variation: 5, isUnique: false },
+        { name: 'Nuts Hex M8 (Box 100)', basePrice: 8, variation: 4, isUnique: false },
+        { name: 'Washers M8 (Box 200)', basePrice: 5, variation: 2, isUnique: false },
+        { name: 'Anchors Wall Plastic (Box 50)', basePrice: 4, variation: 2, isUnique: false },
+        { name: 'Drill Bits Set HSS', basePrice: 35, variation: 20, isUnique: false },
+        { name: 'Hammer Claw 16oz', basePrice: 25, variation: 15, isUnique: false },
+        { name: 'Screwdriver Set 10pc', basePrice: 30, variation: 20, isUnique: false },
+        { name: 'Pliers Set 3pc', basePrice: 40, variation: 25, isUnique: false },
     ],
     'Office Supplies': [
-        { name: 'Paper A4 500 Sheets', basePrice: 8, variation: 3 },
-        { name: 'Pen Blue (Box 50)', basePrice: 15, variation: 8 },
-        { name: 'Pen Black (Box 50)', basePrice: 15, variation: 8 },
-        { name: 'Marker Permanent (Pack 12)', basePrice: 12, variation: 6 },
-        { name: 'Stapler Heavy Duty', basePrice: 20, variation: 10 },
-        { name: 'Staples (Box 5000)', basePrice: 5, variation: 2 },
-        { name: 'Paper Clips (Box 1000)', basePrice: 4, variation: 2 },
-        { name: 'Binder Clips Assorted', basePrice: 8, variation: 4 },
-        { name: 'Folders Manila (Pack 100)', basePrice: 25, variation: 15 },
-        { name: 'Notebook Spiral A5', basePrice: 3, variation: 2 },
+        { name: 'Paper A4 500 Sheets', basePrice: 8, variation: 3, isUnique: false },
+        { name: 'Pen Blue (Box 50)', basePrice: 15, variation: 8, isUnique: false },
+        { name: 'Pen Black (Box 50)', basePrice: 15, variation: 8, isUnique: false },
+        { name: 'Marker Permanent (Pack 12)', basePrice: 12, variation: 6, isUnique: false },
+        { name: 'Stapler Heavy Duty', basePrice: 20, variation: 10, isUnique: false },
+        { name: 'Staples (Box 5000)', basePrice: 5, variation: 2, isUnique: false },
+        { name: 'Paper Clips (Box 1000)', basePrice: 4, variation: 2, isUnique: false },
+        { name: 'Binder Clips Assorted', basePrice: 8, variation: 4, isUnique: false },
+        { name: 'Folders Manila (Pack 100)', basePrice: 25, variation: 15, isUnique: false },
+        { name: 'Notebook Spiral A5', basePrice: 3, variation: 2, isUnique: false },
     ],
     'Computer Components': [
-        { name: 'RAM DDR4 16GB', basePrice: 80, variation: 40 },
-        { name: 'RAM DDR4 32GB', basePrice: 150, variation: 70 },
-        { name: 'SSD NVMe 512GB', basePrice: 70, variation: 40 },
-        { name: 'SSD NVMe 1TB', basePrice: 120, variation: 60 },
-        { name: 'HDD 2TB 7200RPM', basePrice: 60, variation: 30 },
-        { name: 'Graphics Card GTX 1660', basePrice: 300, variation: 150 },
-        { name: 'Graphics Card RTX 3060', basePrice: 500, variation: 250 },
-        { name: 'Processor Intel i5', basePrice: 250, variation: 100 },
-        { name: 'Processor Intel i7', basePrice: 400, variation: 150 },
-        { name: 'Motherboard ATX', basePrice: 200, variation: 100 },
+        { name: 'RAM DDR4 16GB', basePrice: 80, variation: 40, isUnique: false },
+        { name: 'RAM DDR4 32GB', basePrice: 150, variation: 70, isUnique: false },
+        { name: 'SSD NVMe 512GB', basePrice: 70, variation: 40, isUnique: false },
+        { name: 'SSD NVMe 1TB', basePrice: 120, variation: 60, isUnique: false },
+        { name: 'HDD 2TB 7200RPM', basePrice: 60, variation: 30, isUnique: false },
+        { name: 'Graphics Card GTX 1660', basePrice: 300, variation: 150, isUnique: false },
+        { name: 'Graphics Card RTX 3060', basePrice: 500, variation: 250, isUnique: false },
+        { name: 'Processor Intel i5', basePrice: 250, variation: 100, isUnique: false },
+        { name: 'Processor Intel i7', basePrice: 400, variation: 150, isUnique: false },
+        { name: 'Motherboard ATX', basePrice: 200, variation: 100, isUnique: false },
     ],
     Accessories: [
-        { name: 'USB Cable Type-C 2m', basePrice: 10, variation: 5 },
-        { name: 'HDMI Cable 3m', basePrice: 15, variation: 8 },
-        { name: 'Power Strip 6 Outlet', basePrice: 25, variation: 15 },
-        { name: 'Laptop Stand Aluminum', basePrice: 40, variation: 25 },
-        { name: 'Monitor Arm Dual', basePrice: 80, variation: 50 },
-        { name: 'Cable Management Box', basePrice: 20, variation: 10 },
-        { name: 'Desk Organizer', basePrice: 15, variation: 10 },
-        { name: 'Mouse Pad RGB', basePrice: 30, variation: 20 },
-        { name: 'Laptop Sleeve 15"', basePrice: 25, variation: 15 },
-        { name: 'Phone Holder Adjustable', basePrice: 12, variation: 8 },
+        { name: 'USB Cable Type-C 2m', basePrice: 10, variation: 5, isUnique: false },
+        { name: 'HDMI Cable 3m', basePrice: 15, variation: 8, isUnique: false },
+        { name: 'Power Strip 6 Outlet', basePrice: 25, variation: 15, isUnique: false },
+        { name: 'Laptop Stand Aluminum', basePrice: 40, variation: 25, isUnique: false },
+        { name: 'Monitor Arm Dual', basePrice: 80, variation: 50, isUnique: false },
+        { name: 'Cable Management Box', basePrice: 20, variation: 10, isUnique: false },
+        { name: 'Desk Organizer', basePrice: 15, variation: 10, isUnique: false },
+        { name: 'Mouse Pad RGB', basePrice: 30, variation: 20, isUnique: false },
+        { name: 'Laptop Sleeve 15"', basePrice: 25, variation: 15, isUnique: false },
+        { name: 'Phone Holder Adjustable', basePrice: 12, variation: 8, isUnique: false },
     ],
 };
 function getRandomElement(array) {
@@ -109,19 +152,80 @@ function getStatus(quantity, minQuantity) {
         return client_1.InventoryStatus.LOW_STOCK;
     return client_1.InventoryStatus.IN_STOCK;
 }
+function generateServiceTag() {
+    const prefix = getRandomElement(['DEL', 'HP', 'LEN', 'ASUS', 'ACER']);
+    const numbers = String(getRandomInt(100000, 999999));
+    const suffix = String.fromCharCode(65 + getRandomInt(0, 25)) + String.fromCharCode(65 + getRandomInt(0, 25));
+    return `${prefix}${numbers}${suffix}`;
+}
+function generateSerialNumber() {
+    const parts = [
+        String(getRandomInt(1000, 9999)),
+        String(getRandomInt(1000, 9999)),
+        String(getRandomInt(1000, 9999)),
+    ];
+    return parts.join('-');
+}
 async function main() {
     console.log('🌱 Starting seed...');
+    await prisma.auditLog.deleteMany();
+    await prisma.transactionItem.deleteMany();
+    await prisma.transaction.deleteMany();
     await prisma.inventoryItem.deleteMany();
-    console.log('🗑️  Cleared existing inventory items');
-    const itemsToCreate = [];
+    await prisma.warehouse.deleteMany();
+    await prisma.supplier.deleteMany();
+    await prisma.user.deleteMany();
+    console.log('🗑️  Cleared existing data');
+    const warehouses = [];
+    for (const whData of warehouseData) {
+        const warehouse = await prisma.warehouse.create({
+            data: whData,
+        });
+        warehouses.push(warehouse);
+    }
+    console.log(`✅ Created ${warehouses.length} warehouses`);
+    const suppliers = [];
+    for (const suppData of supplierData) {
+        const supplier = await prisma.supplier.create({
+            data: suppData,
+        });
+        suppliers.push(supplier);
+    }
+    console.log(`✅ Created ${suppliers.length} suppliers`);
+    const hashedPassword = await bcrypt.hash('password123', 10);
+    const adminUser = await prisma.user.create({
+        data: {
+            email: 'admin@example.com',
+            password: hashedPassword,
+            name: 'Administrator',
+            role: client_1.UserRole.ADMIN,
+        },
+    });
+    console.log(`✅ Created admin user: ${adminUser.email}`);
+    const externalUsers = [];
+    for (const userData of externalUserData) {
+        const user = await prisma.user.create({
+            data: {
+                ...userData,
+                password: 'not-used',
+            },
+        });
+        externalUsers.push(user);
+    }
+    console.log(`✅ Created ${externalUsers.length} external users`);
+    let uniqueItemsCreated = 0;
+    let bulkItemsCreated = 0;
+    let assignedItemsCount = 0;
     for (let i = 0; i < 200; i++) {
         const category = getRandomElement(categories);
         const productList = products[category];
         const product = getRandomElement(productList);
-        const quantity = getRandomInt(0, 200);
-        const minQuantity = getRandomInt(5, 25);
-        const location = getRandomElement(locations);
+        const warehouse = getRandomElement(warehouses);
+        const itemType = product.isUnique ? client_1.ItemType.UNIQUE : client_1.ItemType.BULK;
+        const quantity = itemType === client_1.ItemType.UNIQUE ? 1 : getRandomInt(0, 200);
+        const minQuantity = itemType === client_1.ItemType.UNIQUE ? 1 : getRandomInt(5, 25);
         const status = getStatus(quantity, minQuantity);
+        const supplier = Math.random() > 0.3 ? getRandomElement(suppliers) : null;
         const currency = Math.random() > 0.5 ? client_1.Currency.USD : client_1.Currency.HNL;
         let price;
         if (currency === client_1.Currency.USD) {
@@ -146,26 +250,46 @@ async function main() {
         const sku = `${categoryPrefix}-${String(i + 1).padStart(4, '0')}`;
         const barcode = Math.random() > 0.3 ? `${getRandomInt(100000000, 999999999)}${getRandomInt(100, 999)}` : null;
         const description = `${name} - High quality ${category.toLowerCase()} item for office and business use`;
-        itemsToCreate.push({
-            name,
-            description,
-            quantity,
-            minQuantity,
-            category,
-            location,
-            status,
-            price,
-            currency,
-            sku,
-            barcode,
-        });
-    }
-    for (const item of itemsToCreate) {
+        const serviceTag = itemType === client_1.ItemType.UNIQUE ? generateServiceTag() : null;
+        const serialNumber = itemType === client_1.ItemType.UNIQUE && !serviceTag ? generateSerialNumber() : null;
+        const assignedUser = itemType === client_1.ItemType.UNIQUE && status === client_1.InventoryStatus.IN_STOCK && Math.random() > 0.6
+            ? getRandomElement(externalUsers)
+            : null;
+        if (assignedUser) {
+            assignedItemsCount++;
+        }
         await prisma.inventoryItem.create({
-            data: item,
+            data: {
+                name,
+                description,
+                quantity,
+                minQuantity,
+                category,
+                status,
+                price,
+                currency,
+                sku,
+                barcode,
+                itemType,
+                serviceTag,
+                serialNumber,
+                warehouseId: warehouse.id,
+                supplierId: supplier?.id,
+                assignedToUserId: assignedUser?.id,
+                assignedAt: assignedUser ? new Date() : null,
+            },
         });
+        if (itemType === client_1.ItemType.UNIQUE) {
+            uniqueItemsCreated++;
+        }
+        else {
+            bulkItemsCreated++;
+        }
     }
-    console.log(`✅ Created ${itemsToCreate.length} inventory items`);
+    console.log(`✅ Created 200 inventory items:`);
+    console.log(`   - UNIQUE items: ${uniqueItemsCreated}`);
+    console.log(`   - BULK items: ${bulkItemsCreated}`);
+    console.log(`   - Assigned items: ${assignedItemsCount}`);
     const stats = await prisma.inventoryItem.groupBy({
         by: ['category'],
         _count: { category: true },
@@ -182,6 +306,15 @@ async function main() {
     statusStats.forEach(stat => {
         console.log(`   ${stat.status}: ${stat._count.status} items`);
     });
+    const warehouseStats = await prisma.inventoryItem.groupBy({
+        by: ['warehouseId'],
+        _count: { warehouseId: true },
+    });
+    console.log('\n🏢 Items by warehouse:');
+    for (const stat of warehouseStats) {
+        const warehouse = warehouses.find(w => w.id === stat.warehouseId);
+        console.log(`   ${warehouse?.name}: ${stat._count.warehouseId} items`);
+    }
     console.log('\n🎉 Seed completed!');
 }
 main()

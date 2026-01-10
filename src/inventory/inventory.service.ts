@@ -325,7 +325,7 @@ export class InventoryService {
       outOfStock,
       items,
       categoryStats,
-      locationStats,
+      warehouseStats,
     ] = await Promise.all([
       this.prisma.inventoryItem.count(),
       this.prisma.inventoryItem.count({ where: { status: InventoryStatus.IN_STOCK } }),
@@ -337,14 +337,24 @@ export class InventoryService {
         _count: { category: true },
       }),
       this.prisma.inventoryItem.groupBy({
-        by: ['location'],
-        _count: { location: true },
+        by: ['warehouseId'],
+        _count: { warehouseId: true },
       }),
     ]);
 
     const totalValue = items.reduce((sum, item) => {
       return sum + (item.price || 0) * item.quantity;
     }, 0);
+
+    // Get warehouse names for location stats
+    const warehouses = await this.prisma.warehouse.findMany();
+    const locationStats = warehouseStats.map(stat => {
+      const warehouse = warehouses.find(w => w.id === stat.warehouseId);
+      return {
+        name: warehouse?.name || 'Unknown',
+        count: stat._count.warehouseId || 0,
+      };
+    });
 
     return {
       total,
@@ -356,10 +366,7 @@ export class InventoryService {
         name: stat.category,
         count: stat._count.category,
       })),
-      locations: locationStats.map(stat => ({
-        name: stat.location,
-        count: stat._count.location,
-      })),
+      locations: locationStats,
     };
   }
 
@@ -394,11 +401,10 @@ export class InventoryService {
   }
 
   async getLocations(): Promise<string[]> {
-    const locations = await this.prisma.inventoryItem.findMany({
-      distinct: ['location'],
-      select: { location: true },
-      orderBy: { location: 'asc' },
+    const warehouses = await this.prisma.warehouse.findMany({
+      orderBy: { name: 'asc' },
+      select: { name: true },
     });
-    return locations.map(l => l.location);
+    return warehouses.map(w => w.name);
   }
 }

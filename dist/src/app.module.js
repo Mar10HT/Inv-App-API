@@ -13,6 +13,12 @@ const app_controller_1 = require("./app.controller");
 const app_service_1 = require("./app.service");
 const prisma_module_1 = require("./prisma/prisma.module");
 const inventory_module_1 = require("./inventory/inventory.module");
+const warehouses_module_1 = require("./warehouses/warehouses.module");
+const suppliers_module_1 = require("./suppliers/suppliers.module");
+const categories_module_1 = require("./categories/categories.module");
+const users_module_1 = require("./users/users.module");
+const transactions_module_1 = require("./transactions/transactions.module");
+const auth_module_1 = require("./auth/auth.module");
 let AppModule = class AppModule {
 };
 exports.AppModule = AppModule;
@@ -24,7 +30,13 @@ exports.AppModule = AppModule = __decorate([
                 envFilePath: '.env',
             }),
             prisma_module_1.PrismaModule,
+            auth_module_1.AuthModule,
             inventory_module_1.InventoryModule,
+            warehouses_module_1.WarehousesModule,
+            suppliers_module_1.SuppliersModule,
+            categories_module_1.CategoriesModule,
+            users_module_1.UsersModule,
+            transactions_module_1.TransactionsModule,
         ],
         controllers: [app_controller_1.AppController],
         providers: [app_service_1.AppService],

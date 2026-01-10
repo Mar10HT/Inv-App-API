@@ -1,4 +1,5 @@
 import { PrismaClient, InventoryStatus, Currency, ItemType, UserRole } from '@prisma/client';
+import * as bcrypt from 'bcrypt';
 
 const prisma = new PrismaClient();
 
@@ -164,7 +165,7 @@ async function main() {
   console.log('🗑️  Cleared existing data');
 
   // Create warehouses
-  const warehouses = [];
+  const warehouses: any[] = [];
   for (const whData of warehouseData) {
     const warehouse = await prisma.warehouse.create({
       data: whData,
@@ -174,7 +175,7 @@ async function main() {
   console.log(`✅ Created ${warehouses.length} warehouses`);
 
   // Create suppliers
-  const suppliers = [];
+  const suppliers: any[] = [];
   for (const suppData of supplierData) {
     const supplier = await prisma.supplier.create({
       data: suppData,
@@ -183,8 +184,20 @@ async function main() {
   }
   console.log(`✅ Created ${suppliers.length} suppliers`);
 
+  // Create admin user first
+  const hashedPassword = await bcrypt.hash('password123', 10);
+  const adminUser = await prisma.user.create({
+    data: {
+      email: 'admin@example.com',
+      password: hashedPassword,
+      name: 'Administrator',
+      role: UserRole.ADMIN,
+    },
+  });
+  console.log(`✅ Created admin user: ${adminUser.email}`);
+
   // Create external users for assignments
-  const externalUsers = [];
+  const externalUsers: any[] = [];
   for (const userData of externalUserData) {
     const user = await prisma.user.create({
       data: {

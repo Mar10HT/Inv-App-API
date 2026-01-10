@@ -18,13 +18,18 @@ class CreateInventoryDto {
     quantity;
     minQuantity;
     category;
-    location;
     status;
     price;
     currency;
     sku;
     barcode;
     imageUrl;
+    itemType;
+    serviceTag;
+    serialNumber;
+    warehouseId;
+    supplierId;
+    assignedToUserId;
     createdById;
 }
 exports.CreateInventoryDto = CreateInventoryDto;
@@ -57,11 +62,6 @@ __decorate([
     (0, class_validator_1.IsNotEmpty)(),
     __metadata("design:type", String)
 ], CreateInventoryDto.prototype, "category", void 0);
-__decorate([
-    (0, class_validator_1.IsString)(),
-    (0, class_validator_1.IsNotEmpty)(),
-    __metadata("design:type", String)
-], CreateInventoryDto.prototype, "location", void 0);
 __decorate([
     (0, class_validator_1.IsEnum)(client_1.InventoryStatus),
     (0, class_validator_1.IsOptional)(),
@@ -96,6 +96,38 @@ __decorate([
     (0, class_validator_1.MaxLength)(500),
     __metadata("design:type", String)
 ], CreateInventoryDto.prototype, "imageUrl", void 0);
+__decorate([
+    (0, class_validator_1.IsEnum)(client_1.ItemType),
+    (0, class_validator_1.IsOptional)(),
+    __metadata("design:type", String)
+], CreateInventoryDto.prototype, "itemType", void 0);
+__decorate([
+    (0, class_validator_1.IsString)(),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.MaxLength)(100),
+    __metadata("design:type", String)
+], CreateInventoryDto.prototype, "serviceTag", void 0);
+__decorate([
+    (0, class_validator_1.IsString)(),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.MaxLength)(100),
+    __metadata("design:type", String)
+], CreateInventoryDto.prototype, "serialNumber", void 0);
+__decorate([
+    (0, class_validator_1.IsString)(),
+    (0, class_validator_1.IsNotEmpty)(),
+    __metadata("design:type", String)
+], CreateInventoryDto.prototype, "warehouseId", void 0);
+__decorate([
+    (0, class_validator_1.IsString)(),
+    (0, class_validator_1.IsOptional)(),
+    __metadata("design:type", String)
+], CreateInventoryDto.prototype, "supplierId", void 0);
+__decorate([
+    (0, class_validator_1.IsString)(),
+    (0, class_validator_1.IsOptional)(),
+    __metadata("design:type", String)
+], CreateInventoryDto.prototype, "assignedToUserId", void 0);
 __decorate([
     (0, class_validator_1.IsString)(),
     (0, class_validator_1.IsOptional)(),

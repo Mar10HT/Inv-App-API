@@ -20,12 +20,62 @@ let InventoryService = class InventoryService {
         this.prisma = prisma;
     }
     async create(createInventoryDto) {
+        const warehouse = await this.prisma.warehouse.findUnique({
+            where: { id: createInventoryDto.warehouseId },
+        });
+        if (!warehouse) {
+            throw new common_1.NotFoundException(`Warehouse with ID ${createInventoryDto.warehouseId} not found`);
+        }
+        if (createInventoryDto.supplierId) {
+            const supplier = await this.prisma.supplier.findUnique({
+                where: { id: createInventoryDto.supplierId },
+            });
+            if (!supplier) {
+                throw new common_1.NotFoundException(`Supplier with ID ${createInventoryDto.supplierId} not found`);
+            }
+        }
+        if (createInventoryDto.assignedToUserId) {
+            const user = await this.prisma.user.findUnique({
+                where: { id: createInventoryDto.assignedToUserId },
+            });
+            if (!user) {
+                throw new common_1.NotFoundException(`User with ID ${createInventoryDto.assignedToUserId} not found`);
+            }
+        }
+        const itemType = createInventoryDto.itemType || client_1.ItemType.BULK;
+        if (itemType === client_1.ItemType.UNIQUE) {
+            if (createInventoryDto.quantity !== 1) {
+                throw new common_1.BadRequestException('UNIQUE items must have quantity of 1');
+            }
+            if (!createInventoryDto.serviceTag && !createInventoryDto.serialNumber) {
+                throw new common_1.BadRequestException('UNIQUE items must have either serviceTag or serialNumber');
+            }
+            if (createInventoryDto.assignedToUserId) {
+                createInventoryDto['assignedAt'] = new Date();
+            }
+        }
+        if (itemType === client_1.ItemType.BULK) {
+            if (createInventoryDto.serviceTag || createInventoryDto.serialNumber) {
+                throw new common_1.BadRequestException('BULK items cannot have serviceTag or serialNumber');
+            }
+            if (createInventoryDto.assignedToUserId) {
+                throw new common_1.BadRequestException('BULK items cannot be assigned to users');
+            }
+        }
         if (createInventoryDto.sku) {
             const existing = await this.prisma.inventoryItem.findUnique({
                 where: { sku: createInventoryDto.sku },
             });
             if (existing) {
                 throw new common_1.ConflictException(`Item with SKU ${createInventoryDto.sku} already exists`);
+            }
+        }
+        if (createInventoryDto.serviceTag) {
+            const existing = await this.prisma.inventoryItem.findUnique({
+                where: { serviceTag: createInventoryDto.serviceTag },
+            });
+            if (existing) {
+                throw new common_1.ConflictException(`Item with service tag ${createInventoryDto.serviceTag} already exists`);
             }
         }
         let status = createInventoryDto.status;
@@ -44,6 +94,7 @@ let InventoryService = class InventoryService {
         return this.prisma.inventoryItem.create({
             data: {
                 ...createInventoryDto,
+                itemType,
                 status,
             },
             include: {
@@ -52,6 +103,16 @@ let InventoryService = class InventoryService {
                         id: true,
                         name: true,
                         email: true,
+                    },
+                },
+                warehouse: true,
+                supplier: true,
+                assignedToUser: {
+                    select: {
+                        id: true,
+                        name: true,
+                        email: true,
+                        role: true,
                     },
                 },
             },
@@ -67,16 +128,30 @@ let InventoryService = class InventoryService {
                 { name: { contains: filters.search, mode: 'insensitive' } },
                 { description: { contains: filters.search, mode: 'insensitive' } },
                 { sku: { contains: filters.search, mode: 'insensitive' } },
+                { serviceTag: { contains: filters.search, mode: 'insensitive' } },
+                { serialNumber: { contains: filters.search, mode: 'insensitive' } },
             ];
         }
         if (filters?.category) {
             where.category = filters.category;
         }
-        if (filters?.location) {
-            where.location = filters.location;
-        }
         if (filters?.status) {
             where.status = filters.status;
+        }
+        if (filters?.itemType) {
+            where.itemType = filters.itemType;
+        }
+        if (filters?.currency) {
+            where.currency = filters.currency;
+        }
+        if (filters?.warehouseId) {
+            where.warehouseId = filters.warehouseId;
+        }
+        if (filters?.supplierId) {
+            where.supplierId = filters.supplierId;
+        }
+        if (filters?.assignedToUserId) {
+            where.assignedToUserId = filters.assignedToUserId;
         }
         const orderBy = {};
         const sortBy = filters?.sortBy || 'createdAt';
@@ -96,6 +171,16 @@ let InventoryService = class InventoryService {
                             email: true,
                         },
                     },
+                    warehouse: true,
+                    supplier: true,
+                    assignedToUser: {
+                        select: {
+                            id: true,
+                            name: true,
+                            email: true,
+                            role: true,
+                        },
+                    },
                 },
             }),
             this.prisma.inventoryItem.count({ where }),
@@ -111,6 +196,16 @@ let InventoryService = class InventoryService {
                         id: true,
                         name: true,
                         email: true,
+                    },
+                },
+                warehouse: true,
+                supplier: true,
+                assignedToUser: {
+                    select: {
+                        id: true,
+                        name: true,
+                        email: true,
+                        role: true,
                     },
                 },
                 auditLogs: {
@@ -187,7 +282,7 @@ let InventoryService = class InventoryService {
         });
     }
     async getStats() {
-        const [total, inStock, lowStock, outOfStock, items, categoryStats, locationStats,] = await Promise.all([
+        const [total, inStock, lowStock, outOfStock, items, categoryStats, warehouseStats,] = await Promise.all([
             this.prisma.inventoryItem.count(),
             this.prisma.inventoryItem.count({ where: { status: client_1.InventoryStatus.IN_STOCK } }),
             this.prisma.inventoryItem.count({ where: { status: client_1.InventoryStatus.LOW_STOCK } }),
@@ -198,13 +293,21 @@ let InventoryService = class InventoryService {
                 _count: { category: true },
             }),
             this.prisma.inventoryItem.groupBy({
-                by: ['location'],
-                _count: { location: true },
+                by: ['warehouseId'],
+                _count: { warehouseId: true },
             }),
         ]);
         const totalValue = items.reduce((sum, item) => {
             return sum + (item.price || 0) * item.quantity;
         }, 0);
+        const warehouses = await this.prisma.warehouse.findMany();
+        const locationStats = warehouseStats.map(stat => {
+            const warehouse = warehouses.find(w => w.id === stat.warehouseId);
+            return {
+                name: warehouse?.name || 'Unknown',
+                count: stat._count.warehouseId || 0,
+            };
+        });
         return {
             total,
             inStock,
@@ -215,10 +318,7 @@ let InventoryService = class InventoryService {
                 name: stat.category,
                 count: stat._count.category,
             })),
-            locations: locationStats.map(stat => ({
-                name: stat.location,
-                count: stat._count.location,
-            })),
+            locations: locationStats,
         };
     }
     async getLowStockItems() {
@@ -250,12 +350,11 @@ let InventoryService = class InventoryService {
         return categories.map(c => c.category);
     }
     async getLocations() {
-        const locations = await this.prisma.inventoryItem.findMany({
-            distinct: ['location'],
-            select: { location: true },
-            orderBy: { location: 'asc' },
+        const warehouses = await this.prisma.warehouse.findMany({
+            orderBy: { name: 'asc' },
+            select: { name: true },
         });
-        return locations.map(l => l.location);
+        return warehouses.map(w => w.name);
     }
 };
 exports.InventoryService = InventoryService;
