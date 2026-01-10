@@ -3,10 +3,15 @@
 import "dotenv/config";
 import { defineConfig, env } from "prisma/config";
 
+// Use production schema (PostgreSQL) in production, dev schema (SQLite) in development
+const isProd = process.env.NODE_ENV === "production";
+const schemaPath = isProd ? "prisma/schema.prod.prisma" : "prisma/schema.prisma";
+const migrationsPath = isProd ? "prisma/migrations-prod" : "prisma/migrations";
+
 export default defineConfig({
-  schema: "prisma/schema.prisma",
+  schema: schemaPath,
   migrations: {
-    path: "prisma/migrations",
+    path: migrationsPath,
   },
   datasource: {
     url: env("DATABASE_URL"),
