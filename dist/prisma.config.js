@@ -4,7 +4,7 @@ require("dotenv/config");
 const config_1 = require("prisma/config");
 const isProd = process.env.NODE_ENV === "production";
 const schemaPath = isProd ? "prisma/schema.prod.prisma" : "prisma/schema.prisma";
-const migrationsPath = isProd ? "prisma/migrations-prod" : "prisma/migrations";
+const migrationsPath = "prisma/migrations";
 exports.default = (0, config_1.defineConfig)({
     schema: schemaPath,
     migrations: {
