@@ -10,6 +10,7 @@ export declare class CategoriesService {
         createdAt: Date;
         updatedAt: Date;
         description: string | null;
+        color: string | null;
     }>;
     findAll(): Promise<{
         id: string;
@@ -17,6 +18,7 @@ export declare class CategoriesService {
         createdAt: Date;
         updatedAt: Date;
         description: string | null;
+        color: string | null;
     }[]>;
     findOne(id: string): Promise<{
         id: string;
@@ -24,6 +26,7 @@ export declare class CategoriesService {
         createdAt: Date;
         updatedAt: Date;
         description: string | null;
+        color: string | null;
     }>;
     update(id: string, updateCategoryDto: UpdateCategoryDto): Promise<{
         id: string;
@@ -31,6 +34,7 @@ export declare class CategoriesService {
         createdAt: Date;
         updatedAt: Date;
         description: string | null;
+        color: string | null;
     }>;
     remove(id: string): Promise<void>;
 }

@@ -36,6 +36,7 @@ export declare class SuppliersService {
             quantity: number;
             minQuantity: number;
             category: string;
+            model: string | null;
             status: import("@prisma/client").$Enums.InventoryStatus;
             price: number | null;
             currency: import("@prisma/client").$Enums.Currency;

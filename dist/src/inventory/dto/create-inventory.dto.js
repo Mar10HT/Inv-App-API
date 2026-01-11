@@ -9,15 +9,36 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.CreateInventoryDto = void 0;
+exports.CreateInventoryDto = exports.UniqueItemQuantityConstraint = void 0;
 const class_validator_1 = require("class-validator");
 const client_1 = require("@prisma/client");
+let UniqueItemQuantityConstraint = class UniqueItemQuantityConstraint {
+    validate(quantity, args) {
+        const dto = args.object;
+        if (dto.itemType === client_1.ItemType.UNIQUE) {
+            return quantity === 0 || quantity === 1;
+        }
+        return quantity >= 0;
+    }
+    defaultMessage(args) {
+        const dto = args.object;
+        if (dto.itemType === client_1.ItemType.UNIQUE) {
+            return 'UNIQUE items can only have quantity 0 or 1';
+        }
+        return 'Quantity must be a positive number';
+    }
+};
+exports.UniqueItemQuantityConstraint = UniqueItemQuantityConstraint;
+exports.UniqueItemQuantityConstraint = UniqueItemQuantityConstraint = __decorate([
+    (0, class_validator_1.ValidatorConstraint)({ name: 'UniqueItemQuantity', async: false })
+], UniqueItemQuantityConstraint);
 class CreateInventoryDto {
     name;
     description;
     quantity;
     minQuantity;
     category;
+    model;
     status;
     price;
     currency;
@@ -49,6 +70,7 @@ __decorate([
 __decorate([
     (0, class_validator_1.IsInt)(),
     (0, class_validator_1.Min)(0),
+    (0, class_validator_1.Validate)(UniqueItemQuantityConstraint),
     __metadata("design:type", Number)
 ], CreateInventoryDto.prototype, "quantity", void 0);
 __decorate([
@@ -62,6 +84,12 @@ __decorate([
     (0, class_validator_1.IsNotEmpty)(),
     __metadata("design:type", String)
 ], CreateInventoryDto.prototype, "category", void 0);
+__decorate([
+    (0, class_validator_1.IsString)(),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.MaxLength)(255),
+    __metadata("design:type", String)
+], CreateInventoryDto.prototype, "model", void 0);
 __decorate([
     (0, class_validator_1.IsEnum)(client_1.InventoryStatus),
     (0, class_validator_1.IsOptional)(),

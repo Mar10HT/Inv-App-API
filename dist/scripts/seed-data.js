@@ -145,7 +145,10 @@ function getRandomInt(min, max) {
 function getRandomPrice(basePrice, variation) {
     return Number((basePrice + (Math.random() * variation * 2 - variation)).toFixed(2));
 }
-function getStatus(quantity, minQuantity) {
+function getStatus(quantity, minQuantity, itemType) {
+    if (itemType === client_1.ItemType.UNIQUE) {
+        return quantity === 1 ? client_1.InventoryStatus.IN_STOCK : client_1.InventoryStatus.OUT_OF_STOCK;
+    }
     if (quantity === 0)
         return client_1.InventoryStatus.OUT_OF_STOCK;
     if (quantity <= minQuantity)
@@ -165,6 +168,32 @@ function generateSerialNumber() {
         String(getRandomInt(1000, 9999)),
     ];
     return parts.join('-');
+}
+function generateModel(productName, category) {
+    if (Math.random() > 0.6)
+        return null;
+    const models = {
+        'Monitor': ['Dell P2422H', 'LG 27UL850', 'Samsung 27" Curved', 'ASUS ProArt PA278QV', 'BenQ PD2700U'],
+        'Laptop': ['Dell Latitude 5430', 'HP EliteBook 840 G9', 'Lenovo ThinkPad X1 Carbon', 'ASUS ZenBook 14', 'MacBook Pro 14"'],
+        'Desktop': ['Dell OptiPlex 7090', 'HP EliteDesk 800 G8', 'Lenovo ThinkCentre M90t', 'ASUS ExpertCenter D7'],
+        'Printer': ['HP LaserJet Pro M404dn', 'Brother HL-L2395DW', 'Canon imageCLASS MF445dw', 'Epson WorkForce Pro WF-4830'],
+        'Mouse': ['Logitech MX Master 3S', 'Razer DeathAdder V3', 'Microsoft Sculpt Ergonomic', 'Logitech G502 HERO'],
+        'Keyboard': ['Logitech MX Keys', 'Keychron K8 Pro', 'Corsair K70 RGB', 'Das Keyboard 4 Professional'],
+        'Webcam': ['Logitech C920', 'Logitech C930e', 'Razer Kiyo Pro', 'Microsoft LifeCam Studio'],
+        'RAM': ['Corsair Vengeance LPX', 'G.Skill Ripjaws V', 'Kingston Fury Beast', 'Crucial Ballistix'],
+        'SSD': ['Samsung 980 PRO', 'WD Black SN850X', 'Crucial P5 Plus', 'Kingston KC3000'],
+        'Graphics Card': ['NVIDIA RTX 3060', 'AMD RX 6700 XT', 'NVIDIA RTX 4070', 'AMD RX 7800 XT'],
+        'Processor': ['Intel Core i7-13700K', 'AMD Ryzen 7 7700X', 'Intel Core i5-13600K', 'AMD Ryzen 5 7600X'],
+        'Chair': ['Herman Miller Aeron', 'Steelcase Leap V2', 'Autonomous ErgoChair Pro', 'IKEA Markus'],
+        'Desk': ['IKEA Bekant', 'Uplift V2', 'FlexiSpot E7', 'Autonomous SmartDesk Core'],
+        'default': ['Model A', 'Model B', 'Model C', 'Professional Series', 'Business Edition']
+    };
+    for (const [key, modelList] of Object.entries(models)) {
+        if (productName.includes(key)) {
+            return getRandomElement(modelList);
+        }
+    }
+    return getRandomElement(models['default']);
 }
 async function main() {
     console.log('🌱 Starting seed...');
@@ -224,7 +253,7 @@ async function main() {
         const itemType = product.isUnique ? client_1.ItemType.UNIQUE : client_1.ItemType.BULK;
         const quantity = itemType === client_1.ItemType.UNIQUE ? 1 : getRandomInt(0, 200);
         const minQuantity = itemType === client_1.ItemType.UNIQUE ? 1 : getRandomInt(5, 25);
-        const status = getStatus(quantity, minQuantity);
+        const status = getStatus(quantity, minQuantity, itemType);
         const supplier = Math.random() > 0.3 ? getRandomElement(suppliers) : null;
         const currency = Math.random() > 0.5 ? client_1.Currency.USD : client_1.Currency.HNL;
         let price;
@@ -250,6 +279,7 @@ async function main() {
         const sku = `${categoryPrefix}-${String(i + 1).padStart(4, '0')}`;
         const barcode = Math.random() > 0.3 ? `${getRandomInt(100000000, 999999999)}${getRandomInt(100, 999)}` : null;
         const description = `${name} - High quality ${category.toLowerCase()} item for office and business use`;
+        const model = generateModel(product.name, category);
         const serviceTag = itemType === client_1.ItemType.UNIQUE ? generateServiceTag() : null;
         const serialNumber = itemType === client_1.ItemType.UNIQUE && !serviceTag ? generateSerialNumber() : null;
         const assignedUser = itemType === client_1.ItemType.UNIQUE && status === client_1.InventoryStatus.IN_STOCK && Math.random() > 0.6
@@ -265,6 +295,7 @@ async function main() {
                 quantity,
                 minQuantity,
                 category,
+                model,
                 status,
                 price,
                 currency,

@@ -14,6 +14,7 @@ const class_validator_1 = require("class-validator");
 class CreateCategoryDto {
     name;
     description;
+    color;
 }
 exports.CreateCategoryDto = CreateCategoryDto;
 __decorate([
@@ -26,4 +27,9 @@ __decorate([
     (0, class_validator_1.IsOptional)(),
     __metadata("design:type", String)
 ], CreateCategoryDto.prototype, "description", void 0);
+__decorate([
+    (0, class_validator_1.IsString)(),
+    (0, class_validator_1.IsOptional)(),
+    __metadata("design:type", String)
+], CreateCategoryDto.prototype, "color", void 0);
 //# sourceMappingURL=create-category.dto.js.map

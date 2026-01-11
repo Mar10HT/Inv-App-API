@@ -1,5 +1,26 @@
-import { IsString, IsNotEmpty, IsOptional, IsInt, Min, IsNumber, IsEnum, MinLength, MaxLength } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional, IsInt, Min, IsNumber, IsEnum, MinLength, MaxLength, Validate, ValidatorConstraint, ValidatorConstraintInterface, ValidationArguments } from 'class-validator';
 import { InventoryStatus, Currency, ItemType } from '@prisma/client';
+
+@ValidatorConstraint({ name: 'UniqueItemQuantity', async: false })
+export class UniqueItemQuantityConstraint implements ValidatorConstraintInterface {
+  validate(quantity: number, args: ValidationArguments) {
+    const dto = args.object as CreateInventoryDto;
+    // If UNIQUE item, quantity must be 0 or 1
+    if (dto.itemType === ItemType.UNIQUE) {
+      return quantity === 0 || quantity === 1;
+    }
+    // For BULK items, any positive number is fine
+    return quantity >= 0;
+  }
+
+  defaultMessage(args: ValidationArguments) {
+    const dto = args.object as CreateInventoryDto;
+    if (dto.itemType === ItemType.UNIQUE) {
+      return 'UNIQUE items can only have quantity 0 or 1';
+    }
+    return 'Quantity must be a positive number';
+  }
+}
 
 export class CreateInventoryDto {
   @IsString()
@@ -15,6 +36,7 @@ export class CreateInventoryDto {
 
   @IsInt()
   @Min(0)
+  @Validate(UniqueItemQuantityConstraint)
   quantity: number;
 
   @IsInt()
@@ -25,6 +47,11 @@ export class CreateInventoryDto {
   @IsString()
   @IsNotEmpty()
   category: string;
+
+  @IsString()
+  @IsOptional()
+  @MaxLength(255)
+  model?: string;
 
   @IsEnum(InventoryStatus)
   @IsOptional()

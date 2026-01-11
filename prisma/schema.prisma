@@ -63,6 +63,7 @@ model InventoryItem {
   quantity     Int               @default(0)
   minQuantity  Int               @default(10) // For low stock alerts
   category     String
+  model        String?           // Model/SKU for grouping similar items (e.g., "Dell Latitude 5430")
   status       InventoryStatus   @default(IN_STOCK)
   price        Float?
   currency     Currency          @default(USD) // Currency type
@@ -98,6 +99,7 @@ model InventoryItem {
   transactionItems  TransactionItem[]
 
   @@index([category])
+  @@index([model])
   @@index([status])
   @@index([currency])
   @@index([warehouseId])

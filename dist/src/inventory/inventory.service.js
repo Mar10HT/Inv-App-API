@@ -44,8 +44,8 @@ let InventoryService = class InventoryService {
         }
         const itemType = createInventoryDto.itemType || client_1.ItemType.BULK;
         if (itemType === client_1.ItemType.UNIQUE) {
-            if (createInventoryDto.quantity !== 1) {
-                throw new common_1.BadRequestException('UNIQUE items must have quantity of 1');
+            if (createInventoryDto.quantity !== 0 && createInventoryDto.quantity !== 1) {
+                throw new common_1.BadRequestException('UNIQUE items must have quantity of 0 or 1');
             }
             if (!createInventoryDto.serviceTag && !createInventoryDto.serialNumber) {
                 throw new common_1.BadRequestException('UNIQUE items must have either serviceTag or serialNumber');
@@ -80,15 +80,20 @@ let InventoryService = class InventoryService {
         }
         let status = createInventoryDto.status;
         if (!status) {
-            const minQty = createInventoryDto.minQuantity || 10;
-            if (createInventoryDto.quantity === 0) {
-                status = client_1.InventoryStatus.OUT_OF_STOCK;
-            }
-            else if (createInventoryDto.quantity <= minQty) {
-                status = client_1.InventoryStatus.LOW_STOCK;
+            if (itemType === client_1.ItemType.UNIQUE) {
+                status = createInventoryDto.quantity === 1 ? client_1.InventoryStatus.IN_STOCK : client_1.InventoryStatus.OUT_OF_STOCK;
             }
             else {
-                status = client_1.InventoryStatus.IN_STOCK;
+                const minQty = createInventoryDto.minQuantity || 10;
+                if (createInventoryDto.quantity === 0) {
+                    status = client_1.InventoryStatus.OUT_OF_STOCK;
+                }
+                else if (createInventoryDto.quantity <= minQty) {
+                    status = client_1.InventoryStatus.LOW_STOCK;
+                }
+                else {
+                    status = client_1.InventoryStatus.IN_STOCK;
+                }
             }
         }
         return this.prisma.inventoryItem.create({
