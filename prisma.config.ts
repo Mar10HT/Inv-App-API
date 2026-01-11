@@ -6,7 +6,8 @@ import { defineConfig, env } from "prisma/config";
 // Use production schema (PostgreSQL) in production, dev schema (SQLite) in development
 const isProd = process.env.NODE_ENV === "production";
 const schemaPath = isProd ? "prisma/schema.prod.prisma" : "prisma/schema.prisma";
-const migrationsPath = isProd ? "prisma/migrations-prod" : "prisma/migrations";
+// Always use migrations directory (will contain prod migrations)
+const migrationsPath = "prisma/migrations";
 
 export default defineConfig({
   schema: schemaPath,

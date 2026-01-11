@@ -3,3 +3,6 @@ node_modules
 .env
 
 /generated/prisma
+
+# SQLite dev migrations backup
+prisma/migrations-sqlite-backup
