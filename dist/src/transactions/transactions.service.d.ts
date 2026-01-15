@@ -342,5 +342,5 @@ export declare class TransactionsService {
     remove(id: string): Promise<void>;
     private validateTransactionType;
     private validateItems;
-    private updateInventoryQuantities;
+    private updateInventoryQuantitiesInTx;
 }

@@ -22,8 +22,8 @@ let TransactionsService = class TransactionsService {
         const { items, ...transactionData } = createTransactionDto;
         this.validateTransactionType(createTransactionDto);
         await this.validateItems(items);
-        return this.prisma.$transaction(async (prisma) => {
-            const transaction = await prisma.transaction.create({
+        return this.prisma.$transaction(async (tx) => {
+            const newTransaction = await tx.transaction.create({
                 data: {
                     ...transactionData,
                     items: {
@@ -51,8 +51,8 @@ let TransactionsService = class TransactionsService {
                     },
                 },
             });
-            await this.updateInventoryQuantities(transaction.id, items, transactionData.type);
-            return transaction;
+            await this.updateInventoryQuantitiesInTx(tx, items, transactionData.type);
+            return newTransaction;
         });
     }
     async findAll() {
@@ -192,9 +192,9 @@ let TransactionsService = class TransactionsService {
             }
         }
     }
-    async updateInventoryQuantities(transactionId, items, type) {
+    async updateInventoryQuantitiesInTx(tx, items, type) {
         for (const item of items) {
-            const currentItem = await this.prisma.inventoryItem.findUnique({
+            const currentItem = await tx.inventoryItem.findUnique({
                 where: { id: item.inventoryItemId },
             });
             if (!currentItem)
@@ -206,10 +206,19 @@ let TransactionsService = class TransactionsService {
             else if (type === create_transaction_dto_1.TransactionType.OUT) {
                 newQuantity -= item.quantity;
             }
-            await this.prisma.inventoryItem.update({
+            let newStatus = 'IN_STOCK';
+            if (newQuantity <= 0) {
+                newStatus = 'OUT_OF_STOCK';
+                newQuantity = Math.max(0, newQuantity);
+            }
+            else if (newQuantity <= currentItem.minQuantity) {
+                newStatus = 'LOW_STOCK';
+            }
+            await tx.inventoryItem.update({
                 where: { id: item.inventoryItemId },
                 data: {
                     quantity: newQuantity,
+                    status: newStatus,
                 },
             });
         }

@@ -17,8 +17,8 @@ export class TransactionsService {
     await this.validateItems(items);
 
     // Create transaction with items in a single transaction
-    return this.prisma.$transaction(async (prisma) => {
-      const transaction = await prisma.transaction.create({
+    return this.prisma.$transaction(async (tx) => {
+      const newTransaction = await tx.transaction.create({
         data: {
           ...transactionData,
           items: {
@@ -47,10 +47,10 @@ export class TransactionsService {
         },
       });
 
-      // Update inventory quantities based on transaction type
-      await this.updateInventoryQuantities(transaction.id, items, transactionData.type as TransactionType);
+      // Update inventory quantities based on transaction type (within same transaction)
+      await this.updateInventoryQuantitiesInTx(tx, items, transactionData.type as TransactionType);
 
-      return transaction;
+      return newTransaction;
     });
   }
 
@@ -204,13 +204,13 @@ export class TransactionsService {
     }
   }
 
-  private async updateInventoryQuantities(
-    transactionId: string,
+  private async updateInventoryQuantitiesInTx(
+    tx: any,
     items: any[],
     type: TransactionType,
   ) {
     for (const item of items) {
-      const currentItem = await this.prisma.inventoryItem.findUnique({
+      const currentItem = await tx.inventoryItem.findUnique({
         where: { id: item.inventoryItemId },
       });
 
@@ -226,10 +226,20 @@ export class TransactionsService {
       }
       // TRANSFER doesn't change total quantity, just location
 
-      await this.prisma.inventoryItem.update({
+      // Determine new status based on quantity
+      let newStatus = 'IN_STOCK';
+      if (newQuantity <= 0) {
+        newStatus = 'OUT_OF_STOCK';
+        newQuantity = Math.max(0, newQuantity); // Don't allow negative
+      } else if (newQuantity <= currentItem.minQuantity) {
+        newStatus = 'LOW_STOCK';
+      }
+
+      await tx.inventoryItem.update({
         where: { id: item.inventoryItemId },
         data: {
           quantity: newQuantity,
+          status: newStatus,
         },
       });
     }
