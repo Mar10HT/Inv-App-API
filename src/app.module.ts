@@ -9,6 +9,7 @@ import { SuppliersModule } from './suppliers/suppliers.module';
 import { CategoriesModule } from './categories/categories.module';
 import { UsersModule } from './users/users.module';
 import { TransactionsModule } from './transactions/transactions.module';
+import { LoansModule } from './loans/loans.module';
 import { AuthModule } from './auth/auth.module';
 import { SeedModule } from './seed/seed.module';
 
@@ -26,6 +27,7 @@ import { SeedModule } from './seed/seed.module';
     CategoriesModule,
     UsersModule,
     TransactionsModule,
+    LoansModule,
     SeedModule,
   ],
   controllers: [AppController],

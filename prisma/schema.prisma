@@ -25,6 +25,7 @@ model User {
   assignedItems    InventoryItem[]      @relation("AssignedItems")
   auditLogs        AuditLog[]
   transactions     Transaction[]
+  loans            Loan[]
 
   @@map("users")
 }
@@ -48,9 +49,11 @@ model Warehouse {
   updatedAt   DateTime @updatedAt
 
   // Relations
-  inventoryItems        InventoryItem[]
-  sourceTransactions    Transaction[]    @relation("SourceTransactions")
-  destinationTransactions Transaction[] @relation("DestinationTransactions")
+  inventoryItems          InventoryItem[]
+  sourceTransactions      Transaction[]    @relation("SourceTransactions")
+  destinationTransactions Transaction[]    @relation("DestinationTransactions")
+  sourceLoans             Loan[]           @relation("SourceLoans")
+  destinationLoans        Loan[]           @relation("DestinationLoans")
 
   @@map("warehouses")
 }
@@ -96,6 +99,7 @@ model InventoryItem {
   // Relations
   auditLogs         AuditLog[]
   transactionItems  TransactionItem[]
+  loans             Loan[]
 
   @@index([category])
   @@index([status])
@@ -209,4 +213,41 @@ model TransactionItem {
   @@index([transactionId])
   @@index([inventoryItemId])
   @@map("transaction_items")
+}
+
+// Loan model for tracking item loans between warehouses
+model Loan {
+  id                     String     @id @default(cuid())
+  inventoryItemId        String
+  quantity               Int        @default(1)
+  sourceWarehouseId      String
+  destinationWarehouseId String
+  loanDate               DateTime   @default(now())
+  dueDate                DateTime
+  returnDate             DateTime?
+  status                 LoanStatus @default(ACTIVE)
+  notes                  String?
+  createdById            String
+  createdAt              DateTime   @default(now())
+  updatedAt              DateTime   @updatedAt
+
+  // Relations
+  inventoryItem        InventoryItem @relation(fields: [inventoryItemId], references: [id])
+  sourceWarehouse      Warehouse     @relation("SourceLoans", fields: [sourceWarehouseId], references: [id])
+  destinationWarehouse Warehouse     @relation("DestinationLoans", fields: [destinationWarehouseId], references: [id])
+  createdBy            User          @relation(fields: [createdById], references: [id])
+
+  @@index([inventoryItemId])
+  @@index([sourceWarehouseId])
+  @@index([destinationWarehouseId])
+  @@index([status])
+  @@index([dueDate])
+  @@index([createdById])
+  @@map("loans")
+}
+
+enum LoanStatus {
+  ACTIVE
+  OVERDUE
+  RETURNED
 }
