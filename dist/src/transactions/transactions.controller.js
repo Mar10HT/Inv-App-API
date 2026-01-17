@@ -19,6 +19,7 @@ const create_transaction_dto_1 = require("./dto/create-transaction.dto");
 const update_transaction_dto_1 = require("./dto/update-transaction.dto");
 const guards_1 = require("../auth/guards");
 const decorators_1 = require("../auth/decorators");
+const dto_1 = require("../common/dto");
 let TransactionsController = class TransactionsController {
     transactionsService;
     constructor(transactionsService) {
@@ -27,8 +28,8 @@ let TransactionsController = class TransactionsController {
     create(createTransactionDto) {
         return this.transactionsService.create(createTransactionDto);
     }
-    findAll() {
-        return this.transactionsService.findAll();
+    findAll(pagination) {
+        return this.transactionsService.findAll(pagination);
     }
     findRecent(limit) {
         const limitNum = limit ? parseInt(limit, 10) : 10;
@@ -56,8 +57,9 @@ __decorate([
 ], TransactionsController.prototype, "create", null);
 __decorate([
     (0, common_1.Get)(),
+    __param(0, (0, common_1.Query)(common_1.ValidationPipe)),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", []),
+    __metadata("design:paramtypes", [dto_1.PaginationDto]),
     __metadata("design:returntype", void 0)
 ], TransactionsController.prototype, "findAll", null);
 __decorate([

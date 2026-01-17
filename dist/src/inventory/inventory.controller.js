@@ -52,6 +52,9 @@ let InventoryController = class InventoryController {
     async remove(id) {
         await this.inventoryService.remove(id);
     }
+    restore(id) {
+        return this.inventoryService.restore(id);
+    }
 };
 exports.InventoryController = InventoryController;
 __decorate([
@@ -119,6 +122,14 @@ __decorate([
     __metadata("design:paramtypes", [String]),
     __metadata("design:returntype", Promise)
 ], InventoryController.prototype, "remove", null);
+__decorate([
+    (0, common_1.Patch)(':id/restore'),
+    (0, decorators_1.Roles)('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER'),
+    __param(0, (0, common_1.Param)('id')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String]),
+    __metadata("design:returntype", void 0)
+], InventoryController.prototype, "restore", null);
 exports.InventoryController = InventoryController = __decorate([
     (0, common_1.Controller)('inventory'),
     (0, common_1.UseGuards)(guards_1.JwtAuthGuard, guards_1.RolesGuard),

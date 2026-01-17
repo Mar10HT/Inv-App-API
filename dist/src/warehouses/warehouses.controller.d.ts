@@ -32,6 +32,7 @@ export declare class WarehousesController {
             name: string;
             createdAt: Date;
             updatedAt: Date;
+            deletedAt: Date | null;
             description: string | null;
             quantity: number;
             minQuantity: number;

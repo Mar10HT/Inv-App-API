@@ -1,6 +1,7 @@
 import { LoansService } from './loans.service';
 import { CreateLoanDto } from './dto/create-loan.dto';
 import { UpdateLoanDto, ReturnLoanDto } from './dto/update-loan.dto';
+import { PaginationDto } from '../common/dto';
 export declare class LoansController {
     private readonly loansService;
     constructor(loansService: LoansService);
@@ -33,51 +34,15 @@ export declare class LoansController {
         quantity: number;
         status: import("@prisma/client").$Enums.LoanStatus;
         createdById: string;
-        inventoryItemId: string;
-        notes: string | null;
         sourceWarehouseId: string;
         destinationWarehouseId: string;
+        notes: string | null;
+        inventoryItemId: string;
+        loanDate: Date;
         dueDate: Date;
         returnDate: Date | null;
-        loanDate: Date;
     }>;
-    findAll(): Promise<({
-        createdBy: {
-            id: string;
-            email: string;
-            name: string | null;
-        };
-        inventoryItem: {
-            id: string;
-            name: string;
-            quantity: number;
-            serviceTag: string | null;
-        };
-        sourceWarehouse: {
-            id: string;
-            name: string;
-            location: string;
-        };
-        destinationWarehouse: {
-            id: string;
-            name: string;
-            location: string;
-        };
-    } & {
-        id: string;
-        createdAt: Date;
-        updatedAt: Date;
-        quantity: number;
-        status: import("@prisma/client").$Enums.LoanStatus;
-        createdById: string;
-        inventoryItemId: string;
-        notes: string | null;
-        sourceWarehouseId: string;
-        destinationWarehouseId: string;
-        dueDate: Date;
-        returnDate: Date | null;
-        loanDate: Date;
-    })[]>;
+    findAll(pagination: PaginationDto): Promise<import("../common/dto").PaginatedResult<any>>;
     findActive(): Promise<({
         createdBy: {
             id: string;
@@ -107,13 +72,13 @@ export declare class LoansController {
         quantity: number;
         status: import("@prisma/client").$Enums.LoanStatus;
         createdById: string;
-        inventoryItemId: string;
-        notes: string | null;
         sourceWarehouseId: string;
         destinationWarehouseId: string;
+        notes: string | null;
+        inventoryItemId: string;
+        loanDate: Date;
         dueDate: Date;
         returnDate: Date | null;
-        loanDate: Date;
     })[]>;
     getStats(): Promise<{
         totalActive: number;
@@ -150,13 +115,13 @@ export declare class LoansController {
         quantity: number;
         status: import("@prisma/client").$Enums.LoanStatus;
         createdById: string;
-        inventoryItemId: string;
-        notes: string | null;
         sourceWarehouseId: string;
         destinationWarehouseId: string;
+        notes: string | null;
+        inventoryItemId: string;
+        loanDate: Date;
         dueDate: Date;
         returnDate: Date | null;
-        loanDate: Date;
     })[]>;
     findByWarehouse(warehouseId: string): Promise<({
         createdBy: {
@@ -187,13 +152,13 @@ export declare class LoansController {
         quantity: number;
         status: import("@prisma/client").$Enums.LoanStatus;
         createdById: string;
-        inventoryItemId: string;
-        notes: string | null;
         sourceWarehouseId: string;
         destinationWarehouseId: string;
+        notes: string | null;
+        inventoryItemId: string;
+        loanDate: Date;
         dueDate: Date;
         returnDate: Date | null;
-        loanDate: Date;
     })[]>;
     isItemOnLoan(itemId: string): Promise<{
         onLoan: boolean;
@@ -227,13 +192,13 @@ export declare class LoansController {
         quantity: number;
         status: import("@prisma/client").$Enums.LoanStatus;
         createdById: string;
-        inventoryItemId: string;
-        notes: string | null;
         sourceWarehouseId: string;
         destinationWarehouseId: string;
+        notes: string | null;
+        inventoryItemId: string;
+        loanDate: Date;
         dueDate: Date;
         returnDate: Date | null;
-        loanDate: Date;
     }>;
     update(id: string, updateLoanDto: UpdateLoanDto): Promise<{
         createdBy: {
@@ -264,13 +229,13 @@ export declare class LoansController {
         quantity: number;
         status: import("@prisma/client").$Enums.LoanStatus;
         createdById: string;
-        inventoryItemId: string;
-        notes: string | null;
         sourceWarehouseId: string;
         destinationWarehouseId: string;
+        notes: string | null;
+        inventoryItemId: string;
+        loanDate: Date;
         dueDate: Date;
         returnDate: Date | null;
-        loanDate: Date;
     }>;
     returnLoan(id: string, returnLoanDto: ReturnLoanDto): Promise<{
         createdBy: {
@@ -301,13 +266,13 @@ export declare class LoansController {
         quantity: number;
         status: import("@prisma/client").$Enums.LoanStatus;
         createdById: string;
-        inventoryItemId: string;
-        notes: string | null;
         sourceWarehouseId: string;
         destinationWarehouseId: string;
+        notes: string | null;
+        inventoryItemId: string;
+        loanDate: Date;
         dueDate: Date;
         returnDate: Date | null;
-        loanDate: Date;
     }>;
     remove(id: string): Promise<void>;
     checkOverdueLoans(): Promise<{

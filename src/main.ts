@@ -2,6 +2,7 @@ import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import cookieParser from 'cookie-parser';
 import { AppModule } from './app.module';
+import { GlobalExceptionFilter } from './common/filters';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -28,6 +29,9 @@ async function bootstrap() {
       },
     }),
   );
+
+  // Global exception filter for centralized error handling
+  app.useGlobalFilters(new GlobalExceptionFilter());
 
   // Global prefix for all routes
   app.setGlobalPrefix('api');

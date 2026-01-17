@@ -2,6 +2,7 @@ import { Injectable, NotFoundException, BadRequestException } from '@nestjs/comm
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateTransactionDto, TransactionType } from './dto/create-transaction.dto';
 import { UpdateTransactionDto } from './dto/update-transaction.dto';
+import { PaginationDto, PaginatedResult } from '../common/dto';
 
 @Injectable()
 export class TransactionsService {
@@ -54,28 +55,51 @@ export class TransactionsService {
     });
   }
 
-  async findAll() {
-    return this.prisma.transaction.findMany({
-      orderBy: {
-        date: 'desc',
-      },
-      include: {
-        items: {
-          include: {
-            inventoryItem: true,
+  async findAll(pagination?: PaginationDto): Promise<PaginatedResult<any>> {
+    const page = pagination?.page || 1;
+    const limit = pagination?.limit || 10;
+    const skip = (page - 1) * limit;
+
+    const [data, total] = await Promise.all([
+      this.prisma.transaction.findMany({
+        skip,
+        take: limit,
+        orderBy: {
+          date: pagination?.sortOrder || 'desc',
+        },
+        include: {
+          items: {
+            include: {
+              inventoryItem: true,
+            },
+          },
+          sourceWarehouse: true,
+          destinationWarehouse: true,
+          user: {
+            select: {
+              id: true,
+              email: true,
+              name: true,
+            },
           },
         },
-        sourceWarehouse: true,
-        destinationWarehouse: true,
-        user: {
-          select: {
-            id: true,
-            email: true,
-            name: true,
-          },
-        },
+      }),
+      this.prisma.transaction.count(),
+    ]);
+
+    const totalPages = Math.ceil(total / limit);
+
+    return {
+      data,
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages,
+        hasNextPage: page < totalPages,
+        hasPrevPage: page > 1,
       },
-    });
+    };
   }
 
   async findRecent(limit: number = 10) {

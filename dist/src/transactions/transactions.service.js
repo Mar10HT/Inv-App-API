@@ -55,28 +55,48 @@ let TransactionsService = class TransactionsService {
             return newTransaction;
         });
     }
-    async findAll() {
-        return this.prisma.transaction.findMany({
-            orderBy: {
-                date: 'desc',
-            },
-            include: {
-                items: {
-                    include: {
-                        inventoryItem: true,
+    async findAll(pagination) {
+        const page = pagination?.page || 1;
+        const limit = pagination?.limit || 10;
+        const skip = (page - 1) * limit;
+        const [data, total] = await Promise.all([
+            this.prisma.transaction.findMany({
+                skip,
+                take: limit,
+                orderBy: {
+                    date: pagination?.sortOrder || 'desc',
+                },
+                include: {
+                    items: {
+                        include: {
+                            inventoryItem: true,
+                        },
+                    },
+                    sourceWarehouse: true,
+                    destinationWarehouse: true,
+                    user: {
+                        select: {
+                            id: true,
+                            email: true,
+                            name: true,
+                        },
                     },
                 },
-                sourceWarehouse: true,
-                destinationWarehouse: true,
-                user: {
-                    select: {
-                        id: true,
-                        email: true,
-                        name: true,
-                    },
-                },
+            }),
+            this.prisma.transaction.count(),
+        ]);
+        const totalPages = Math.ceil(total / limit);
+        return {
+            data,
+            meta: {
+                total,
+                page,
+                limit,
+                totalPages,
+                hasNextPage: page < totalPages,
+                hasPrevPage: page > 1,
             },
-        });
+        };
     }
     async findRecent(limit = 10) {
         return this.prisma.transaction.findMany({

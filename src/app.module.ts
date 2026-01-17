@@ -14,6 +14,7 @@ import { TransactionsModule } from './transactions/transactions.module';
 import { LoansModule } from './loans/loans.module';
 import { AuthModule } from './auth/auth.module';
 import { SeedModule } from './seed/seed.module';
+import { AuditModule } from './audit/audit.module';
 
 @Module({
   imports: [
@@ -49,6 +50,7 @@ import { SeedModule } from './seed/seed.module';
     TransactionsModule,
     LoansModule,
     SeedModule,
+    AuditModule,
   ],
   controllers: [AppController],
   providers: [

@@ -33,6 +33,9 @@ export class UsersService {
 
   async findAll() {
     const users = await this.prisma.user.findMany({
+      where: {
+        deletedAt: null, // Exclude soft-deleted users
+      },
       orderBy: {
         createdAt: 'desc',
       },
@@ -101,8 +104,10 @@ export class UsersService {
 
   async remove(id: string) {
     try {
-      await this.prisma.user.delete({
+      // Soft delete: set deletedAt timestamp instead of hard delete
+      await this.prisma.user.update({
         where: { id },
+        data: { deletedAt: new Date() },
       });
     } catch (error) {
       if (error.code === 'P2025') {
@@ -110,6 +115,33 @@ export class UsersService {
       }
       throw error;
     }
+  }
+
+  async restore(id: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id },
+    });
+
+    if (!user) {
+      throw new NotFoundException(`User with ID ${id} not found`);
+    }
+
+    if (!user.deletedAt) {
+      throw new ConflictException('User is not deleted');
+    }
+
+    return this.prisma.user.update({
+      where: { id },
+      data: { deletedAt: null },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        role: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
   }
 
   // Method to find user by email (for auth)

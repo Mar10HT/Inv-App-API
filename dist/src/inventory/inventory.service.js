@@ -12,12 +12,15 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.InventoryService = void 0;
 const common_1 = require("@nestjs/common");
 const prisma_service_1 = require("../prisma/prisma.service");
+const audit_service_1 = require("../audit/audit.service");
 const paginated_response_dto_1 = require("./dto/paginated-response.dto");
 const client_1 = require("@prisma/client");
 let InventoryService = class InventoryService {
     prisma;
-    constructor(prisma) {
+    auditService;
+    constructor(prisma, auditService) {
         this.prisma = prisma;
+        this.auditService = auditService;
     }
     async create(createInventoryDto) {
         const warehouse = await this.prisma.warehouse.findUnique({
@@ -91,7 +94,7 @@ let InventoryService = class InventoryService {
                 status = client_1.InventoryStatus.IN_STOCK;
             }
         }
-        return this.prisma.inventoryItem.create({
+        const item = await this.prisma.inventoryItem.create({
             data: {
                 ...createInventoryDto,
                 itemType,
@@ -117,12 +120,22 @@ let InventoryService = class InventoryService {
                 },
             },
         });
+        await this.auditService.log({
+            action: 'CREATE',
+            entity: 'InventoryItem',
+            entityId: item.id,
+            userId: createInventoryDto.createdById,
+            changes: { after: { name: item.name, quantity: item.quantity, category: item.category } },
+        });
+        return item;
     }
     async findAll(filters) {
         const page = filters?.page || 1;
         const limit = filters?.limit || 10;
         const skip = (page - 1) * limit;
-        const where = {};
+        const where = {
+            deletedAt: null,
+        };
         if (filters?.search) {
             where.OR = [
                 { name: { contains: filters.search, mode: 'insensitive' } },
@@ -277,8 +290,35 @@ let InventoryService = class InventoryService {
     }
     async remove(id) {
         await this.findOne(id);
-        await this.prisma.inventoryItem.delete({
+        await this.prisma.inventoryItem.update({
             where: { id },
+            data: { deletedAt: new Date() },
+        });
+    }
+    async restore(id) {
+        const item = await this.prisma.inventoryItem.findUnique({
+            where: { id },
+        });
+        if (!item) {
+            throw new common_1.NotFoundException(`Inventory item with ID ${id} not found`);
+        }
+        if (!item.deletedAt) {
+            throw new common_1.BadRequestException('Item is not deleted');
+        }
+        return this.prisma.inventoryItem.update({
+            where: { id },
+            data: { deletedAt: null },
+            include: {
+                createdBy: {
+                    select: {
+                        id: true,
+                        name: true,
+                        email: true,
+                    },
+                },
+                warehouse: true,
+                supplier: true,
+            },
         });
     }
     async getStats() {
@@ -360,6 +400,7 @@ let InventoryService = class InventoryService {
 exports.InventoryService = InventoryService;
 exports.InventoryService = InventoryService = __decorate([
     (0, common_1.Injectable)(),
-    __metadata("design:paramtypes", [prisma_service_1.PrismaService])
+    __metadata("design:paramtypes", [prisma_service_1.PrismaService,
+        audit_service_1.AuditService])
 ], InventoryService);
 //# sourceMappingURL=inventory.service.js.map

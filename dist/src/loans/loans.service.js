@@ -92,11 +92,31 @@ let LoansService = class LoansService {
             include: this.loanInclude,
         });
     }
-    async findAll() {
-        return this.prisma.loan.findMany({
-            orderBy: { loanDate: 'desc' },
-            include: this.loanInclude,
-        });
+    async findAll(pagination) {
+        const page = pagination?.page || 1;
+        const limit = pagination?.limit || 10;
+        const skip = (page - 1) * limit;
+        const [data, total] = await Promise.all([
+            this.prisma.loan.findMany({
+                skip,
+                take: limit,
+                orderBy: { loanDate: pagination?.sortOrder || 'desc' },
+                include: this.loanInclude,
+            }),
+            this.prisma.loan.count(),
+        ]);
+        const totalPages = Math.ceil(total / limit);
+        return {
+            data,
+            meta: {
+                total,
+                page,
+                limit,
+                totalPages,
+                hasNextPage: page < totalPages,
+                hasPrevPage: page > 1,
+            },
+        };
     }
     async findActive() {
         return this.prisma.loan.findMany({

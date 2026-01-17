@@ -25,6 +25,7 @@ export declare class AuthService {
             role: import("@prisma/client").$Enums.UserRole;
             createdAt: Date;
             updatedAt: Date;
+            deletedAt: Date | null;
         };
     }>;
     validateUser(userId: string): Promise<{

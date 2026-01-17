@@ -11,6 +11,7 @@ export declare class UsersService {
         role: import("@prisma/client").$Enums.UserRole;
         createdAt: Date;
         updatedAt: Date;
+        deletedAt: Date | null;
     }>;
     findAll(): Promise<{
         id: string;
@@ -37,6 +38,14 @@ export declare class UsersService {
         updatedAt: Date;
     }>;
     remove(id: string): Promise<void>;
+    restore(id: string): Promise<{
+        id: string;
+        email: string;
+        name: string | null;
+        role: import("@prisma/client").$Enums.UserRole;
+        createdAt: Date;
+        updatedAt: Date;
+    }>;
     findByEmail(email: string): Promise<{
         id: string;
         email: string;
@@ -45,6 +54,7 @@ export declare class UsersService {
         role: import("@prisma/client").$Enums.UserRole;
         createdAt: Date;
         updatedAt: Date;
+        deletedAt: Date | null;
     } | null>;
     findOneWithPassword(id: string): Promise<{
         id: string;

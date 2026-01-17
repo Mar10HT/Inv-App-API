@@ -72,6 +72,9 @@ let UsersService = class UsersService {
     }
     async findAll() {
         const users = await this.prisma.user.findMany({
+            where: {
+                deletedAt: null,
+            },
             orderBy: {
                 createdAt: 'desc',
             },
@@ -131,8 +134,9 @@ let UsersService = class UsersService {
     }
     async remove(id) {
         try {
-            await this.prisma.user.delete({
+            await this.prisma.user.update({
                 where: { id },
+                data: { deletedAt: new Date() },
             });
         }
         catch (error) {
@@ -141,6 +145,29 @@ let UsersService = class UsersService {
             }
             throw error;
         }
+    }
+    async restore(id) {
+        const user = await this.prisma.user.findUnique({
+            where: { id },
+        });
+        if (!user) {
+            throw new common_1.NotFoundException(`User with ID ${id} not found`);
+        }
+        if (!user.deletedAt) {
+            throw new common_1.ConflictException('User is not deleted');
+        }
+        return this.prisma.user.update({
+            where: { id },
+            data: { deletedAt: null },
+            select: {
+                id: true,
+                email: true,
+                name: true,
+                role: true,
+                createdAt: true,
+                updatedAt: true,
+            },
+        });
     }
     async findByEmail(email) {
         return this.prisma.user.findUnique({

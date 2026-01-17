@@ -17,6 +17,7 @@ import { CreateLoanDto } from './dto/create-loan.dto';
 import { UpdateLoanDto, ReturnLoanDto } from './dto/update-loan.dto';
 import { JwtAuthGuard, RolesGuard } from '../auth/guards';
 import { Roles } from '../auth/decorators';
+import { PaginationDto } from '../common/dto';
 
 @Controller('loans')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -31,8 +32,8 @@ export class LoansController {
   }
 
   @Get()
-  findAll() {
-    return this.loansService.findAll();
+  findAll(@Query(ValidationPipe) pagination: PaginationDto) {
+    return this.loansService.findAll(pagination);
   }
 
   @Get('active')

@@ -24,6 +24,7 @@ export declare class AuthController {
             role: import("@prisma/client").$Enums.UserRole;
             createdAt: Date;
             updatedAt: Date;
+            deletedAt: Date | null;
         };
     }>;
     logout(res: ExpressResponse): Promise<{

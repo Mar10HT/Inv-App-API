@@ -52,4 +52,9 @@ export class UsersController {
   async remove(@Param('id') id: string) {
     await this.usersService.remove(id);
   }
+
+  @Patch(':id/restore')
+  restore(@Param('id') id: string) {
+    return this.usersService.restore(id);
+  }
 }

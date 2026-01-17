@@ -7,6 +7,7 @@ const core_1 = require("@nestjs/core");
 const common_1 = require("@nestjs/common");
 const cookie_parser_1 = __importDefault(require("cookie-parser"));
 const app_module_1 = require("./app.module");
+const filters_1 = require("./common/filters");
 async function bootstrap() {
     const app = await core_1.NestFactory.create(app_module_1.AppModule);
     app.use((0, cookie_parser_1.default)());
@@ -23,6 +24,7 @@ async function bootstrap() {
             enableImplicitConversion: true,
         },
     }));
+    app.useGlobalFilters(new filters_1.GlobalExceptionFilter());
     app.setGlobalPrefix('api');
     const port = process.env.PORT ?? 3000;
     await app.listen(port);

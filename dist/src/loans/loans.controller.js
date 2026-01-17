@@ -19,6 +19,7 @@ const create_loan_dto_1 = require("./dto/create-loan.dto");
 const update_loan_dto_1 = require("./dto/update-loan.dto");
 const guards_1 = require("../auth/guards");
 const decorators_1 = require("../auth/decorators");
+const dto_1 = require("../common/dto");
 let LoansController = class LoansController {
     loansService;
     constructor(loansService) {
@@ -27,8 +28,8 @@ let LoansController = class LoansController {
     create(createLoanDto) {
         return this.loansService.create(createLoanDto);
     }
-    findAll() {
-        return this.loansService.findAll();
+    findAll(pagination) {
+        return this.loansService.findAll(pagination);
     }
     findActive() {
         return this.loansService.findActive();
@@ -75,8 +76,9 @@ __decorate([
 ], LoansController.prototype, "create", null);
 __decorate([
     (0, common_1.Get)(),
+    __param(0, (0, common_1.Query)(common_1.ValidationPipe)),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", []),
+    __metadata("design:paramtypes", [dto_1.PaginationDto]),
     __metadata("design:returntype", void 0)
 ], LoansController.prototype, "findAll", null);
 __decorate([

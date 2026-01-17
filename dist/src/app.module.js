@@ -23,6 +23,7 @@ const transactions_module_1 = require("./transactions/transactions.module");
 const loans_module_1 = require("./loans/loans.module");
 const auth_module_1 = require("./auth/auth.module");
 const seed_module_1 = require("./seed/seed.module");
+const audit_module_1 = require("./audit/audit.module");
 let AppModule = class AppModule {
 };
 exports.AppModule = AppModule;
@@ -60,6 +61,7 @@ exports.AppModule = AppModule = __decorate([
             transactions_module_1.TransactionsModule,
             loans_module_1.LoansModule,
             seed_module_1.SeedModule,
+            audit_module_1.AuditModule,
         ],
         controllers: [app_controller_1.AppController],
         providers: [

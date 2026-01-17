@@ -76,4 +76,10 @@ export class InventoryController {
   async remove(@Param('id') id: string) {
     await this.inventoryService.remove(id);
   }
+
+  @Patch(':id/restore')
+  @Roles('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER')
+  restore(@Param('id') id: string) {
+    return this.inventoryService.restore(id);
+  }
 }

@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { AuditService } from '../audit/audit.service';
 import { CreateInventoryDto } from './dto/create-inventory.dto';
 import { UpdateInventoryDto } from './dto/update-inventory.dto';
 import { FilterInventoryDto } from './dto/filter-inventory.dto';
@@ -9,7 +10,10 @@ import { InventoryItem, InventoryStatus, ItemType } from '@prisma/client';
 
 @Injectable()
 export class InventoryService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private auditService: AuditService,
+  ) {}
 
   async create(createInventoryDto: CreateInventoryDto): Promise<InventoryItem> {
     // Validate warehouse exists
@@ -99,7 +103,7 @@ export class InventoryService {
       }
     }
 
-    return this.prisma.inventoryItem.create({
+    const item = await this.prisma.inventoryItem.create({
       data: {
         ...createInventoryDto,
         itemType,
@@ -125,6 +129,17 @@ export class InventoryService {
         },
       },
     });
+
+    // Log audit
+    await this.auditService.log({
+      action: 'CREATE',
+      entity: 'InventoryItem',
+      entityId: item.id,
+      userId: createInventoryDto.createdById,
+      changes: { after: { name: item.name, quantity: item.quantity, category: item.category } },
+    });
+
+    return item;
   }
 
   async findAll(filters?: FilterInventoryDto): Promise<PaginatedResponseDto<InventoryItem>> {
@@ -132,8 +147,10 @@ export class InventoryService {
     const limit = filters?.limit || 10;
     const skip = (page - 1) * limit;
 
-    // Build where clause
-    const where: any = {};
+    // Build where clause - always exclude soft-deleted items
+    const where: any = {
+      deletedAt: null,
+    };
 
     if (filters?.search) {
       where.OR = [
@@ -312,8 +329,41 @@ export class InventoryService {
     // Check if item exists
     await this.findOne(id);
 
-    await this.prisma.inventoryItem.delete({
+    // Soft delete: set deletedAt timestamp instead of hard delete
+    await this.prisma.inventoryItem.update({
       where: { id },
+      data: { deletedAt: new Date() },
+    });
+  }
+
+  async restore(id: string): Promise<InventoryItem> {
+    // Restore a soft-deleted item
+    const item = await this.prisma.inventoryItem.findUnique({
+      where: { id },
+    });
+
+    if (!item) {
+      throw new NotFoundException(`Inventory item with ID ${id} not found`);
+    }
+
+    if (!item.deletedAt) {
+      throw new BadRequestException('Item is not deleted');
+    }
+
+    return this.prisma.inventoryItem.update({
+      where: { id },
+      data: { deletedAt: null },
+      include: {
+        createdBy: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+          },
+        },
+        warehouse: true,
+        supplier: true,
+      },
     });
   }
 
