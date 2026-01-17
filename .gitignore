@@ -2,7 +2,14 @@ node_modules
 # Keep environment variables out of version control
 .env
 
+# Build output
+dist/
+
 /generated/prisma
 
 # SQLite dev migrations backup
 prisma/migrations-sqlite-backup
+
+# SQLite database
+*.db
+*.db-journal
