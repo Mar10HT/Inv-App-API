@@ -18,6 +18,8 @@ const inventory_service_1 = require("./inventory.service");
 const create_inventory_dto_1 = require("./dto/create-inventory.dto");
 const update_inventory_dto_1 = require("./dto/update-inventory.dto");
 const filter_inventory_dto_1 = require("./dto/filter-inventory.dto");
+const guards_1 = require("../auth/guards");
+const decorators_1 = require("../auth/decorators");
 let InventoryController = class InventoryController {
     inventoryService;
     constructor(inventoryService) {
@@ -55,6 +57,7 @@ exports.InventoryController = InventoryController;
 __decorate([
     (0, common_1.Post)(),
     (0, common_1.HttpCode)(common_1.HttpStatus.CREATED),
+    (0, decorators_1.Roles)('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER', 'USER'),
     __param(0, (0, common_1.Body)(common_1.ValidationPipe)),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [create_inventory_dto_1.CreateInventoryDto]),
@@ -100,6 +103,7 @@ __decorate([
 ], InventoryController.prototype, "findOne", null);
 __decorate([
     (0, common_1.Patch)(':id'),
+    (0, decorators_1.Roles)('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER', 'USER'),
     __param(0, (0, common_1.Param)('id')),
     __param(1, (0, common_1.Body)(common_1.ValidationPipe)),
     __metadata("design:type", Function),
@@ -109,6 +113,7 @@ __decorate([
 __decorate([
     (0, common_1.Delete)(':id'),
     (0, common_1.HttpCode)(common_1.HttpStatus.NO_CONTENT),
+    (0, decorators_1.Roles)('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER'),
     __param(0, (0, common_1.Param)('id')),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [String]),
@@ -116,6 +121,7 @@ __decorate([
 ], InventoryController.prototype, "remove", null);
 exports.InventoryController = InventoryController = __decorate([
     (0, common_1.Controller)('inventory'),
+    (0, common_1.UseGuards)(guards_1.JwtAuthGuard, guards_1.RolesGuard),
     __metadata("design:paramtypes", [inventory_service_1.InventoryService])
 ], InventoryController);
 //# sourceMappingURL=inventory.controller.js.map

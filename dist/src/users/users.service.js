@@ -147,6 +147,26 @@ let UsersService = class UsersService {
             where: { email },
         });
     }
+    async findOneWithPassword(id) {
+        return this.prisma.user.findUnique({
+            where: { id },
+            select: {
+                id: true,
+                email: true,
+                password: true,
+            },
+        });
+    }
+    async updatePassword(id, hashedPassword) {
+        return this.prisma.user.update({
+            where: { id },
+            data: { password: hashedPassword },
+            select: {
+                id: true,
+                email: true,
+            },
+        });
+    }
 };
 exports.UsersService = UsersService;
 exports.UsersService = UsersService = __decorate([

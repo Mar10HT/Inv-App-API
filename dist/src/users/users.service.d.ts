@@ -46,4 +46,13 @@ export declare class UsersService {
         createdAt: Date;
         updatedAt: Date;
     } | null>;
+    findOneWithPassword(id: string): Promise<{
+        id: string;
+        email: string;
+        password: string;
+    } | null>;
+    updatePassword(id: string, hashedPassword: string): Promise<{
+        id: string;
+        email: string;
+    }>;
 }

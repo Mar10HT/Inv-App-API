@@ -25,10 +25,16 @@ exports.AuthModule = AuthModule = __decorate([
             passport_1.PassportModule,
             jwt_1.JwtModule.registerAsync({
                 imports: [config_1.ConfigModule],
-                useFactory: async (configService) => ({
-                    secret: configService.get('JWT_SECRET') || 'your-secret-key-change-in-production',
-                    signOptions: { expiresIn: '7d' },
-                }),
+                useFactory: async (configService) => {
+                    const secret = configService.get('JWT_SECRET');
+                    if (!secret) {
+                        throw new Error('JWT_SECRET environment variable is not set. Please configure it in your .env file.');
+                    }
+                    return {
+                        secret,
+                        signOptions: { expiresIn: (configService.get('JWT_EXPIRES_IN') || '7d') },
+                    };
+                },
                 inject: [config_1.ConfigService],
             }),
         ],

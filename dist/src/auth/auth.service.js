@@ -95,6 +95,23 @@ let AuthService = class AuthService {
     async validateUser(userId) {
         return this.usersService.findOne(userId);
     }
+    async changePassword(userId, changePasswordDto) {
+        const user = await this.usersService.findOneWithPassword(userId);
+        if (!user) {
+            throw new common_1.UnauthorizedException('User not found');
+        }
+        const isCurrentPasswordValid = await bcrypt.compare(changePasswordDto.currentPassword, user.password);
+        if (!isCurrentPasswordValid) {
+            throw new common_1.BadRequestException('Current password is incorrect');
+        }
+        const isSamePassword = await bcrypt.compare(changePasswordDto.newPassword, user.password);
+        if (isSamePassword) {
+            throw new common_1.BadRequestException('New password must be different from current password');
+        }
+        const hashedPassword = await bcrypt.hash(changePasswordDto.newPassword, 10);
+        await this.usersService.updatePassword(userId, hashedPassword);
+        return { message: 'Password changed successfully' };
+    }
 };
 exports.AuthService = AuthService;
 exports.AuthService = AuthService = __decorate([

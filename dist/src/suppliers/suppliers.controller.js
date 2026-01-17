@@ -17,6 +17,8 @@ const common_1 = require("@nestjs/common");
 const suppliers_service_1 = require("./suppliers.service");
 const create_supplier_dto_1 = require("./dto/create-supplier.dto");
 const update_supplier_dto_1 = require("./dto/update-supplier.dto");
+const guards_1 = require("../auth/guards");
+const decorators_1 = require("../auth/decorators");
 let SuppliersController = class SuppliersController {
     suppliersService;
     constructor(suppliersService) {
@@ -42,6 +44,7 @@ exports.SuppliersController = SuppliersController;
 __decorate([
     (0, common_1.Post)(),
     (0, common_1.HttpCode)(common_1.HttpStatus.CREATED),
+    (0, decorators_1.Roles)('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER'),
     __param(0, (0, common_1.Body)(common_1.ValidationPipe)),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [create_supplier_dto_1.CreateSupplierDto]),
@@ -62,6 +65,7 @@ __decorate([
 ], SuppliersController.prototype, "findOne", null);
 __decorate([
     (0, common_1.Patch)(':id'),
+    (0, decorators_1.Roles)('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER'),
     __param(0, (0, common_1.Param)('id')),
     __param(1, (0, common_1.Body)(common_1.ValidationPipe)),
     __metadata("design:type", Function),
@@ -71,6 +75,7 @@ __decorate([
 __decorate([
     (0, common_1.Delete)(':id'),
     (0, common_1.HttpCode)(common_1.HttpStatus.NO_CONTENT),
+    (0, decorators_1.Roles)('SYSTEM_ADMIN'),
     __param(0, (0, common_1.Param)('id')),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [String]),
@@ -78,6 +83,7 @@ __decorate([
 ], SuppliersController.prototype, "remove", null);
 exports.SuppliersController = SuppliersController = __decorate([
     (0, common_1.Controller)('suppliers'),
+    (0, common_1.UseGuards)(guards_1.JwtAuthGuard, guards_1.RolesGuard),
     __metadata("design:paramtypes", [suppliers_service_1.SuppliersService])
 ], SuppliersController);
 //# sourceMappingURL=suppliers.controller.js.map

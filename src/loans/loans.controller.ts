@@ -10,17 +10,22 @@ import {
   HttpStatus,
   ValidationPipe,
   Query,
+  UseGuards,
 } from '@nestjs/common';
 import { LoansService } from './loans.service';
 import { CreateLoanDto } from './dto/create-loan.dto';
 import { UpdateLoanDto, ReturnLoanDto } from './dto/update-loan.dto';
+import { JwtAuthGuard, RolesGuard } from '../auth/guards';
+import { Roles } from '../auth/decorators';
 
 @Controller('loans')
+@UseGuards(JwtAuthGuard, RolesGuard)
 export class LoansController {
   constructor(private readonly loansService: LoansService) {}
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
+  @Roles('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER', 'USER')
   create(@Body(ValidationPipe) createLoanDto: CreateLoanDto) {
     return this.loansService.create(createLoanDto);
   }
@@ -62,6 +67,7 @@ export class LoansController {
   }
 
   @Patch(':id')
+  @Roles('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER')
   update(
     @Param('id') id: string,
     @Body(ValidationPipe) updateLoanDto: UpdateLoanDto,
@@ -70,6 +76,7 @@ export class LoansController {
   }
 
   @Patch(':id/return')
+  @Roles('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER', 'USER')
   returnLoan(
     @Param('id') id: string,
     @Body(ValidationPipe) returnLoanDto: ReturnLoanDto,
@@ -79,11 +86,13 @@ export class LoansController {
 
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
+  @Roles('SYSTEM_ADMIN')
   async remove(@Param('id') id: string) {
     await this.loansService.remove(id);
   }
 
   @Post('check-overdue')
+  @Roles('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER')
   async checkOverdueLoans() {
     await this.loansService.checkOverdueLoans();
     return { message: 'Overdue loans checked and updated' };

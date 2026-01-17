@@ -118,4 +118,28 @@ export class UsersService {
       where: { email },
     });
   }
+
+  // Method to find user with password (for password change)
+  async findOneWithPassword(id: string) {
+    return this.prisma.user.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        email: true,
+        password: true,
+      },
+    });
+  }
+
+  // Method to update password only
+  async updatePassword(id: string, hashedPassword: string) {
+    return this.prisma.user.update({
+      where: { id },
+      data: { password: hashedPassword },
+      select: {
+        id: true,
+        email: true,
+      },
+    });
+  }
 }

@@ -17,6 +17,8 @@ const common_1 = require("@nestjs/common");
 const loans_service_1 = require("./loans.service");
 const create_loan_dto_1 = require("./dto/create-loan.dto");
 const update_loan_dto_1 = require("./dto/update-loan.dto");
+const guards_1 = require("../auth/guards");
+const decorators_1 = require("../auth/decorators");
 let LoansController = class LoansController {
     loansService;
     constructor(loansService) {
@@ -65,6 +67,7 @@ exports.LoansController = LoansController;
 __decorate([
     (0, common_1.Post)(),
     (0, common_1.HttpCode)(common_1.HttpStatus.CREATED),
+    (0, decorators_1.Roles)('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER', 'USER'),
     __param(0, (0, common_1.Body)(common_1.ValidationPipe)),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [create_loan_dto_1.CreateLoanDto]),
@@ -118,6 +121,7 @@ __decorate([
 ], LoansController.prototype, "findOne", null);
 __decorate([
     (0, common_1.Patch)(':id'),
+    (0, decorators_1.Roles)('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER'),
     __param(0, (0, common_1.Param)('id')),
     __param(1, (0, common_1.Body)(common_1.ValidationPipe)),
     __metadata("design:type", Function),
@@ -126,6 +130,7 @@ __decorate([
 ], LoansController.prototype, "update", null);
 __decorate([
     (0, common_1.Patch)(':id/return'),
+    (0, decorators_1.Roles)('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER', 'USER'),
     __param(0, (0, common_1.Param)('id')),
     __param(1, (0, common_1.Body)(common_1.ValidationPipe)),
     __metadata("design:type", Function),
@@ -135,6 +140,7 @@ __decorate([
 __decorate([
     (0, common_1.Delete)(':id'),
     (0, common_1.HttpCode)(common_1.HttpStatus.NO_CONTENT),
+    (0, decorators_1.Roles)('SYSTEM_ADMIN'),
     __param(0, (0, common_1.Param)('id')),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [String]),
@@ -142,12 +148,14 @@ __decorate([
 ], LoansController.prototype, "remove", null);
 __decorate([
     (0, common_1.Post)('check-overdue'),
+    (0, decorators_1.Roles)('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER'),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", []),
     __metadata("design:returntype", Promise)
 ], LoansController.prototype, "checkOverdueLoans", null);
 exports.LoansController = LoansController = __decorate([
     (0, common_1.Controller)('loans'),
+    (0, common_1.UseGuards)(guards_1.JwtAuthGuard, guards_1.RolesGuard),
     __metadata("design:paramtypes", [loans_service_1.LoansService])
 ], LoansController);
 //# sourceMappingURL=loans.controller.js.map
