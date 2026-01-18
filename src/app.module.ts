@@ -15,6 +15,7 @@ import { LoansModule } from './loans/loans.module';
 import { AuthModule } from './auth/auth.module';
 import { SeedModule } from './seed/seed.module';
 import { AuditModule } from './audit/audit.module';
+import { HealthModule } from './health/health.module';
 
 @Module({
   imports: [
@@ -42,6 +43,7 @@ import { AuditModule } from './audit/audit.module';
     ]),
     PrismaModule,
     AuthModule,
+    HealthModule,
     InventoryModule,
     WarehousesModule,
     SuppliersModule,
