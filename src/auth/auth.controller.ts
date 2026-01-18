@@ -10,11 +10,13 @@ import {
   Request,
   Response,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import type { Response as ExpressResponse } from 'express';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
+import { UpdateProfileDto } from './dto/update-profile.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 
 @Controller('auth')
@@ -23,6 +25,7 @@ export class AuthController {
 
   @Post('login')
   @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: 5, ttl: 60000 } }) // 5 attempts per minute
   async login(
     @Body(ValidationPipe) loginDto: LoginDto,
     @Response({ passthrough: true }) res: ExpressResponse,
@@ -42,6 +45,7 @@ export class AuthController {
 
   @Post('register')
   @HttpCode(HttpStatus.CREATED)
+  @Throttle({ default: { limit: 3, ttl: 60000 } }) // 3 attempts per minute
   async register(
     @Body(ValidationPipe) registerDto: RegisterDto,
     @Response({ passthrough: true }) res: ExpressResponse,
@@ -77,6 +81,16 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   async getProfile(@Request() req) {
     return this.authService.validateUser(req.user.userId);
+  }
+
+  @Post('profile')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard)
+  async updateProfile(
+    @Request() req,
+    @Body(ValidationPipe) updateProfileDto: UpdateProfileDto,
+  ) {
+    return this.authService.updateProfile(req.user.userId, updateProfileDto);
   }
 
   @Post('change-password')

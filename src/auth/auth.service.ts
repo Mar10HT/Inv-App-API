@@ -4,6 +4,7 @@ import { UsersService } from '../users/users.service';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
+import { UpdateProfileDto } from './dto/update-profile.dto';
 import * as bcrypt from 'bcrypt';
 import { UserRole } from '@prisma/client';
 
@@ -66,6 +67,32 @@ export class AuthService {
 
   async validateUser(userId: string) {
     return this.usersService.findOne(userId);
+  }
+
+  async updateProfile(userId: string, updateProfileDto: UpdateProfileDto) {
+    // Check if email is already in use by another user
+    if (updateProfileDto.email) {
+      const existingUser = await this.usersService.findByEmail(updateProfileDto.email);
+      if (existingUser && existingUser.id !== userId) {
+        throw new ConflictException('Email is already in use');
+      }
+    }
+
+    // Update user profile
+    const updatedUser = await this.usersService.update(userId, {
+      name: updateProfileDto.name,
+      email: updateProfileDto.email,
+    });
+
+    return {
+      message: 'Profile updated successfully',
+      user: {
+        id: updatedUser.id,
+        email: updatedUser.email,
+        name: updatedUser.name,
+        role: updatedUser.role,
+      },
+    };
   }
 
   async changePassword(userId: string, changePasswordDto: ChangePasswordDto) {
