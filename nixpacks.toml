@@ -4,7 +4,7 @@ nixPkgs = ["nodejs_20", "openssl"]
 [phases.install]
 dependsOn = ["setup"]
 cmds = [
-  "npm ci --prefer-offline --no-audit"
+  "npm ci --prefer-offline --no-audit --legacy-peer-deps"
 ]
 cacheDirectories = ["node_modules"]
 
