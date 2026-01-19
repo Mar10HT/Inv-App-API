@@ -4,20 +4,15 @@ nixPkgs = ["nodejs_20", "openssl"]
 [phases.install]
 dependsOn = ["setup"]
 cmds = [
-  "npm ci --prefer-offline --no-audit --legacy-peer-deps"
+  "npm ci --prefer-offline --no-audit --legacy-peer-deps",
+  "npx prisma generate --schema=./prisma/schema.prod.prisma"
 ]
 cacheDirectories = ["node_modules"]
 
 [phases.build]
 dependsOn = ["install"]
 cmds = [
-  "npm run prisma:generate:prod",
   "npm run build"
-]
-cacheDirectories = [
-  "node_modules/.cache",
-  ".swc",
-  "dist"
 ]
 
 [build]
