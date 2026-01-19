@@ -11,7 +11,7 @@ cacheDirectories = ["node_modules"]
 [phases.build]
 dependsOn = ["install"]
 cmds = [
-  "npx prisma generate --schema=./prisma/schema.prod.prisma",
+  "node_modules/.bin/prisma generate --schema=./prisma/schema.prod.prisma",
   "npm run build"
 ]
 cacheDirectories = [
