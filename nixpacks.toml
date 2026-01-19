@@ -1,22 +1,16 @@
 [phases.setup]
 nixPkgs = ["nodejs_20", "openssl"]
 
+[phases.setup]
+nixPkgs = ["nodejs_20", "openssl"]
+
 [phases.install]
 dependsOn = ["setup"]
 cmds = [
   "npm ci --prefer-offline --no-audit --legacy-peer-deps",
-  "npx prisma generate --schema=./prisma/schema.prod.prisma"
-]
-cacheDirectories = ["node_modules"]
-
-[phases.build]
-dependsOn = ["install"]
-cmds = [
+  "npx prisma generate --schema=./prisma/schema.prod.prisma",
   "npm run build"
 ]
-
-[build]
-timeout = 600
 
 [start]
 cmd = "npm run start"
