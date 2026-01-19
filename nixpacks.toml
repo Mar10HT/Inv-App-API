@@ -4,9 +4,9 @@ nixPkgs = ["nodejs_20", "openssl"]
 [phases.install]
 dependsOn = ["setup"]
 cmds = [
-  "bun install --frozen-lockfile"
+  "npm ci --prefer-offline --no-audit"
 ]
-cacheDirectories = ["/root/.bun/install/cache"]
+cacheDirectories = ["node_modules"]
 
 [phases.build]
 dependsOn = ["install"]
