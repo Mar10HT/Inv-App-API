@@ -1,0 +1,15 @@
+# Bun configuration for production builds
+
+[install]
+# Cache configuration
+cache = true
+globalCache = true
+
+# Optimization
+production = false  # Set to true to skip devDependencies (but we need @swc for build)
+optional = false
+dev = true
+
+[install.lockfile]
+# Lockfile settings
+save = true

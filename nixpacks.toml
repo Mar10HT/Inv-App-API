@@ -1,0 +1,27 @@
+[phases.setup]
+nixPkgs = ["nodejs_20", "openssl"]
+
+[phases.install]
+dependsOn = ["setup"]
+cmds = [
+  "bun install --frozen-lockfile"
+]
+cacheDirectories = ["/root/.bun/install/cache"]
+
+[phases.build]
+dependsOn = ["install"]
+cmds = [
+  "npx prisma generate --schema=./prisma/schema.prod.prisma",
+  "npm run build"
+]
+cacheDirectories = [
+  "node_modules/.cache",
+  ".swc",
+  "dist"
+]
+
+[build]
+timeout = 600
+
+[start]
+cmd = "npm run start"
