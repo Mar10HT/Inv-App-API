@@ -5,6 +5,7 @@ import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { PrismaModule } from './prisma/prisma.module';
+import { CsrfModule } from './csrf/csrf.module';
 import { InventoryModule } from './inventory/inventory.module';
 import { WarehousesModule } from './warehouses/warehouses.module';
 import { SuppliersModule } from './suppliers/suppliers.module';
@@ -42,6 +43,7 @@ import { HealthModule } from './health/health.module';
       },
     ]),
     PrismaModule,
+    CsrfModule, // Global CSRF protection
     AuthModule,
     HealthModule,
     InventoryModule,

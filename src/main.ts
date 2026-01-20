@@ -3,6 +3,7 @@ import { ValidationPipe } from '@nestjs/common';
 import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
+import { CsrfService } from './csrf/csrf.service';
 import { GlobalExceptionFilter } from './common/filters';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 
@@ -24,8 +25,12 @@ async function bootstrap() {
     }),
   );
 
-  // Cookie parser middleware
+  // Cookie parser middleware (must be before CSRF)
   app.use(cookieParser());
+
+  // Get CSRF service and apply middleware globally
+  const csrfService = app.get(CsrfService);
+  app.use(csrfService.getProtectionMiddleware());
 
   // Enable CORS
   const corsOrigin = process.env.CORS_ORIGIN || 'http://localhost:4200';

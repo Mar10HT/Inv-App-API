@@ -9,10 +9,12 @@ import {
   UseGuards,
   Request,
   Response,
+  Req,
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
-import type { Response as ExpressResponse } from 'express';
+import type { Request as ExpressRequest, Response as ExpressResponse } from 'express';
 import { AuthService } from './auth.service';
+import { CsrfService } from '../csrf/csrf.service';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
@@ -21,7 +23,19 @@ import { JwtAuthGuard } from './guards/jwt-auth.guard';
 
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(
+    private readonly authService: AuthService,
+    private readonly csrfService: CsrfService,
+  ) {}
+
+  @Get('csrf-token')
+  @HttpCode(HttpStatus.OK)
+  getCsrfToken(@Req() req: ExpressRequest, @Response({ passthrough: true }) res: ExpressResponse) {
+    // Generate and return CSRF token using CsrfService
+    // This will set the HttpOnly cookie and return the token for the X-CSRF-Token header
+    const token = this.csrfService.generateToken(req, res);
+    return { csrfToken: token };
+  }
 
   @Post('login')
   @HttpCode(HttpStatus.OK)

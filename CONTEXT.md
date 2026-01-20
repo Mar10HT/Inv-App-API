@@ -1,13 +1,13 @@
-# Contexto del Proyecto - INV-APP API
+# Project Context - INV-APP API
 
-> **Lee este archivo al inicio de cada sesión de terminal**
+> **Read this file at the start of each terminal session**
 
 ---
 
-## Arquitectura
+## Architecture
 
-| Componente | Tecnología | Entorno |
-|------------|------------|---------|
+| Component | Technology | Environment |
+|-----------|------------|-------------|
 | **Frontend** | Angular 19 | Vercel |
 | **Backend** | NestJS + Prisma | Railway |
 | **DB Dev** | SQLite | Local (`prisma/dev.db`) |
@@ -15,37 +15,37 @@
 
 ---
 
-## Schemas de Prisma
+## Prisma Schemas
 
 ```
 prisma/
-├── schema.prisma       # SQLite (desarrollo local)
-├── schema.prod.prisma  # PostgreSQL (producción)
-└── migrations/         # Solo para PostgreSQL
+├── schema.prisma       # SQLite (local development)
+├── schema.prod.prisma  # PostgreSQL (production)
+└── migrations/         # PostgreSQL only
 ```
 
-### Regla importante
-Cuando modifiques el schema, **debes actualizar AMBOS archivos**:
-1. `schema.prisma` - para desarrollo local
-2. `schema.prod.prisma` - para producción
+### Important Rule
+When you modify the schema, **you MUST update BOTH files**:
+1. `schema.prisma` - for local development
+2. `schema.prod.prisma` - for production
 
 ---
 
-## Migraciones
+## Migrations
 
-**Desarrollo (SQLite):** No usa migraciones, usa `prisma db push`
+**Development (SQLite):** Does not use migrations, uses `prisma db push`
 ```bash
 npx prisma db push
 ```
 
-**Producción (PostgreSQL):** Usa migraciones
+**Production (PostgreSQL):** Uses migrations
 ```bash
-# Crear migración manualmente (no tienes PostgreSQL local)
-# 1. Crea carpeta: prisma/migrations/YYYYMMDDHHMMSS_nombre/
-# 2. Crea archivo: migration.sql con el SQL necesario
+# Create migration manually (you don't have local PostgreSQL)
+# 1. Create folder: prisma/migrations/YYYYMMDDHHMMSS_name/
+# 2. Create file: migration.sql with the required SQL
 ```
 
-### Formato de migración
+### Migration Format
 ```
 prisma/migrations/
 └── 20260113000000_add_color_to_categories/
@@ -54,30 +54,30 @@ prisma/migrations/
 
 ---
 
-## Comandos útiles
+## Useful Commands
 
-### Desarrollo local
+### Local Development
 ```bash
-# Sincronizar schema con SQLite
+# Sync schema with SQLite
 npx prisma db push
 
-# Generar cliente Prisma
+# Generate Prisma client
 npx prisma generate
 
-# Ver datos
+# View data
 npx prisma studio
 
-# Ejecutar seed
+# Run seed
 npm run seed
 ```
 
-### Para producción (sin PostgreSQL local)
+### For Production (without local PostgreSQL)
 ```bash
-# Generar cliente para prod
+# Generate client for prod
 npm run prisma:generate:prod
 
-# Las migraciones se aplican automáticamente en Railway
-# Ver: railway.json -> startCommand
+# Migrations are applied automatically on Railway
+# See: railway.json -> startCommand
 ```
 
 ---
@@ -86,42 +86,42 @@ npm run prisma:generate:prod
 
 ### Railway (Backend)
 - **Build:** `bun install && prisma generate --schema=./prisma/schema.prod.prisma && npm run build`
-- **Start:** `npm run start` (ejecuta migraciones y arranca)
+- **Start:** `npm run start` (runs migrations and starts)
 
 ### Vercel (Frontend)
-- Se configura en `Inv-App/vercel.json`
+- Configured in `Inv-App/vercel.json`
 
 ---
 
-## Flujo para cambios en base de datos
+## Workflow for Database Changes
 
-1. Modificar `prisma/schema.prisma` (SQLite)
-2. Ejecutar `npx prisma db push` para probar localmente
-3. Copiar cambios a `prisma/schema.prod.prisma`
-4. Crear migración manual en `prisma/migrations/`
-5. Commit y push → Railway aplica migraciones automáticamente
+1. Modify `prisma/schema.prisma` (SQLite)
+2. Run `npx prisma db push` to test locally
+3. Copy changes to `prisma/schema.prod.prisma`
+4. Create manual migration in `prisma/migrations/`
+5. Commit and push → Railway applies migrations automatically
 
 ---
 
-## Pendientes actuales
+## Current Pending Tasks
 
-- [ ] Error handling y feedback al usuario
-- [ ] Pruebas de persistencia
-- [ ] Charts con ng-apexcharts
-- [ ] Exportar reportes (PDF, Excel)
-- [ ] Tests unitarios y e2e
+- [ ] Error handling and user feedback
+- [ ] Persistence testing
+- [ ] Charts with ng-apexcharts
+- [ ] Export reports (PDF, Excel)
+- [ ] Unit and e2e tests
 
 ---
 
 ## URLs
 
-| Servicio | URL |
-|----------|-----|
-| API Prod | https://[tu-app].up.railway.app |
-| Frontend Prod | https://[tu-app].vercel.app |
+| Service | URL |
+|---------|-----|
+| API Prod | https://[your-app].up.railway.app |
+| Frontend Prod | https://[your-app].vercel.app |
 | Railway Dashboard | https://railway.app/dashboard |
 | Vercel Dashboard | https://vercel.com/dashboard |
 
 ---
 
-*Última actualización: 2026-01-13*
+*Last updated: 2026-01-19*
