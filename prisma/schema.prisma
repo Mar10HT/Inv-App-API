@@ -28,6 +28,14 @@ model User {
   transactions     Transaction[]
   loans            Loan[]
 
+  // Transfer Request relations
+  requestedTransfers  TransferRequest[]   @relation("RequestedTransfers")
+  approvedTransfers   TransferRequest[]   @relation("ApprovedTransfers")
+
+  // Stock Take relations
+  startedStockTakes   StockTake[]         @relation("StartedStockTakes")
+  completedStockTakes StockTake[]         @relation("CompletedStockTakes")
+
   @@index([deletedAt])
   @@map("users")
 }
@@ -56,6 +64,13 @@ model Warehouse {
   destinationTransactions Transaction[]    @relation("DestinationTransactions")
   sourceLoans             Loan[]           @relation("SourceLoans")
   destinationLoans        Loan[]           @relation("DestinationLoans")
+
+  // Transfer Request relations
+  sourceTransferRequests      TransferRequest[] @relation("SourceTransferRequests")
+  destinationTransferRequests TransferRequest[] @relation("DestinationTransferRequests")
+
+  // Stock Take relation
+  stockTakes              StockTake[]
 
   @@map("warehouses")
 }
@@ -103,6 +118,11 @@ model InventoryItem {
   auditLogs         AuditLog[]
   transactionItems  TransactionItem[]
   loans             Loan[]
+
+  // New relations for Phase 3
+  stockAlerts            StockAlert[]
+  transferRequestItems   TransferRequestItem[]
+  stockTakeItems         StockTakeItem[]
 
   @@index([category])
   @@index([status])
@@ -254,4 +274,136 @@ enum LoanStatus {
   ACTIVE
   OVERDUE
   RETURNED
+}
+
+// Stock Alert model for low stock notifications
+model StockAlert {
+  id            String      @id @default(cuid())
+  itemId        String
+  type          AlertType
+  threshold     Int         // The minQuantity threshold
+  currentQty    Int         // Quantity when alert was created
+  notified      Boolean     @default(false)
+  notifiedAt    DateTime?
+  resolvedAt    DateTime?   // When stock was replenished
+  createdAt     DateTime    @default(now())
+
+  // Relations
+  item          InventoryItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@index([itemId])
+  @@index([type])
+  @@index([notified])
+  @@index([createdAt])
+  @@map("stock_alerts")
+}
+
+enum AlertType {
+  LOW_STOCK
+  OUT_OF_STOCK
+  EXPIRING_SOON
+}
+
+// Transfer Request model for approval workflow
+model TransferRequest {
+  id                     String        @id @default(cuid())
+  status                 RequestStatus @default(PENDING)
+  sourceWarehouseId      String
+  destinationWarehouseId String
+  requestedById          String
+  approvedById           String?
+  approvedAt             DateTime?
+  rejectedAt             DateTime?
+  rejectedReason         String?
+  notes                  String?
+  createdAt              DateTime      @default(now())
+  updatedAt              DateTime      @updatedAt
+
+  // Relations
+  sourceWarehouse      Warehouse              @relation("SourceTransferRequests", fields: [sourceWarehouseId], references: [id])
+  destinationWarehouse Warehouse              @relation("DestinationTransferRequests", fields: [destinationWarehouseId], references: [id])
+  requestedBy          User                   @relation("RequestedTransfers", fields: [requestedById], references: [id])
+  approvedBy           User?                  @relation("ApprovedTransfers", fields: [approvedById], references: [id])
+  items                TransferRequestItem[]
+
+  @@index([status])
+  @@index([sourceWarehouseId])
+  @@index([destinationWarehouseId])
+  @@index([requestedById])
+  @@index([createdAt])
+  @@map("transfer_requests")
+}
+
+model TransferRequestItem {
+  id                String          @id @default(cuid())
+  transferRequestId String
+  inventoryItemId   String
+  quantity          Int
+
+  // Relations
+  transferRequest TransferRequest @relation(fields: [transferRequestId], references: [id], onDelete: Cascade)
+  inventoryItem   InventoryItem   @relation(fields: [inventoryItemId], references: [id])
+
+  @@index([transferRequestId])
+  @@index([inventoryItemId])
+  @@map("transfer_request_items")
+}
+
+enum RequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  COMPLETED
+  CANCELLED
+}
+
+// Stock Take model for inventory reconciliation
+model StockTake {
+  id            String          @id @default(cuid())
+  warehouseId   String
+  status        StockTakeStatus @default(IN_PROGRESS)
+  startedAt     DateTime        @default(now())
+  completedAt   DateTime?
+  startedById   String
+  completedById String?
+  notes         String?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  // Relations
+  warehouse     Warehouse       @relation(fields: [warehouseId], references: [id])
+  startedBy     User            @relation("StartedStockTakes", fields: [startedById], references: [id])
+  completedBy   User?           @relation("CompletedStockTakes", fields: [completedById], references: [id])
+  items         StockTakeItem[]
+
+  @@index([warehouseId])
+  @@index([status])
+  @@index([startedAt])
+  @@map("stock_takes")
+}
+
+model StockTakeItem {
+  id            String     @id @default(cuid())
+  stockTakeId   String
+  itemId        String
+  expectedQty   Int        // System quantity
+  countedQty    Int?       // Physical count
+  variance      Int?       // Difference (countedQty - expectedQty)
+  notes         String?
+  countedAt     DateTime?
+  createdAt     DateTime   @default(now())
+
+  // Relations
+  stockTake     StockTake     @relation(fields: [stockTakeId], references: [id], onDelete: Cascade)
+  item          InventoryItem @relation(fields: [itemId], references: [id])
+
+  @@index([stockTakeId])
+  @@index([itemId])
+  @@map("stock_take_items")
+}
+
+enum StockTakeStatus {
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
 }

@@ -6,6 +6,12 @@ import { UpdateInventoryDto } from './dto/update-inventory.dto';
 import { FilterInventoryDto } from './dto/filter-inventory.dto';
 import { PaginatedResponseDto } from './dto/paginated-response.dto';
 import { StatsResponseDto } from './dto/stats-response.dto';
+import {
+  BulkUpdateDto,
+  BulkDeleteDto,
+  BulkImportDto,
+  BulkOperationResultDto,
+} from './dto/bulk-operations.dto';
 import { InventoryItem, InventoryStatus, ItemType } from '@prisma/client';
 
 @Injectable()
@@ -456,5 +462,356 @@ export class InventoryService {
       select: { name: true },
     });
     return warehouses.map(w => w.name);
+  }
+
+  // Bulk Operations
+
+  async bulkUpdate(dto: BulkUpdateDto, userId?: string): Promise<BulkOperationResultDto> {
+    const result: BulkOperationResultDto = {
+      success: 0,
+      failed: 0,
+      errors: [],
+      updatedIds: [],
+    };
+
+    for (let i = 0; i < dto.items.length; i++) {
+      const item = dto.items[i];
+      try {
+        // Check if item exists
+        const existing = await this.prisma.inventoryItem.findUnique({
+          where: { id: item.id },
+        });
+
+        if (!existing) {
+          result.failed++;
+          result.errors.push({
+            index: i,
+            id: item.id,
+            error: `Item with ID ${item.id} not found`,
+          });
+          continue;
+        }
+
+        // Check SKU conflict
+        if (item.warehouseId) {
+          const warehouse = await this.prisma.warehouse.findUnique({
+            where: { id: item.warehouseId },
+          });
+          if (!warehouse) {
+            result.failed++;
+            result.errors.push({
+              index: i,
+              id: item.id,
+              error: `Warehouse with ID ${item.warehouseId} not found`,
+            });
+            continue;
+          }
+        }
+
+        // Auto-update status if quantity is being updated
+        let status = item.status;
+        if (item.quantity !== undefined && !status) {
+          const minQty = item.minQuantity || existing.minQuantity;
+          if (item.quantity === 0) {
+            status = InventoryStatus.OUT_OF_STOCK;
+          } else if (item.quantity <= minQty) {
+            status = InventoryStatus.LOW_STOCK;
+          } else {
+            status = InventoryStatus.IN_STOCK;
+          }
+        }
+
+        // Remove id from update data
+        const { id, ...updateData } = item;
+
+        await this.prisma.inventoryItem.update({
+          where: { id: item.id },
+          data: {
+            ...updateData,
+            ...(status && { status }),
+          },
+        });
+
+        // Log audit
+        await this.auditService.log({
+          action: 'UPDATE',
+          entity: 'InventoryItem',
+          entityId: item.id,
+          userId,
+          changes: { bulk: true, fields: Object.keys(updateData) },
+        });
+
+        result.success++;
+        result.updatedIds!.push(item.id);
+      } catch (error) {
+        result.failed++;
+        result.errors.push({
+          index: i,
+          id: item.id,
+          error: error.message || 'Unknown error',
+        });
+      }
+    }
+
+    return result;
+  }
+
+  async bulkDelete(dto: BulkDeleteDto, userId?: string): Promise<BulkOperationResultDto> {
+    const result: BulkOperationResultDto = {
+      success: 0,
+      failed: 0,
+      errors: [],
+      deletedIds: [],
+    };
+
+    for (let i = 0; i < dto.ids.length; i++) {
+      const id = dto.ids[i];
+      try {
+        // Check if item exists
+        const existing = await this.prisma.inventoryItem.findUnique({
+          where: { id },
+        });
+
+        if (!existing) {
+          result.failed++;
+          result.errors.push({
+            index: i,
+            id,
+            error: `Item with ID ${id} not found`,
+          });
+          continue;
+        }
+
+        // Soft delete
+        await this.prisma.inventoryItem.update({
+          where: { id },
+          data: { deletedAt: new Date() },
+        });
+
+        // Log audit
+        await this.auditService.log({
+          action: 'DELETE',
+          entity: 'InventoryItem',
+          entityId: id,
+          userId,
+          changes: { bulk: true, reason: dto.reason },
+        });
+
+        result.success++;
+        result.deletedIds!.push(id);
+      } catch (error) {
+        result.failed++;
+        result.errors.push({
+          index: i,
+          id,
+          error: error.message || 'Unknown error',
+        });
+      }
+    }
+
+    return result;
+  }
+
+  async bulkImport(dto: BulkImportDto): Promise<BulkOperationResultDto> {
+    const result: BulkOperationResultDto = {
+      success: 0,
+      failed: 0,
+      errors: [],
+      createdIds: [],
+    };
+
+    for (let i = 0; i < dto.items.length; i++) {
+      const item = dto.items[i];
+      try {
+        // Validate warehouse exists
+        const warehouse = await this.prisma.warehouse.findUnique({
+          where: { id: item.warehouseId },
+        });
+        if (!warehouse) {
+          result.failed++;
+          result.errors.push({
+            index: i,
+            error: `Warehouse with ID ${item.warehouseId} not found`,
+          });
+          continue;
+        }
+
+        // Check if SKU already exists
+        if (item.sku) {
+          const existing = await this.prisma.inventoryItem.findUnique({
+            where: { sku: item.sku },
+          });
+          if (existing) {
+            result.failed++;
+            result.errors.push({
+              index: i,
+              error: `Item with SKU ${item.sku} already exists`,
+            });
+            continue;
+          }
+        }
+
+        // Check if serviceTag already exists
+        if (item.serviceTag) {
+          const existing = await this.prisma.inventoryItem.findUnique({
+            where: { serviceTag: item.serviceTag },
+          });
+          if (existing) {
+            result.failed++;
+            result.errors.push({
+              index: i,
+              error: `Item with service tag ${item.serviceTag} already exists`,
+            });
+            continue;
+          }
+        }
+
+        // Auto-calculate status
+        const minQty = item.minQuantity || 10;
+        let status: InventoryStatus;
+        if (item.quantity === 0) {
+          status = InventoryStatus.OUT_OF_STOCK;
+        } else if (item.quantity <= minQty) {
+          status = InventoryStatus.LOW_STOCK;
+        } else {
+          status = InventoryStatus.IN_STOCK;
+        }
+
+        const created = await this.prisma.inventoryItem.create({
+          data: {
+            ...item,
+            status,
+            itemType: item.itemType || ItemType.BULK,
+            createdById: dto.createdById,
+          },
+        });
+
+        // Log audit
+        await this.auditService.log({
+          action: 'CREATE',
+          entity: 'InventoryItem',
+          entityId: created.id,
+          userId: dto.createdById,
+          changes: { bulk: true, name: item.name },
+        });
+
+        result.success++;
+        result.createdIds!.push(created.id);
+      } catch (error) {
+        result.failed++;
+        result.errors.push({
+          index: i,
+          error: error.message || 'Unknown error',
+        });
+      }
+    }
+
+    return result;
+  }
+
+  async parseExcelFile(buffer: Buffer): Promise<BulkImportDto['items']> {
+    // Dynamic import for exceljs
+    const ExcelJS = await import('exceljs');
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(buffer);
+
+    const worksheet = workbook.worksheets[0];
+    if (!worksheet) {
+      throw new BadRequestException('Excel file has no worksheets');
+    }
+
+    const items: BulkImportDto['items'] = [];
+    const headers: string[] = [];
+
+    // Get headers from first row
+    worksheet.getRow(1).eachCell((cell, colNumber) => {
+      headers[colNumber] = cell.value?.toString().toLowerCase().trim() || '';
+    });
+
+    // Parse data rows
+    worksheet.eachRow((row, rowNumber) => {
+      if (rowNumber === 1) return; // Skip header row
+
+      const item: any = {};
+      row.eachCell((cell, colNumber) => {
+        const header = headers[colNumber];
+        let value = cell.value;
+
+        // Handle formula cells
+        if (typeof value === 'object' && value !== null && 'result' in value) {
+          value = value.result;
+        }
+
+        switch (header) {
+          case 'name':
+          case 'nombre':
+            item.name = value?.toString();
+            break;
+          case 'description':
+          case 'descripcion':
+            item.description = value?.toString();
+            break;
+          case 'quantity':
+          case 'cantidad':
+            item.quantity = Number(value) || 0;
+            break;
+          case 'minquantity':
+          case 'min_quantity':
+          case 'cantidadminima':
+            item.minQuantity = Number(value) || 10;
+            break;
+          case 'category':
+          case 'categoria':
+            item.category = value?.toString();
+            break;
+          case 'price':
+          case 'precio':
+            item.price = Number(value) || undefined;
+            break;
+          case 'currency':
+          case 'moneda':
+            item.currency = value?.toString().toUpperCase() === 'HNL' ? 'HNL' : 'USD';
+            break;
+          case 'sku':
+            item.sku = value?.toString();
+            break;
+          case 'barcode':
+          case 'codigobarras':
+            item.barcode = value?.toString();
+            break;
+          case 'itemtype':
+          case 'tipo':
+            item.itemType = value?.toString().toUpperCase() === 'UNIQUE' ? 'UNIQUE' : 'BULK';
+            break;
+          case 'servicetag':
+          case 'service_tag':
+            item.serviceTag = value?.toString();
+            break;
+          case 'serialnumber':
+          case 'serial_number':
+          case 'numeroserie':
+            item.serialNumber = value?.toString();
+            break;
+          case 'warehouseid':
+          case 'warehouse_id':
+          case 'almacen':
+            item.warehouseId = value?.toString();
+            break;
+          case 'supplierid':
+          case 'supplier_id':
+          case 'proveedor':
+            item.supplierId = value?.toString();
+            break;
+        }
+      });
+
+      // Only add if required fields are present
+      if (item.name && item.category && item.warehouseId) {
+        item.quantity = item.quantity || 0;
+        items.push(item);
+      }
+    });
+
+    return items;
   }
 }

@@ -2,8 +2,10 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { ScheduleModule } from '@nestjs/schedule';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
+import { LoggerModule } from './logger';
 import { PrismaModule } from './prisma/prisma.module';
 import { InventoryModule } from './inventory/inventory.module';
 import { WarehousesModule } from './warehouses/warehouses.module';
@@ -16,6 +18,10 @@ import { AuthModule } from './auth/auth.module';
 import { SeedModule } from './seed/seed.module';
 import { AuditModule } from './audit/audit.module';
 import { HealthModule } from './health/health.module';
+import { AlertsModule } from './alerts/alerts.module';
+import { TransferRequestsModule } from './transfer-requests/transfer-requests.module';
+import { ReportsModule } from './reports/reports.module';
+import { StockTakeModule } from './stock-take/stock-take.module';
 
 @Module({
   imports: [
@@ -23,6 +29,7 @@ import { HealthModule } from './health/health.module';
       isGlobal: true,
       envFilePath: '.env',
     }),
+    LoggerModule,
     // Rate limiting: 100 requests per minute per IP
     ThrottlerModule.forRoot([
       {
@@ -41,6 +48,7 @@ import { HealthModule } from './health/health.module';
         limit: 1000, // 1000 requests per hour
       },
     ]),
+    ScheduleModule.forRoot(),
     PrismaModule,
     AuthModule,
     HealthModule,
@@ -53,6 +61,10 @@ import { HealthModule } from './health/health.module';
     LoansModule,
     SeedModule,
     AuditModule,
+    AlertsModule,
+    TransferRequestsModule,
+    ReportsModule,
+    StockTakeModule,
   ],
   controllers: [AppController],
   providers: [

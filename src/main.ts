@@ -1,13 +1,20 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
+import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
 import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { GlobalExceptionFilter } from './common/filters';
+import { LoggingInterceptor } from './common/interceptors';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create(AppModule, {
+    bufferLogs: true, // Buffer logs until Winston is ready
+  });
+
+  // Use Winston for NestJS logging
+  app.useLogger(app.get(WINSTON_MODULE_NEST_PROVIDER));
 
   // Security middleware - Helmet
   app.use(
@@ -48,7 +55,10 @@ async function bootstrap() {
   );
 
   // Global exception filter for centralized error handling
-  app.useGlobalFilters(new GlobalExceptionFilter());
+  app.useGlobalFilters(new GlobalExceptionFilter(app.get(WINSTON_MODULE_NEST_PROVIDER)));
+
+  // Global logging interceptor
+  app.useGlobalInterceptors(new LoggingInterceptor(app.get(WINSTON_MODULE_NEST_PROVIDER)));
 
   // Global prefix for all routes
   app.setGlobalPrefix('api');

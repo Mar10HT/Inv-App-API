@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateWarehouseDto } from './dto/create-warehouse.dto';
 import { UpdateWarehouseDto } from './dto/update-warehouse.dto';
+import { PaginationDto, PaginatedResult } from '../common/dto';
 
 @Injectable()
 export class WarehousesService {
@@ -13,19 +14,42 @@ export class WarehousesService {
     });
   }
 
-  async findAll() {
-    return this.prisma.warehouse.findMany({
-      orderBy: {
-        createdAt: 'desc',
-      },
-      include: {
-        _count: {
-          select: {
-            inventoryItems: true,
+  async findAll(pagination?: PaginationDto): Promise<PaginatedResult<any>> {
+    const page = pagination?.page || 1;
+    const limit = pagination?.limit || 10;
+    const skip = (page - 1) * limit;
+
+    const [data, total] = await Promise.all([
+      this.prisma.warehouse.findMany({
+        skip,
+        take: limit,
+        orderBy: {
+          createdAt: pagination?.sortOrder || 'desc',
+        },
+        include: {
+          _count: {
+            select: {
+              inventoryItems: true,
+            },
           },
         },
+      }),
+      this.prisma.warehouse.count(),
+    ]);
+
+    const totalPages = Math.ceil(total / limit);
+
+    return {
+      data,
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages,
+        hasNextPage: page < totalPages,
+        hasPrevPage: page > 1,
       },
-    });
+    };
   }
 
   async findOne(id: string) {
