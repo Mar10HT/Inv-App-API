@@ -394,17 +394,18 @@ CMD ["node", "dist/main"]
 
 | Document | Description |
 |----------|-------------|
-| [Deployment Guide](../context/DEPLOYMENT-GUIDE.md) | Production setup |
-| [Railway Deploy](../context/RAILWAY-DEPLOY.md) | Railway hosting |
-| [Build Optimization](../context/BUILD-OPTIMIZATION.md) | Performance |
-| [Production Checklist](../context/PRODUCTION-CHECKLIST.md) | Pre-launch |
+| [Plan de Mejoras](./context/PLAN_DE_MEJORAS.md) | Improvement roadmap |
+| [Optimizations](./context/OPTIMIZATIONS.md) | Full-stack analysis |
+| [Permissions Guide](./context/PERMISSIONS_GUIDE.md) | RBAC configuration |
+| [Deployment Guide](./context/DEPLOYMENT-GUIDE.md) | Production setup |
+| [Railway Deploy](./context/RAILWAY-DEPLOY.md) | Railway hosting |
+| [Build Optimization](./context/BUILD-OPTIMIZATION.md) | Performance |
+| [Production Checklist](./context/PRODUCTION-CHECKLIST.md) | Pre-launch |
 
 ---
 
 <div align="center">
 
-**Part of the Inventory Management System**
-
-[← Back to Main README](../README.md)
+**Inventory Management System - Backend**
 
 </div>
