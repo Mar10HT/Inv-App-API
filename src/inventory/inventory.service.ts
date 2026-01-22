@@ -1,4 +1,6 @@
-import { Injectable, NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException, BadRequestException, Inject } from '@nestjs/common';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import { Cache } from 'cache-manager';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { CreateInventoryDto } from './dto/create-inventory.dto';
@@ -16,9 +18,16 @@ import { InventoryItem, InventoryStatus, ItemType } from '@prisma/client';
 
 @Injectable()
 export class InventoryService {
+  private readonly CACHE_KEYS = {
+    STATS: 'inventory:stats',
+    CATEGORIES: 'inventory:categories',
+    LOCATIONS: 'inventory:locations',
+  };
+
   constructor(
     private prisma: PrismaService,
     private auditService: AuditService,
+    @Inject(CACHE_MANAGER) private cacheManager: Cache,
   ) {}
 
   async create(createInventoryDto: CreateInventoryDto): Promise<InventoryItem> {
@@ -144,6 +153,9 @@ export class InventoryService {
       userId: createInventoryDto.createdById,
       changes: { after: { name: item.name, quantity: item.quantity, category: item.category } },
     });
+
+    // Invalidate cache
+    await this.invalidateCache();
 
     return item;
   }
@@ -313,7 +325,7 @@ export class InventoryService {
       }
     }
 
-    return this.prisma.inventoryItem.update({
+    const updatedItem = await this.prisma.inventoryItem.update({
       where: { id },
       data: {
         ...updateInventoryDto,
@@ -329,6 +341,11 @@ export class InventoryService {
         },
       },
     });
+
+    // Invalidate cache
+    await this.invalidateCache();
+
+    return updatedItem;
   }
 
   async remove(id: string): Promise<void> {
@@ -340,6 +357,9 @@ export class InventoryService {
       where: { id },
       data: { deletedAt: new Date() },
     });
+
+    // Invalidate cache
+    await this.invalidateCache();
   }
 
   async restore(id: string): Promise<InventoryItem> {
@@ -356,7 +376,7 @@ export class InventoryService {
       throw new BadRequestException('Item is not deleted');
     }
 
-    return this.prisma.inventoryItem.update({
+    const restoredItem = await this.prisma.inventoryItem.update({
       where: { id },
       data: { deletedAt: null },
       include: {
@@ -371,9 +391,21 @@ export class InventoryService {
         supplier: true,
       },
     });
+
+    // Invalidate cache
+    await this.invalidateCache();
+
+    return restoredItem;
   }
 
   async getStats(): Promise<StatsResponseDto> {
+    // Check cache first
+    const cachedStats = await this.cacheManager.get<StatsResponseDto>(this.CACHE_KEYS.STATS);
+    if (cachedStats) {
+      return cachedStats;
+    }
+
+    // Optimized query: fetch all warehouses with their item counts in one query
     const [
       total,
       inStock,
@@ -381,20 +413,34 @@ export class InventoryService {
       outOfStock,
       items,
       categoryStats,
-      warehouseStats,
+      warehousesWithCounts,
     ] = await Promise.all([
-      this.prisma.inventoryItem.count(),
-      this.prisma.inventoryItem.count({ where: { status: InventoryStatus.IN_STOCK } }),
-      this.prisma.inventoryItem.count({ where: { status: InventoryStatus.LOW_STOCK } }),
-      this.prisma.inventoryItem.count({ where: { status: InventoryStatus.OUT_OF_STOCK } }),
-      this.prisma.inventoryItem.findMany({ select: { price: true, quantity: true } }),
-      this.prisma.inventoryItem.groupBy({
-        by: ['category'],
-        _count: { category: true },
+      this.prisma.inventoryItem.count({ where: { deletedAt: null } }),
+      this.prisma.inventoryItem.count({ where: { status: InventoryStatus.IN_STOCK, deletedAt: null } }),
+      this.prisma.inventoryItem.count({ where: { status: InventoryStatus.LOW_STOCK, deletedAt: null } }),
+      this.prisma.inventoryItem.count({ where: { status: InventoryStatus.OUT_OF_STOCK, deletedAt: null } }),
+      this.prisma.inventoryItem.findMany({
+        where: { deletedAt: null },
+        select: { price: true, quantity: true }
       }),
       this.prisma.inventoryItem.groupBy({
-        by: ['warehouseId'],
-        _count: { warehouseId: true },
+        by: ['category'],
+        where: { deletedAt: null },
+        _count: { category: true },
+      }),
+      // Optimized: Fetch warehouses with item count using include
+      this.prisma.warehouse.findMany({
+        select: {
+          id: true,
+          name: true,
+          _count: {
+            select: {
+              inventoryItems: {
+                where: { deletedAt: null },
+              },
+            },
+          },
+        },
       }),
     ]);
 
@@ -402,17 +448,13 @@ export class InventoryService {
       return sum + (item.price || 0) * item.quantity;
     }, 0);
 
-    // Get warehouse names for location stats
-    const warehouses = await this.prisma.warehouse.findMany();
-    const locationStats = warehouseStats.map(stat => {
-      const warehouse = warehouses.find(w => w.id === stat.warehouseId);
-      return {
-        name: warehouse?.name || 'Unknown',
-        count: stat._count.warehouseId || 0,
-      };
-    });
+    // No need for extra query - warehouse counts are already included
+    const locationStats = warehousesWithCounts.map(warehouse => ({
+      name: warehouse.name || 'Unknown',
+      count: warehouse._count.inventoryItems,
+    }));
 
-    return {
+    const stats: StatsResponseDto = {
       total,
       inStock,
       lowStock,
@@ -424,6 +466,11 @@ export class InventoryService {
       })),
       locations: locationStats,
     };
+
+    // Cache the stats for 60 seconds
+    await this.cacheManager.set(this.CACHE_KEYS.STATS, stats, 60000);
+
+    return stats;
   }
 
   async getLowStockItems(): Promise<InventoryItem[]> {
@@ -448,20 +495,52 @@ export class InventoryService {
   }
 
   async getCategories(): Promise<string[]> {
+    // Check cache first
+    const cachedCategories = await this.cacheManager.get<string[]>(this.CACHE_KEYS.CATEGORIES);
+    if (cachedCategories) {
+      return cachedCategories;
+    }
+
     const categories = await this.prisma.inventoryItem.findMany({
       distinct: ['category'],
+      where: { deletedAt: null },
       select: { category: true },
       orderBy: { category: 'asc' },
     });
-    return categories.map(c => c.category);
+    const result = categories.map(c => c.category);
+
+    // Cache for 5 minutes
+    await this.cacheManager.set(this.CACHE_KEYS.CATEGORIES, result, 300000);
+
+    return result;
   }
 
   async getLocations(): Promise<string[]> {
+    // Check cache first
+    const cachedLocations = await this.cacheManager.get<string[]>(this.CACHE_KEYS.LOCATIONS);
+    if (cachedLocations) {
+      return cachedLocations;
+    }
+
     const warehouses = await this.prisma.warehouse.findMany({
       orderBy: { name: 'asc' },
       select: { name: true },
     });
-    return warehouses.map(w => w.name);
+    const result = warehouses.map(w => w.name);
+
+    // Cache for 5 minutes
+    await this.cacheManager.set(this.CACHE_KEYS.LOCATIONS, result, 300000);
+
+    return result;
+  }
+
+  // Cache invalidation method
+  async invalidateCache(): Promise<void> {
+    await Promise.all([
+      this.cacheManager.del(this.CACHE_KEYS.STATS),
+      this.cacheManager.del(this.CACHE_KEYS.CATEGORIES),
+      this.cacheManager.del(this.CACHE_KEYS.LOCATIONS),
+    ]);
   }
 
   // Bulk Operations
@@ -553,6 +632,11 @@ export class InventoryService {
       }
     }
 
+    // Invalidate cache if any updates were successful
+    if (result.success > 0) {
+      await this.invalidateCache();
+    }
+
     return result;
   }
 
@@ -607,6 +691,11 @@ export class InventoryService {
           error: error.message || 'Unknown error',
         });
       }
+    }
+
+    // Invalidate cache if any deletes were successful
+    if (result.success > 0) {
+      await this.invalidateCache();
     }
 
     return result;
@@ -704,6 +793,11 @@ export class InventoryService {
           error: error.message || 'Unknown error',
         });
       }
+    }
+
+    // Invalidate cache if any imports were successful
+    if (result.success > 0) {
+      await this.invalidateCache();
     }
 
     return result;

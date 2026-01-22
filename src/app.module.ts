@@ -3,6 +3,7 @@ import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { ScheduleModule } from '@nestjs/schedule';
+import { CacheModule } from '@nestjs/cache-manager';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { LoggerModule } from './logger';
@@ -49,6 +50,12 @@ import { StockTakeModule } from './stock-take/stock-take.module';
       },
     ]),
     ScheduleModule.forRoot(),
+    // Cache configuration: 60 seconds TTL, max 100 items
+    CacheModule.register({
+      isGlobal: true,
+      ttl: 60000, // 60 seconds
+      max: 100, // maximum number of items in cache
+    }),
     PrismaModule,
     AuthModule,
     HealthModule,
