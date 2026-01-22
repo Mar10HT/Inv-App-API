@@ -10,7 +10,9 @@ import {
   Request,
   Response,
 } from '@nestjs/common';
+import { ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
+import { randomBytes } from 'crypto';
 import type { Response as ExpressResponse } from 'express';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
@@ -19,9 +21,30 @@ import { ChangePasswordDto } from './dto/change-password.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 
+@ApiTags('auth')
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
+
+  /**
+   * Get CSRF token for frontend protection.
+   * Note: With SameSite=strict cookies, CSRF protection is already provided.
+   * This endpoint exists for compatibility with frontend expectations.
+   */
+  @Get('csrf-token')
+  getCsrfToken(@Response({ passthrough: true }) res: ExpressResponse) {
+    const token = randomBytes(32).toString('hex');
+
+    // Set CSRF token in a cookie (readable by frontend)
+    res.cookie('XSRF-TOKEN', token, {
+      httpOnly: false, // Frontend needs to read this
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: 24 * 60 * 60 * 1000, // 24 hours
+    });
+
+    return { csrfToken: token };
+  }
 
   @Post('login')
   @HttpCode(HttpStatus.OK)

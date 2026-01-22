@@ -11,6 +11,7 @@ import {
   HttpCode,
   HttpStatus,
 } from '@nestjs/common';
+import { ApiTags, ApiQuery } from '@nestjs/swagger';
 import { TransferRequestsService } from './transfer-requests.service';
 import { CreateTransferRequestDto } from './dto/create-transfer-request.dto';
 import { JwtAuthGuard, RolesGuard } from '../auth/guards';
@@ -18,6 +19,7 @@ import { Roles, CurrentUser } from '../auth/decorators';
 import { PaginationDto } from '../common/dto/pagination.dto';
 import { RequestStatus } from '@prisma/client';
 
+@ApiTags('transfer-requests')
 @Controller('transfer-requests')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class TransferRequestsController {
@@ -34,11 +36,12 @@ export class TransferRequestsController {
   }
 
   @Get()
+  @ApiQuery({ name: 'status', enum: ['PENDING', 'APPROVED', 'REJECTED', 'COMPLETED', 'CANCELLED'], required: false })
   findAll(
     @Query(ValidationPipe) pagination: PaginationDto,
-    @Query('status') status?: RequestStatus,
+    @Query('status') status?: string,
   ) {
-    return this.transferRequestsService.findAll(pagination, status);
+    return this.transferRequestsService.findAll(pagination, status as RequestStatus);
   }
 
   @Get('pending')

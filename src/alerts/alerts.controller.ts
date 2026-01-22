@@ -8,12 +8,14 @@ import {
   UseGuards,
   ValidationPipe,
 } from '@nestjs/common';
+import { ApiTags } from '@nestjs/swagger';
 import { AlertsService } from './alerts.service';
 import { JwtAuthGuard, RolesGuard } from '../auth/guards';
 import { Roles } from '../auth/decorators';
 import { PaginationDto } from '../common/dto/pagination.dto';
 import { AlertType } from '@prisma/client';
 
+@ApiTags('alerts')
 @Controller('alerts')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class AlertsController {

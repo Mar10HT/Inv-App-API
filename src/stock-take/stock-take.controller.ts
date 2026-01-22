@@ -11,6 +11,7 @@ import {
   HttpCode,
   HttpStatus,
 } from '@nestjs/common';
+import { ApiTags, ApiQuery } from '@nestjs/swagger';
 import { StockTakeService } from './stock-take.service';
 import { CreateStockTakeDto, UpdateStockTakeItemDto } from './dto/create-stock-take.dto';
 import { JwtAuthGuard, RolesGuard } from '../auth/guards';
@@ -18,6 +19,7 @@ import { Roles, CurrentUser } from '../auth/decorators';
 import { PaginationDto } from '../common/dto/pagination.dto';
 import { StockTakeStatus } from '@prisma/client';
 
+@ApiTags('stock-take')
 @Controller('stock-take')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class StockTakeController {
@@ -34,11 +36,12 @@ export class StockTakeController {
   }
 
   @Get()
+  @ApiQuery({ name: 'status', enum: ['IN_PROGRESS', 'COMPLETED', 'CANCELLED'], required: false })
   findAll(
     @Query(ValidationPipe) pagination: PaginationDto,
-    @Query('status') status?: StockTakeStatus,
+    @Query('status') status?: string,
   ) {
-    return this.stockTakeService.findAll(pagination, status);
+    return this.stockTakeService.findAll(pagination, status as StockTakeStatus);
   }
 
   @Get('stats')
