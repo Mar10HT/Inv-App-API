@@ -36,6 +36,10 @@ model User {
   startedStockTakes   StockTake[]         @relation("StartedStockTakes")
   completedStockTakes StockTake[]         @relation("CompletedStockTakes")
 
+  // Auth tokens relations
+  refreshTokens       RefreshToken[]
+  passwordResetTokens PasswordResetToken[]
+
   @@index([deletedAt])
   @@map("users")
 }
@@ -82,7 +86,9 @@ model InventoryItem {
   description  String?
   quantity     Int               @default(0)
   minQuantity  Int               @default(10) // For low stock alerts
-  category     String
+  category     String            // Legacy: category name as string
+  categoryRef  Category?         @relation(fields: [categoryId], references: [id])
+  categoryId   String?           // New: relation to Category model
   status       InventoryStatus   @default(IN_STOCK)
   price        Float?
   currency     Currency          @default(USD) // Currency type
@@ -125,6 +131,7 @@ model InventoryItem {
   stockTakeItems         StockTakeItem[]
 
   @@index([category])
+  @@index([categoryId])
   @@index([status])
   @@index([currency])
   @@index([warehouseId])
@@ -193,6 +200,9 @@ model Category {
   color       String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+
+  // Relations
+  inventoryItems InventoryItem[]
 
   @@map("categories")
 }
@@ -406,4 +416,53 @@ enum StockTakeStatus {
   IN_PROGRESS
   COMPLETED
   CANCELLED
+}
+
+// ============================================
+// Phase 5: Production Security Models
+// ============================================
+
+// Login attempts tracking for brute force protection
+model LoginAttempt {
+  id        String   @id @default(cuid())
+  email     String
+  ip        String
+  success   Boolean
+  createdAt DateTime @default(now())
+
+  @@index([email, createdAt])
+  @@index([ip, createdAt])
+  @@map("login_attempts")
+}
+
+// Refresh tokens for secure token rotation
+model RefreshToken {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String
+  expiresAt DateTime
+  revoked   Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("refresh_tokens")
+}
+
+// Password reset tokens
+model PasswordResetToken {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String
+  expiresAt DateTime
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("password_reset_tokens")
 }

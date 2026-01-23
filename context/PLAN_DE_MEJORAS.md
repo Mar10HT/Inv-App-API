@@ -1,7 +1,7 @@
 # Plan de Mejoras - Sistema de Inventario
 
 > **Fecha de análisis:** 16 de Enero 2026
-> **Última actualización:** 21 de Enero 2026
+> **Última actualización:** 22 de Enero 2026
 > **Versión:** 1.2
 > **Proyectos:** Inv-App (Angular 20) + Inv-App-API (NestJS)
 
@@ -14,8 +14,8 @@
 | Fase 1: Seguridad | **COMPLETADA** | 100% |
 | Fase 2: Estabilidad | **COMPLETADA** | 100% |
 | Fase 3: Funcionalidades | **COMPLETADA** | 100% |
-| Fase 4: Optimización | PENDIENTE | 0% |
-| Fase 5: Producción | PENDIENTE | 0% |
+| Fase 4: Optimización | **COMPLETADA** | 100% |
+| Fase 5: Producción | **EN PROGRESO** | 80% |
 | Fase 6: Avanzadas | PENDIENTE | 0% |
 
 ---
@@ -1436,33 +1436,34 @@ export class GenericDialogComponent {
   - Aplicar cambios automáticos al inventario
   - Reporte de varianzas
 
-### Fase 4: Optimización ⏳ PENDIENTE
-- [ ] 4.1 Lazy loading implementado (ApexCharts dinámico)
-- [ ] 4.2 Índices de BD agregados (createdAt, warehouseId, status)
-- [ ] 4.3 Caching activo (@nestjs/cache-manager)
-- [ ] 4.4 Queries N+1 optimizadas (include en Prisma)
+### Fase 4: Optimización ✅ COMPLETADA
+- [x] 4.1 Lazy loading implementado (ApexCharts dinámico)
+- [x] 4.2 Índices de BD agregados (50+ índices en schema.prisma)
+- [x] 4.3 Caching activo (`CacheModule` en app.module.ts)
+- [x] 4.4 Queries N+1 optimizadas (`include` usado en todos los servicios)
 
-### Fase 5: Producción ⏳ PENDIENTE
+### Fase 5: Producción ✅ EN PROGRESO (80%)
 - [ ] 5.1 Servicio de Email (@nestjs-modules/mailer)
   - Verificación de email en registro
   - Alertas de stock bajo por email
   - Notificaciones de préstamos vencidos
-- [ ] 5.2 Flujo de reseteo de contraseña
-  - `POST /auth/forgot-password`
-  - `POST /auth/reset-password/:token`
-  - Modelo `PasswordResetToken`
-- [ ] 5.3 Refresh Tokens
-  - Access token 15 minutos
-  - Refresh token 7 días con rotación
-  - Modelo `RefreshToken`
-- [ ] 5.4 Account Lockout (Brute Force)
-  - Máximo 5 intentos fallidos
-  - Bloqueo de 15 minutos
-  - Modelo `LoginAttempt`
+- [x] 5.2 Flujo de reseteo de contraseña
+  - `POST /auth/forgot-password` ✅
+  - `POST /auth/reset-password/:token` ✅
+  - Modelo `PasswordResetToken` ✅
+- [x] 5.3 Refresh Tokens
+  - Access token 15 minutos ✅
+  - Refresh token 7/30 días con rotación ✅
+  - Modelo `RefreshToken` ✅
+  - Checkbox "Remember me" en frontend ✅
+- [x] 5.4 Account Lockout (Brute Force)
+  - Máximo 5 intentos fallidos ✅
+  - Bloqueo de 15 minutos ✅
+  - Modelo `LoginAttempt` ✅
 - [ ] 5.5 Error Tracking (Sentry)
   - @sentry/node en backend
   - @sentry/angular en frontend
-- [ ] 5.6 Response Compression (GZIP)
+- [x] 5.6 Response Compression (GZIP) ✅
 
 ### Fase 6: Funcionalidades Avanzadas ⏳ PENDIENTE
 - [ ] 6.1 PWA Support (ng add @angular/pwa)
@@ -1497,28 +1498,18 @@ export class GenericDialogComponent {
 | Fase 1: Seguridad | 2 semanas | ✅ COMPLETADA | ~3 días |
 | Fase 2: Estabilidad | 3 semanas | ✅ COMPLETADA | ~2 días |
 | Fase 3: Funcionalidades | 4 semanas | ✅ COMPLETADA | ~1 día |
-| Fase 4: Optimización | 2 semanas | ⏳ PENDIENTE | - |
-| Fase 5: Producción | 3 semanas | ⏳ PENDIENTE | - |
+| Fase 4: Optimización | 2 semanas | ✅ COMPLETADA | ~1 día |
+| Fase 5: Producción | 3 semanas | ✅ EN PROGRESO | ~1 día |
 | Fase 6: Avanzadas | 4 semanas | ⏳ PENDIENTE | - |
-| **Total Restante** | **9 semanas** | - | - |
+| **Total Restante** | **4 semanas** | - | - |
 
 ---
 
 ## Próximos Pasos Recomendados
 
-### Fase 4: Optimización (Pendiente)
-1. **4.2 Índices de BD** - Agregar índices para mejorar consultas frecuentes
-2. **4.3 Caching** - Implementar cache con `@nestjs/cache-manager`
-3. **4.1 Lazy loading** - Carga dinámica de ApexCharts en frontend
-4. **4.4 Queries N+1** - Optimizar con `include` en Prisma
-
-### Fase 5: Producción (Prioridad Alta)
-1. **5.1 Email Service** - CRÍTICO para flujos de usuario
-2. **5.2 Password Reset** - CRÍTICO para producción
-3. **5.3 Refresh Tokens** - Mejora seguridad significativamente
-4. **5.4 Account Lockout** - Protección contra ataques
-5. **5.5 Sentry** - Monitoreo de errores en producción
-6. **5.6 Compression** - Rápido de implementar, mejora rendimiento
+### Fase 5: Producción (Restantes)
+1. **5.1 Email Service** - Pendiente para notificaciones
+2. **5.5 Sentry** - Monitoreo de errores en producción
 
 ### Fase 6: Avanzadas (Prioridad Baja)
 1. **6.1 PWA** - Mejor UX, offline support
@@ -1608,4 +1599,4 @@ export class GenericDialogComponent {
 
 ---
 
-*Documento actualizado el 21 de Enero 2026.*
+*Documento actualizado el 22 de Enero 2026.*

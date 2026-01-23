@@ -3,6 +3,7 @@ import { ValidationPipe } from '@nestjs/common';
 import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
 import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
+import compression from 'compression';
 import { AppModule } from './app.module';
 import { GlobalExceptionFilter } from './common/filters';
 import { LoggingInterceptor } from './common/interceptors';
@@ -30,6 +31,9 @@ async function bootstrap() {
       crossOriginEmbedderPolicy: false, // For development
     }),
   );
+
+  // Response compression (GZIP)
+  app.use(compression());
 
   // Cookie parser middleware
   app.use(cookieParser());
