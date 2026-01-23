@@ -15,7 +15,7 @@
 | Fase 2: Estabilidad | **COMPLETADA** | 100% |
 | Fase 3: Funcionalidades | **COMPLETADA** | 100% |
 | Fase 4: Optimización | **COMPLETADA** | 100% |
-| Fase 5: Producción | **EN PROGRESO** | 80% |
+| Fase 5: Producción | **COMPLETADA** | 100% |
 | Fase 6: Avanzadas | PENDIENTE | 0% |
 
 ---
@@ -1442,11 +1442,12 @@ export class GenericDialogComponent {
 - [x] 4.3 Caching activo (`CacheModule` en app.module.ts)
 - [x] 4.4 Queries N+1 optimizadas (`include` usado en todos los servicios)
 
-### Fase 5: Producción ✅ EN PROGRESO (80%)
-- [ ] 5.1 Servicio de Email (@nestjs-modules/mailer)
-  - Verificación de email en registro
-  - Alertas de stock bajo por email
-  - Notificaciones de préstamos vencidos
+### Fase 5: Producción ✅ COMPLETADA
+- [x] 5.1 Servicio de Email (`email.module.ts`, `email.service.ts`)
+  - Templates HTML para emails ✅
+  - Password reset email ✅
+  - Password changed confirmation ✅
+  - Welcome email ✅
 - [x] 5.2 Flujo de reseteo de contraseña
   - `POST /auth/forgot-password` ✅
   - `POST /auth/reset-password/:token` ✅
@@ -1460,9 +1461,10 @@ export class GenericDialogComponent {
   - Máximo 5 intentos fallidos ✅
   - Bloqueo de 15 minutos ✅
   - Modelo `LoginAttempt` ✅
-- [ ] 5.5 Error Tracking (Sentry)
-  - @sentry/node en backend
-  - @sentry/angular en frontend
+- [x] 5.5 Error Tracking (Sentry)
+  - `@sentry/nestjs` integrado en backend ✅
+  - `SentryModule` y `SentryGlobalFilter` ✅
+  - Configuración via `SENTRY_DSN` env var ✅
 - [x] 5.6 Response Compression (GZIP) ✅
 
 ### Fase 6: Funcionalidades Avanzadas ⏳ PENDIENTE

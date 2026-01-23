@@ -8,6 +8,7 @@ import {
 import { JwtService } from '@nestjs/jwt';
 import { UsersService } from '../users/users.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { EmailService } from '../email/email.service';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
@@ -29,6 +30,7 @@ export class AuthService {
     private usersService: UsersService,
     private jwtService: JwtService,
     private prisma: PrismaService,
+    private emailService: EmailService,
   ) {}
 
   // ============================================
@@ -160,12 +162,13 @@ export class AuthService {
   // Password Reset Methods
   // ============================================
 
-  async createPasswordResetToken(email: string): Promise<string | null> {
+  async createPasswordResetToken(email: string): Promise<boolean> {
     const user = await this.usersService.findByEmail(email);
 
     // Don't reveal if user exists or not (security)
+    // Always return true to prevent email enumeration
     if (!user) {
-      return null;
+      return true;
     }
 
     // Invalidate any existing reset tokens
@@ -187,7 +190,12 @@ export class AuthService {
       },
     });
 
-    return token;
+    // Send password reset email (don't await to not slow down response)
+    this.emailService
+      .sendPasswordResetEmail(user.email, token, user.name || undefined)
+      .catch((err) => console.error('Failed to send password reset email:', err));
+
+    return true;
   }
 
   async resetPassword(token: string, newPassword: string): Promise<void> {
@@ -220,6 +228,14 @@ export class AuthService {
 
     // Revoke all refresh tokens for security
     await this.revokeAllUserRefreshTokens(resetToken.userId);
+
+    // Send confirmation email
+    this.emailService
+      .sendPasswordChangedEmail(
+        resetToken.user.email,
+        resetToken.user.name || undefined,
+      )
+      .catch((err) => console.error('Failed to send password changed email:', err));
   }
 
   // ============================================
@@ -367,6 +383,11 @@ export class AuthService {
 
     // Revoke all refresh tokens for security
     await this.revokeAllUserRefreshTokens(userId);
+
+    // Send confirmation email
+    this.emailService
+      .sendPasswordChangedEmail(user.email, user.name || undefined)
+      .catch((err) => console.error('Failed to send password changed email:', err));
 
     return { message: 'Password changed successfully' };
   }
