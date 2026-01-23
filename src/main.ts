@@ -43,11 +43,22 @@ async function bootstrap() {
   app.use(cookieParser());
 
   // Enable CORS
-  const corsOrigin = process.env.CORS_ORIGIN || 'http://localhost:4200';
+  const corsOrigins = process.env.CORS_ORIGIN?.split(',').map(o => o.trim()) || ['http://localhost:4200'];
 
   app.enableCors({
-    origin: corsOrigin,
+    origin: (origin, callback) => {
+      // Allow requests with no origin (like mobile apps or curl)
+      if (!origin) return callback(null, true);
+
+      if (corsOrigins.some(allowed => origin === allowed || origin.endsWith(allowed.replace('https://', '.')))) {
+        return callback(null, true);
+      }
+
+      console.log(`CORS blocked origin: ${origin}, allowed: ${corsOrigins.join(', ')}`);
+      return callback(null, false);
+    },
     credentials: true,
+    exposedHeaders: ['set-cookie'],
   });
 
   // Global validation pipe

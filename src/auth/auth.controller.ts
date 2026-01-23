@@ -37,11 +37,12 @@ export class AuthController {
   @Get('csrf-token')
   getCsrfToken(@Response({ passthrough: true }) res: ExpressResponse) {
     const token = randomBytes(32).toString('hex');
+    const isProduction = process.env.NODE_ENV === 'production';
 
     res.cookie('XSRF-TOKEN', token, {
-      httpOnly: false,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'strict',
+      httpOnly: false, // Must be readable by JavaScript
+      secure: isProduction,
+      sameSite: isProduction ? 'none' as const : 'strict' as const,
       maxAge: 24 * 60 * 60 * 1000,
     });
 
@@ -59,11 +60,22 @@ export class AuthController {
     const ip = req.ip || req.socket.remoteAddress || 'unknown';
     const result = await this.authService.login(loginDto, ip);
 
+    const isProduction = process.env.NODE_ENV === 'production';
+    const cookieOptions = {
+      httpOnly: true,
+      secure: isProduction, // Must be true for sameSite: 'none'
+      sameSite: isProduction ? 'none' as const : 'strict' as const,
+    };
+
+    console.log(`[Auth] Login success for ${loginDto.email}, setting cookies with:`, {
+      secure: cookieOptions.secure,
+      sameSite: cookieOptions.sameSite,
+      NODE_ENV: process.env.NODE_ENV,
+    });
+
     // Access token cookie (short-lived, 15 min)
     res.cookie('access_token', result.access_token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'strict',
+      ...cookieOptions,
       maxAge: 15 * 60 * 1000, // 15 minutes
     });
 
@@ -73,9 +85,7 @@ export class AuthController {
       : 7 * 24 * 60 * 60 * 1000; // 7 days
 
     res.cookie('refresh_token', result.refresh_token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'strict',
+      ...cookieOptions,
       maxAge: refreshMaxAge,
       path: '/api/auth', // Only sent to auth endpoints
     });
@@ -95,17 +105,20 @@ export class AuthController {
   ) {
     const result = await this.authService.register(registerDto);
 
-    res.cookie('access_token', result.access_token, {
+    const isProduction = process.env.NODE_ENV === 'production';
+    const cookieOptions = {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'strict',
+      secure: isProduction,
+      sameSite: isProduction ? 'none' as const : 'strict' as const,
+    };
+
+    res.cookie('access_token', result.access_token, {
+      ...cookieOptions,
       maxAge: 15 * 60 * 1000,
     });
 
     res.cookie('refresh_token', result.refresh_token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'strict',
+      ...cookieOptions,
       maxAge: 7 * 24 * 60 * 60 * 1000,
       path: '/api/auth',
     });
@@ -133,17 +146,20 @@ export class AuthController {
 
     const result = await this.authService.refreshAccessToken(refreshToken);
 
-    res.cookie('access_token', result.access_token, {
+    const isProduction = process.env.NODE_ENV === 'production';
+    const cookieOptions = {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'strict',
+      secure: isProduction,
+      sameSite: isProduction ? 'none' as const : 'strict' as const,
+    };
+
+    res.cookie('access_token', result.access_token, {
+      ...cookieOptions,
       maxAge: 15 * 60 * 1000,
     });
 
     res.cookie('refresh_token', result.refresh_token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'strict',
+      ...cookieOptions,
       maxAge: 7 * 24 * 60 * 60 * 1000,
       path: '/api/auth',
     });
@@ -166,21 +182,32 @@ export class AuthController {
       await this.authService.revokeRefreshToken(refreshToken);
     }
 
-    // Clear cookies
-    res.clearCookie('access_token', {
+    const isProduction = process.env.NODE_ENV === 'production';
+    const cookieOptions = {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'strict',
-    });
+      secure: isProduction,
+      sameSite: isProduction ? 'none' as const : 'strict' as const,
+    };
 
-    res.clearCookie('refresh_token', {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'strict',
-      path: '/api/auth',
-    });
+    // Clear cookies
+    res.clearCookie('access_token', cookieOptions);
+    res.clearCookie('refresh_token', { ...cookieOptions, path: '/api/auth' });
 
     return { message: 'Logged out successfully' };
+  }
+
+  /**
+   * Debug endpoint to check cookie reception (remove in production)
+   */
+  @Get('debug-cookies')
+  debugCookies(@Request() req: ExpressRequest) {
+    return {
+      hasCookies: !!req.cookies,
+      hasAccessToken: !!req.cookies?.access_token,
+      hasRefreshToken: !!req.cookies?.refresh_token,
+      cookieNames: req.cookies ? Object.keys(req.cookies) : [],
+      NODE_ENV: process.env.NODE_ENV,
+    };
   }
 
   @Post('forgot-password')
