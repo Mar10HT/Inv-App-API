@@ -197,16 +197,29 @@ export class AuthController {
   }
 
   /**
-   * Debug endpoint to check cookie reception (remove in production)
+   * Debug endpoint to check environment and cookie configuration
    */
-  @Get('debug-cookies')
-  debugCookies(@Request() req: ExpressRequest) {
+  @Get('debug-env')
+  debugEnv(@Request() req: ExpressRequest) {
+    const isProduction = process.env.NODE_ENV === 'production';
     return {
-      hasCookies: !!req.cookies,
-      hasAccessToken: !!req.cookies?.access_token,
-      hasRefreshToken: !!req.cookies?.refresh_token,
-      cookieNames: req.cookies ? Object.keys(req.cookies) : [],
       NODE_ENV: process.env.NODE_ENV,
+      isProduction,
+      cookieConfig: {
+        secure: isProduction,
+        sameSite: isProduction ? 'none' : 'strict',
+      },
+      cors: {
+        CORS_ORIGIN: process.env.CORS_ORIGIN,
+      },
+      request: {
+        origin: req.headers.origin,
+        host: req.headers.host,
+        hasCookies: !!req.cookies,
+        cookieNames: req.cookies ? Object.keys(req.cookies) : [],
+        hasAccessToken: !!req.cookies?.access_token,
+        hasRefreshToken: !!req.cookies?.refresh_token,
+      },
     };
   }
 
