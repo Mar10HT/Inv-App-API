@@ -8,7 +8,7 @@
   "scripts": {
     "build": "nest build",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
-    "start": "prisma migrate deploy --schema=./prisma/schema.prod.prisma && node dist/main",
+    "start": "prisma db push --schema=./prisma/schema.prod.prisma --skip-generate && node dist/main",
     "start:dev": "cross-env NODE_ENV=development nest start --watch",
     "start:debug": "cross-env NODE_ENV=development nest start --debug --watch",
     "start:prod": "node dist/main",
@@ -27,7 +27,7 @@
     "prisma:migrate": "prisma migrate dev --schema=./prisma/schema.prisma",
     "prisma:studio": "prisma studio --schema=./prisma/schema.prisma",
     "railway:build": "npm install && npm run prisma:generate:prod && npm run build",
-    "railway:migrate": "prisma migrate deploy --schema=./prisma/schema.prod.prisma",
+    "railway:migrate": "prisma db push --schema=./prisma/schema.prod.prisma --skip-generate",
     "railway:start": "npm run railway:migrate && npm run start:prod"
   },
   "dependencies": {
