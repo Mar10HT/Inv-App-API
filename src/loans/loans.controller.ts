@@ -11,6 +11,7 @@ import {
   ValidationPipe,
   Query,
   UseGuards,
+  Request,
 } from '@nestjs/common';
 import { LoansService } from './loans.service';
 import { CreateLoanDto } from './dto/create-loan.dto';
@@ -27,8 +28,11 @@ export class LoansController {
   @Post()
   @HttpCode(HttpStatus.CREATED)
   @Roles('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER', 'USER')
-  create(@Body(ValidationPipe) createLoanDto: CreateLoanDto) {
-    return this.loansService.create(createLoanDto);
+  create(
+    @Body(ValidationPipe) createLoanDto: CreateLoanDto,
+    @Request() req: { user: { userId: string } },
+  ) {
+    return this.loansService.create(createLoanDto, req.user.userId);
   }
 
   @Get()

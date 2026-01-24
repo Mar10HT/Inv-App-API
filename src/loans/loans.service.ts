@@ -44,7 +44,7 @@ export class LoansService {
     },
   };
 
-  async create(createLoanDto: CreateLoanDto) {
+  async create(createLoanDto: CreateLoanDto, userId: string) {
     // Validate warehouses are different
     if (createLoanDto.sourceWarehouseId === createLoanDto.destinationWarehouseId) {
       throw new BadRequestException(
@@ -101,7 +101,7 @@ export class LoansService {
         sourceWarehouseId: createLoanDto.sourceWarehouseId,
         destinationWarehouseId: createLoanDto.destinationWarehouseId,
         dueDate: new Date(createLoanDto.dueDate),
-        createdById: createLoanDto.createdById,
+        createdById: userId,
         notes: createLoanDto.notes,
       },
       include: this.loanInclude,

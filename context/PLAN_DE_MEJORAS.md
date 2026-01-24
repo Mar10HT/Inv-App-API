@@ -1,7 +1,7 @@
 # Plan de Mejoras - Sistema de Inventario
 
 > **Fecha de análisis:** 16 de Enero 2026
-> **Última actualización:** 22 de Enero 2026
+> **Última actualización:** 23 de Enero 2026
 > **Versión:** 1.2
 > **Proyectos:** Inv-App (Angular 20) + Inv-App-API (NestJS)
 
@@ -1380,6 +1380,183 @@ export class GenericDialogComponent {
     }
   }
 }
+```
+
+---
+
+### 6.9 Sistema de Garantías para Items Únicos
+
+**Prioridad:** MEDIA
+**Esfuerzo:** 2-3 días
+
+#### Descripción:
+Sistema para trackear garantías de items únicos (con `serviceTag`). La garantía es **opcional** - no todos los items requieren información de garantía.
+
+#### Modelo Prisma:
+```prisma
+model Warranty {
+  id                String          @id @default(cuid())
+
+  // Relación con item único (1:1 opcional)
+  inventoryItemId   String          @unique
+  inventoryItem     InventoryItem   @relation(fields: [inventoryItemId], references: [id])
+
+  // Fechas
+  startDate         DateTime        // Fecha de inicio (compra/activación)
+  endDate           DateTime        // Fecha de expiración
+
+  // Información
+  warrantyType      WarrantyType    @default(MANUFACTURER)
+  provider          String?         // Proveedor (Dell, HP, Lenovo, etc.)
+  policyNumber      String?         // Número de póliza/contrato
+
+  // Estado
+  status            WarrantyStatus  @default(ACTIVE)
+
+  // Documentación
+  notes             String?
+  documentUrl       String?         // Link a documento/factura
+
+  // Tracking
+  createdById       String
+  createdBy         User            @relation(fields: [createdById], references: [id])
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  // Claims/Reclamos
+  claims            WarrantyClaim[]
+
+  @@index([endDate])
+  @@index([status])
+  @@map("warranties")
+}
+
+enum WarrantyType {
+  MANUFACTURER      // Garantía de fábrica
+  EXTENDED          // Garantía extendida
+  THIRD_PARTY       // Terceros
+}
+
+enum WarrantyStatus {
+  ACTIVE            // Vigente
+  EXPIRED           // Expirada
+  CLAIMED           // En reclamo
+  VOID              // Anulada
+}
+
+model WarrantyClaim {
+  id                String        @id @default(cuid())
+
+  warrantyId        String
+  warranty          Warranty      @relation(fields: [warrantyId], references: [id])
+
+  claimDate         DateTime      @default(now())
+  issueDescription  String
+  resolution        String?
+  status            ClaimStatus   @default(PENDING)
+
+  // Si hubo reemplazo
+  replacementItemId String?
+
+  createdById       String
+  createdBy         User          @relation(fields: [createdById], references: [id])
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  @@index([warrantyId])
+  @@index([status])
+  @@map("warranty_claims")
+}
+
+enum ClaimStatus {
+  PENDING           // Pendiente
+  IN_PROGRESS       // En proceso
+  APPROVED          // Aprobado
+  REJECTED          // Rechazado
+  COMPLETED         // Completado (item reemplazado/reparado)
+}
+```
+
+#### Relación en InventoryItem:
+```prisma
+model InventoryItem {
+  // ... campos existentes
+  warranty          Warranty?     // Relación 1:1 opcional
+}
+```
+
+#### Endpoints Backend:
+```typescript
+// warranties.controller.ts
+@Controller('warranties')
+@UseGuards(JwtAuthGuard, RolesGuard)
+export class WarrantiesController {
+  // CRUD de garantías
+  @Post()
+  @Roles('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER')
+  create(@Body() dto: CreateWarrantyDto, @Request() req) { }
+
+  @Get()
+  findAll(@Query() filters: WarrantyFilterDto) { }
+
+  @Get('expiring-soon')
+  findExpiringSoon(@Query('days') days: number = 30) { }
+
+  @Get('expired')
+  findExpired() { }
+
+  @Get('item/:itemId')
+  findByItem(@Param('itemId') itemId: string) { }
+
+  @Patch(':id')
+  @Roles('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER')
+  update(@Param('id') id: string, @Body() dto: UpdateWarrantyDto) { }
+
+  @Delete(':id')
+  @Roles('SYSTEM_ADMIN')
+  remove(@Param('id') id: string) { }
+
+  // Claims
+  @Post(':id/claims')
+  @Roles('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER', 'USER')
+  createClaim(@Param('id') id: string, @Body() dto: CreateClaimDto) { }
+
+  @Patch('claims/:claimId')
+  @Roles('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER')
+  updateClaim(@Param('claimId') id: string, @Body() dto: UpdateClaimDto) { }
+}
+```
+
+#### UI Frontend:
+
+**En detalle del item único:**
+| Situación | Mostrar |
+|-----------|---------|
+| Sin garantía | Botón "➕ Agregar Garantía" |
+| Garantía activa | ✅ Badge verde + días restantes |
+| Por vencer (30 días) | ⚠️ Badge amarillo + alerta |
+| Expirada | ❌ Badge rojo |
+| En reclamo | 🔵 Badge azul + estado del claim |
+
+**Sección de garantía (expandible):**
+```
+┌─────────────────────────────────────────────────┐
+│ 📋 Garantía                              [Edit] │
+├─────────────────────────────────────────────────┤
+│ Estado:     ✅ Activa                           │
+│ Tipo:       Fabricante (Dell)                   │
+│ Vigencia:   15/01/2025 - 15/01/2028            │
+│ Restante:   547 días                            │
+│ Póliza:     #DL-2025-12345                      │
+│                                                 │
+│ [📄 Ver documento]  [🔔 Crear reclamo]          │
+└─────────────────────────────────────────────────┘
+```
+
+#### Alertas automáticas:
+- Cron job que verifica garantías próximas a vencer (30, 15, 7 días)
+- Actualiza `status` a `EXPIRED` cuando vence
+- Notificación a usuarios con items en garantía por vencer
 
 ---
 
@@ -1476,6 +1653,7 @@ export class GenericDialogComponent {
 - [ ] 6.6 Full-Text Search (PostgreSQL)
 - [ ] 6.7 Repository Pattern (backend)
 - [ ] 6.8 Generic CRUD Dialog (frontend)
+- [ ] 6.9 Sistema de Garantías para Items Únicos
 
 ---
 
@@ -1587,6 +1765,17 @@ export class GenericDialogComponent {
 - `inventory:low-stock` - Alerta de stock bajo
 - `transaction:created` - Nueva transacción creada
 - `loan:overdue` - Préstamo vencido
+
+#### Sistema de Garantías (6.9)
+- `POST /warranties` - Crear garantía para item
+- `GET /warranties` - Listar garantías con filtros
+- `GET /warranties/expiring-soon?days=30` - Garantías por vencer
+- `GET /warranties/expired` - Garantías expiradas
+- `GET /warranties/item/:itemId` - Garantía de un item específico
+- `PATCH /warranties/:id` - Actualizar garantía
+- `DELETE /warranties/:id` - Eliminar garantía
+- `POST /warranties/:id/claims` - Crear reclamo
+- `PATCH /warranties/claims/:claimId` - Actualizar estado del reclamo
 
 ---
 
