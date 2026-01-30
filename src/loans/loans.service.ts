@@ -4,14 +4,48 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { QrService } from '../qr/qr.service';
 import { CreateLoanDto } from './dto/create-loan.dto';
 import { UpdateLoanDto, ReturnLoanDto, LoanStatus } from './dto/update-loan.dto';
 import { PaginationDto, PaginatedResult } from '../common/dto';
 
 @Injectable()
 export class LoansService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private qrService: QrService,
+  ) {}
 
+  // Light include for list queries (faster)
+  private readonly loanIncludeLight = {
+    inventoryItem: {
+      select: {
+        id: true,
+        name: true,
+        serviceTag: true,
+      },
+    },
+    sourceWarehouse: {
+      select: {
+        id: true,
+        name: true,
+      },
+    },
+    destinationWarehouse: {
+      select: {
+        id: true,
+        name: true,
+      },
+    },
+    createdBy: {
+      select: {
+        id: true,
+        name: true,
+      },
+    },
+  };
+
+  // Full include for detail queries
   private readonly loanInclude = {
     inventoryItem: {
       select: {
@@ -36,6 +70,20 @@ export class LoansService {
       },
     },
     createdBy: {
+      select: {
+        id: true,
+        email: true,
+        name: true,
+      },
+    },
+    receivedBy: {
+      select: {
+        id: true,
+        email: true,
+        name: true,
+      },
+    },
+    returnConfirmedBy: {
       select: {
         id: true,
         email: true,
@@ -69,11 +117,11 @@ export class LoansService {
       );
     }
 
-    // Check if item is already on loan
+    // Check if item is already on loan (any active status)
     const existingLoan = await this.prisma.loan.findFirst({
       where: {
         inventoryItemId: createLoanDto.inventoryItemId,
-        status: { in: ['ACTIVE', 'OVERDUE'] },
+        status: { in: ['PENDING', 'SENT', 'RECEIVED', 'RETURN_PENDING', 'OVERDUE'] },
       },
     });
 
@@ -93,7 +141,7 @@ export class LoansService {
       throw new NotFoundException('Invalid warehouse');
     }
 
-    // Create the loan
+    // Create the loan with PENDING status
     return this.prisma.loan.create({
       data: {
         inventoryItemId: createLoanDto.inventoryItemId,
@@ -103,9 +151,197 @@ export class LoansService {
         dueDate: new Date(createLoanDto.dueDate),
         createdById: userId,
         notes: createLoanDto.notes,
+        status: 'PENDING',
       },
       include: this.loanInclude,
     });
+  }
+
+  /**
+   * Mark loan as sent and generate QR code for receipt confirmation
+   */
+  async sendLoan(id: string) {
+    const loan = await this.findOne(id);
+
+    if (loan.status !== 'PENDING') {
+      throw new BadRequestException(
+        `Cannot send loan in ${loan.status} status. Only PENDING loans can be sent.`,
+      );
+    }
+
+    // Generate unique QR code for send confirmation
+    const sendQrCode = this.qrService.generateCode();
+
+    const updatedLoan = await this.prisma.loan.update({
+      where: { id },
+      data: {
+        status: 'SENT',
+        sendQrCode,
+      },
+      include: this.loanInclude,
+    });
+
+    // Generate QR code image
+    const qrData = {
+      type: 'LOAN_SEND' as const,
+      id: loan.id,
+      code: sendQrCode,
+    };
+    const qrDataUrl = await this.qrService.generateQrDataUrl(qrData);
+
+    return {
+      ...updatedLoan,
+      qrCodeDataUrl: qrDataUrl,
+    };
+  }
+
+  /**
+   * Confirm receipt of loan by scanning QR code
+   */
+  async confirmReceipt(qrCode: string, userId: string) {
+    const loan = await this.prisma.loan.findFirst({
+      where: { sendQrCode: qrCode },
+      include: this.loanInclude,
+    });
+
+    if (!loan) {
+      throw new NotFoundException('Invalid QR code or loan not found');
+    }
+
+    if (loan.status !== 'SENT') {
+      throw new BadRequestException(
+        `Cannot confirm receipt. Loan is in ${loan.status} status.`,
+      );
+    }
+
+    return this.prisma.loan.update({
+      where: { id: loan.id },
+      data: {
+        status: 'RECEIVED',
+        receivedAt: new Date(),
+        receivedById: userId,
+      },
+      include: this.loanInclude,
+    });
+  }
+
+  /**
+   * Initiate return and generate QR code for return confirmation
+   */
+  async initiateReturn(id: string) {
+    const loan = await this.findOne(id);
+
+    // Allow ACTIVE for backwards compatibility with legacy loans
+    const allowedStatuses = ['RECEIVED', 'OVERDUE', 'ACTIVE'];
+    if (!allowedStatuses.includes(loan.status)) {
+      throw new BadRequestException(
+        `Cannot initiate return. Loan is in ${loan.status} status. Only RECEIVED, OVERDUE or ACTIVE loans can be returned.`,
+      );
+    }
+
+    // Generate unique QR code for return confirmation
+    const returnQrCode = this.qrService.generateCode();
+
+    const updatedLoan = await this.prisma.loan.update({
+      where: { id },
+      data: {
+        status: 'RETURN_PENDING',
+        returnQrCode,
+      },
+      include: this.loanInclude,
+    });
+
+    // Generate QR code image
+    const qrData = {
+      type: 'LOAN_RETURN' as const,
+      id: loan.id,
+      code: returnQrCode,
+    };
+    const qrDataUrl = await this.qrService.generateQrDataUrl(qrData);
+
+    return {
+      ...updatedLoan,
+      qrCodeDataUrl: qrDataUrl,
+    };
+  }
+
+  /**
+   * Confirm return of loan by scanning QR code
+   */
+  async confirmReturn(qrCode: string, userId: string) {
+    const loan = await this.prisma.loan.findFirst({
+      where: { returnQrCode: qrCode },
+      include: this.loanInclude,
+    });
+
+    if (!loan) {
+      throw new NotFoundException('Invalid QR code or loan not found');
+    }
+
+    if (loan.status !== 'RETURN_PENDING') {
+      throw new BadRequestException(
+        `Cannot confirm return. Loan is in ${loan.status} status.`,
+      );
+    }
+
+    return this.prisma.loan.update({
+      where: { id: loan.id },
+      data: {
+        status: 'RETURNED',
+        returnDate: new Date(),
+        returnConfirmedAt: new Date(),
+        returnConfirmedById: userId,
+      },
+      include: this.loanInclude,
+    });
+  }
+
+  /**
+   * Get QR code image for a loan (send or return)
+   */
+  async getQrCode(id: string, type: 'send' | 'return') {
+    const loan = await this.findOne(id);
+
+    if (type === 'send') {
+      if (!loan.sendQrCode) {
+        throw new BadRequestException('Send QR code not generated. Send the loan first.');
+      }
+      const qrData = {
+        type: 'LOAN_SEND' as const,
+        id: loan.id,
+        code: loan.sendQrCode,
+      };
+      return this.qrService.generateQrDataUrl(qrData);
+    } else {
+      if (!loan.returnQrCode) {
+        throw new BadRequestException('Return QR code not generated. Initiate return first.');
+      }
+      const qrData = {
+        type: 'LOAN_RETURN' as const,
+        id: loan.id,
+        code: loan.returnQrCode,
+      };
+      return this.qrService.generateQrDataUrl(qrData);
+    }
+  }
+
+  /**
+   * Scan and process QR code (auto-detect type)
+   */
+  async processQrCode(scannedData: string, userId: string) {
+    const qrData = this.qrService.parseQrData(scannedData);
+
+    if (!qrData) {
+      throw new BadRequestException('Invalid QR code format');
+    }
+
+    if (qrData.type === 'LOAN_SEND') {
+      return this.confirmReceipt(qrData.code, userId);
+    } else if (qrData.type === 'LOAN_RETURN') {
+      return this.confirmReturn(qrData.code, userId);
+    } else {
+      throw new BadRequestException('Unknown QR code type');
+    }
   }
 
   async findAll(pagination?: PaginationDto): Promise<PaginatedResult<any>> {
@@ -118,7 +354,7 @@ export class LoansService {
         skip,
         take: limit,
         orderBy: { loanDate: pagination?.sortOrder || 'desc' },
-        include: this.loanInclude,
+        include: this.loanIncludeLight, // Use light include for faster list loading
       }),
       this.prisma.loan.count(),
     ]);
@@ -141,10 +377,10 @@ export class LoansService {
   async findActive() {
     return this.prisma.loan.findMany({
       where: {
-        status: { in: ['ACTIVE', 'OVERDUE'] },
+        status: { in: ['PENDING', 'SENT', 'RECEIVED', 'RETURN_PENDING', 'OVERDUE'] as any },
       },
       orderBy: { loanDate: 'desc' },
-      include: this.loanInclude,
+      include: this.loanIncludeLight,
     });
   }
 
@@ -165,7 +401,7 @@ export class LoansService {
     return this.prisma.loan.findMany({
       where: { inventoryItemId },
       orderBy: { loanDate: 'desc' },
-      include: this.loanInclude,
+      include: this.loanIncludeLight,
     });
   }
 
@@ -178,7 +414,7 @@ export class LoansService {
         ],
       },
       orderBy: { loanDate: 'desc' },
-      include: this.loanInclude,
+      include: this.loanIncludeLight,
     });
   }
 
@@ -202,6 +438,9 @@ export class LoansService {
     }
   }
 
+  /**
+   * Legacy return method (without QR) - kept for backwards compatibility
+   */
   async returnLoan(id: string, returnLoanDto?: ReturnLoanDto) {
     const loan = await this.findOne(id);
 
@@ -229,6 +468,20 @@ export class LoansService {
     });
   }
 
+  async cancel(id: string) {
+    const loan = await this.findOne(id);
+
+    if (loan.status === 'RETURNED' || loan.status === 'CANCELLED') {
+      throw new BadRequestException(`Cannot cancel loan in ${loan.status} status`);
+    }
+
+    return this.prisma.loan.update({
+      where: { id },
+      data: { status: 'CANCELLED' },
+      include: this.loanInclude,
+    });
+  }
+
   async remove(id: string) {
     try {
       await this.prisma.loan.delete({
@@ -246,14 +499,17 @@ export class LoansService {
     const now = new Date();
     const sevenDaysFromNow = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
 
-    const [totalActive, totalOverdue, totalReturned, dueSoon] =
+    const [totalPending, totalSent, totalReceived, totalReturnPending, totalReturned, totalOverdue, dueSoon] =
       await Promise.all([
-        this.prisma.loan.count({ where: { status: 'ACTIVE' } }),
-        this.prisma.loan.count({ where: { status: 'OVERDUE' } }),
+        this.prisma.loan.count({ where: { status: 'PENDING' } }),
+        this.prisma.loan.count({ where: { status: 'SENT' } }),
+        this.prisma.loan.count({ where: { status: 'RECEIVED' } }),
+        this.prisma.loan.count({ where: { status: 'RETURN_PENDING' } }),
         this.prisma.loan.count({ where: { status: 'RETURNED' } }),
+        this.prisma.loan.count({ where: { status: 'OVERDUE' } }),
         this.prisma.loan.count({
           where: {
-            status: 'ACTIVE',
+            status: { in: ['SENT', 'RECEIVED'] },
             dueDate: {
               lte: sevenDaysFromNow,
               gt: now,
@@ -263,10 +519,15 @@ export class LoansService {
       ]);
 
     return {
-      totalActive,
-      totalOverdue,
+      totalPending,
+      totalSent,
+      totalReceived,
+      totalReturnPending,
       totalReturned,
+      totalOverdue,
       dueSoon,
+      // Legacy fields for backwards compatibility
+      totalActive: totalPending + totalSent + totalReceived + totalReturnPending,
     };
   }
 
@@ -274,7 +535,7 @@ export class LoansService {
     const activeLoan = await this.prisma.loan.findFirst({
       where: {
         inventoryItemId,
-        status: { in: ['ACTIVE', 'OVERDUE'] },
+        status: { in: ['PENDING', 'SENT', 'RECEIVED', 'RETURN_PENDING', 'OVERDUE'] },
       },
     });
     return !!activeLoan;
@@ -286,7 +547,7 @@ export class LoansService {
 
     await this.prisma.loan.updateMany({
       where: {
-        status: 'ACTIVE',
+        status: { in: ['SENT', 'RECEIVED'] },
         dueDate: { lt: now },
       },
       data: {

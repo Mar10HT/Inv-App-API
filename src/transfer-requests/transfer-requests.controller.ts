@@ -36,7 +36,7 @@ export class TransferRequestsController {
   }
 
   @Get()
-  @ApiQuery({ name: 'status', enum: ['PENDING', 'APPROVED', 'REJECTED', 'COMPLETED', 'CANCELLED'], required: false })
+  @ApiQuery({ name: 'status', enum: ['PENDING', 'APPROVED', 'SENT', 'COMPLETED', 'REJECTED', 'CANCELLED'], required: false })
   findAll(
     @Query(ValidationPipe) pagination: PaginationDto,
     @Query('status') status?: string,
@@ -58,6 +58,42 @@ export class TransferRequestsController {
   findOne(@Param('id') id: string) {
     return this.transferRequestsService.findOne(id);
   }
+
+  // ==================== QR-Based Operations ====================
+
+  @Get(':id/qr')
+  @Roles('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER', 'USER')
+  getQrCode(@Param('id') id: string) {
+    return this.transferRequestsService.getQrCode(id);
+  }
+
+  @Patch(':id/send')
+  @Roles('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER')
+  sendTransfer(@Param('id') id: string) {
+    return this.transferRequestsService.sendTransfer(id);
+  }
+
+  @Post('confirm-receipt')
+  @HttpCode(HttpStatus.OK)
+  @Roles('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER', 'USER')
+  confirmReceipt(
+    @Body('qrCode') qrCode: string,
+    @CurrentUser() user: any,
+  ) {
+    return this.transferRequestsService.confirmReceipt(qrCode, user.id);
+  }
+
+  @Post('scan-qr')
+  @HttpCode(HttpStatus.OK)
+  @Roles('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER', 'USER')
+  processQrCode(
+    @Body('scannedData') scannedData: string,
+    @CurrentUser() user: any,
+  ) {
+    return this.transferRequestsService.processQrCode(scannedData, user.id);
+  }
+
+  // ==================== Standard Operations ====================
 
   @Patch(':id/approve')
   @Roles('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER')

@@ -25,6 +25,7 @@ import { TransferRequestsModule } from './transfer-requests/transfer-requests.mo
 import { ReportsModule } from './reports/reports.module';
 import { StockTakeModule } from './stock-take/stock-take.module';
 import { EmailModule } from './email/email.module';
+import { QrModule } from './qr/qr.module';
 
 @Module({
   imports: [
@@ -62,6 +63,7 @@ import { EmailModule } from './email/email.module';
     }),
     PrismaModule,
     EmailModule,
+    QrModule,
     AuthModule,
     HealthModule,
     InventoryModule,
