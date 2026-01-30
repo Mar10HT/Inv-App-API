@@ -3,10 +3,14 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CreateTransactionDto, TransactionType } from './dto/create-transaction.dto';
 import { UpdateTransactionDto } from './dto/update-transaction.dto';
 import { PaginationDto, PaginatedResult } from '../common/dto';
+import { EventsService } from '../events/events.service';
 
 @Injectable()
 export class TransactionsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private eventsService: EventsService,
+  ) {}
 
   async create(createTransactionDto: CreateTransactionDto) {
     const { items, ...transactionData } = createTransactionDto;
@@ -18,7 +22,7 @@ export class TransactionsService {
     await this.validateItems(items);
 
     // Create transaction with items in a single transaction
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const newTransaction = await tx.transaction.create({
         data: {
           ...transactionData,
@@ -53,6 +57,11 @@ export class TransactionsService {
 
       return newTransaction;
     });
+
+    this.eventsService.emitTransactionChange('created', result.id);
+    this.eventsService.emitInventoryChange('updated');
+
+    return result;
   }
 
   async findAll(pagination?: PaginationDto): Promise<PaginatedResult<any>> {

@@ -15,6 +15,8 @@ import {
   BulkOperationResultDto,
 } from './dto/bulk-operations.dto';
 import { InventoryItem, InventoryStatus, ItemType } from '@prisma/client';
+import { EventsService } from '../events/events.service';
+import { SearchService } from '../common/search/search.service';
 
 @Injectable()
 export class InventoryService {
@@ -28,6 +30,8 @@ export class InventoryService {
     private prisma: PrismaService,
     private auditService: AuditService,
     @Inject(CACHE_MANAGER) private cacheManager: Cache,
+    private eventsService: EventsService,
+    private searchService: SearchService,
   ) {}
 
   async create(createInventoryDto: CreateInventoryDto): Promise<InventoryItem> {
@@ -157,6 +161,12 @@ export class InventoryService {
     // Invalidate cache
     await this.invalidateCache();
 
+    // Emit WebSocket event
+    this.eventsService.emitInventoryChange('created', item.id, { name: item.name });
+
+    // Sync FTS index
+    this.searchService.syncItem(item.id).catch(() => {});
+
     return item;
   }
 
@@ -171,13 +181,20 @@ export class InventoryService {
     };
 
     if (filters?.search) {
-      where.OR = [
-        { name: { contains: filters.search, mode: 'insensitive' } },
-        { description: { contains: filters.search, mode: 'insensitive' } },
-        { sku: { contains: filters.search, mode: 'insensitive' } },
-        { serviceTag: { contains: filters.search, mode: 'insensitive' } },
-        { serialNumber: { contains: filters.search, mode: 'insensitive' } },
-      ];
+      // Try FTS first for better performance
+      const ftsIds = await this.searchService.searchInventory(filters.search);
+      if (ftsIds.length > 0) {
+        where.id = { in: ftsIds };
+      } else {
+        // Fallback to LIKE-style search via Prisma
+        where.OR = [
+          { name: { contains: filters.search, mode: 'insensitive' } },
+          { description: { contains: filters.search, mode: 'insensitive' } },
+          { sku: { contains: filters.search, mode: 'insensitive' } },
+          { serviceTag: { contains: filters.search, mode: 'insensitive' } },
+          { serialNumber: { contains: filters.search, mode: 'insensitive' } },
+        ];
+      }
     }
 
     if (filters?.category) {
@@ -345,6 +362,12 @@ export class InventoryService {
     // Invalidate cache
     await this.invalidateCache();
 
+    // Emit WebSocket event
+    this.eventsService.emitInventoryChange('updated', id);
+
+    // Sync FTS index
+    this.searchService.syncItem(id).catch(() => {});
+
     return updatedItem;
   }
 
@@ -360,6 +383,12 @@ export class InventoryService {
 
     // Invalidate cache
     await this.invalidateCache();
+
+    // Emit WebSocket event
+    this.eventsService.emitInventoryChange('deleted', id);
+
+    // Remove from FTS index
+    this.searchService.removeItem(id).catch(() => {});
   }
 
   async restore(id: string): Promise<InventoryItem> {
@@ -635,6 +664,7 @@ export class InventoryService {
     // Invalidate cache if any updates were successful
     if (result.success > 0) {
       await this.invalidateCache();
+      this.eventsService.emitInventoryChange('bulk_updated', undefined, { count: result.success });
     }
 
     return result;
@@ -696,6 +726,7 @@ export class InventoryService {
     // Invalidate cache if any deletes were successful
     if (result.success > 0) {
       await this.invalidateCache();
+      this.eventsService.emitInventoryChange('bulk_deleted', undefined, { count: result.success });
     }
 
     return result;
@@ -798,6 +829,7 @@ export class InventoryService {
     // Invalidate cache if any imports were successful
     if (result.success > 0) {
       await this.invalidateCache();
+      this.eventsService.emitInventoryChange('imported', undefined, { count: result.success });
     }
 
     return result;

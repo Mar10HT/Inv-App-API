@@ -26,6 +26,8 @@ import { ReportsModule } from './reports/reports.module';
 import { StockTakeModule } from './stock-take/stock-take.module';
 import { EmailModule } from './email/email.module';
 import { QrModule } from './qr/qr.module';
+import { EventsModule } from './events/events.module';
+import { SearchModule } from './common/search/search.module';
 
 @Module({
   imports: [
@@ -79,6 +81,8 @@ import { QrModule } from './qr/qr.module';
     TransferRequestsModule,
     ReportsModule,
     StockTakeModule,
+    EventsModule,
+    SearchModule,
   ],
   controllers: [AppController],
   providers: [

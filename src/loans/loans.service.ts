@@ -8,12 +8,14 @@ import { QrService } from '../qr/qr.service';
 import { CreateLoanDto } from './dto/create-loan.dto';
 import { UpdateLoanDto, ReturnLoanDto, LoanStatus } from './dto/update-loan.dto';
 import { PaginationDto, PaginatedResult } from '../common/dto';
+import { EventsService } from '../events/events.service';
 
 @Injectable()
 export class LoansService {
   constructor(
     private prisma: PrismaService,
     private qrService: QrService,
+    private eventsService: EventsService,
   ) {}
 
   // Light include for list queries (faster)
@@ -142,7 +144,7 @@ export class LoansService {
     }
 
     // Create the loan with PENDING status
-    return this.prisma.loan.create({
+    const loan = await this.prisma.loan.create({
       data: {
         inventoryItemId: createLoanDto.inventoryItemId,
         quantity: createLoanDto.quantity,
@@ -155,6 +157,10 @@ export class LoansService {
       },
       include: this.loanInclude,
     });
+
+    this.eventsService.emitLoanChange('created', loan.id);
+
+    return loan;
   }
 
   /**
