@@ -3,10 +3,10 @@ import { JwtService } from '@nestjs/jwt';
 import { UnauthorizedException, ConflictException, BadRequestException } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { UsersService } from '../users/users.service';
-import * as bcrypt from 'bcrypt';
+import * as bcrypt from 'bcryptjs';
 
 // Mock bcrypt
-jest.mock('bcrypt', () => ({
+jest.mock('bcryptjs', () => ({
   compare: jest.fn(),
   hash: jest.fn(),
 }));

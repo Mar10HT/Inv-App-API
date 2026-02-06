@@ -1,6 +1,6 @@
 import { Controller, Post } from '@nestjs/common';
 import { PrismaClient, InventoryStatus, Currency, ItemType, UserRole } from '@prisma/client';
-import * as bcrypt from 'bcrypt';
+import * as bcrypt from 'bcryptjs';
 
 @Controller('seed')
 export class SeedController {
