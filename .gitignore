@@ -2,9 +2,6 @@ node_modules
 # Keep environment variables out of version control
 .env
 
-# Bun lockfile (use npm in production)
-bun.lock
-
 # Build output
 dist/
 
