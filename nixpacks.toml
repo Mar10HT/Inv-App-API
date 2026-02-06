@@ -1,5 +1,5 @@
 [phases.setup]
-nixPkgs = ["nodejs_20", "openssl", "bun"]
+nixPkgs = ["nodejs_20", "openssl_3", "bun"]
 
 [phases.install]
 dependsOn = ["setup"]
