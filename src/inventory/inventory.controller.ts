@@ -11,13 +11,19 @@ import {
   HttpStatus,
   ValidationPipe,
   UseGuards,
+  UseInterceptors,
+  UploadedFile,
+  BadRequestException,
+  Req,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { InventoryService } from './inventory.service';
 import { CreateInventoryDto } from './dto/create-inventory.dto';
 import { UpdateInventoryDto } from './dto/update-inventory.dto';
 import { FilterInventoryDto } from './dto/filter-inventory.dto';
+import { BulkUpdateDto, BulkDeleteDto, BulkImportDto } from './dto/bulk-operations.dto';
 import { JwtAuthGuard, RolesGuard } from '../auth/guards';
-import { Roles } from '../auth/decorators';
+import { Roles, CurrentUser } from '../auth/decorators';
 
 @Controller('inventory')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -81,5 +87,71 @@ export class InventoryController {
   @Roles('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER')
   restore(@Param('id') id: string) {
     return this.inventoryService.restore(id);
+  }
+
+  // Bulk Operations
+
+  @Post('bulk-update')
+  @HttpCode(HttpStatus.OK)
+  @Roles('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER')
+  bulkUpdate(
+    @Body(ValidationPipe) dto: BulkUpdateDto,
+    @CurrentUser() user: any,
+  ) {
+    return this.inventoryService.bulkUpdate(dto, user?.id);
+  }
+
+  @Delete('bulk-delete')
+  @HttpCode(HttpStatus.OK)
+  @Roles('SYSTEM_ADMIN')
+  bulkDelete(
+    @Body(ValidationPipe) dto: BulkDeleteDto,
+    @CurrentUser() user: any,
+  ) {
+    return this.inventoryService.bulkDelete(dto, user?.id);
+  }
+
+  @Post('bulk-import')
+  @HttpCode(HttpStatus.CREATED)
+  @Roles('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER')
+  bulkImport(
+    @Body(ValidationPipe) dto: BulkImportDto,
+    @CurrentUser() user: any,
+  ) {
+    dto.createdById = user?.id;
+    return this.inventoryService.bulkImport(dto);
+  }
+
+  @Post('bulk-import/excel')
+  @HttpCode(HttpStatus.CREATED)
+  @Roles('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER')
+  @UseInterceptors(FileInterceptor('file'))
+  async bulkImportExcel(
+    @UploadedFile() file: Express.Multer.File,
+    @CurrentUser() user: any,
+  ) {
+    if (!file) {
+      throw new BadRequestException('No file uploaded');
+    }
+
+    const allowedMimeTypes = [
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'application/vnd.ms-excel',
+    ];
+
+    if (!allowedMimeTypes.includes(file.mimetype)) {
+      throw new BadRequestException('Invalid file type. Only Excel files (.xlsx, .xls) are allowed');
+    }
+
+    const items = await this.inventoryService.parseExcelFile(file.buffer);
+
+    if (items.length === 0) {
+      throw new BadRequestException('No valid items found in the Excel file');
+    }
+
+    return this.inventoryService.bulkImport({
+      items,
+      createdById: user?.id,
+    });
   }
 }

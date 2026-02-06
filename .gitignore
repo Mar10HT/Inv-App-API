@@ -16,3 +16,10 @@ prisma/migrations-sqlite-backup
 # SQLite database
 *.db
 *.db-journal
+
+# Test coverage reports
+coverage/
+
+# Logs
+logs/
+*.log

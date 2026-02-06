@@ -29,10 +29,6 @@ export class CreateLoanDto {
   dueDate: string;
 
   @IsString()
-  @IsNotEmpty()
-  createdById: string;
-
-  @IsString()
   @IsOptional()
   notes?: string;
 }

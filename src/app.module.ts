@@ -1,9 +1,13 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { APP_GUARD } from '@nestjs/core';
+import { APP_FILTER, APP_GUARD } from '@nestjs/core';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { ScheduleModule } from '@nestjs/schedule';
+import { CacheModule } from '@nestjs/cache-manager';
+import { SentryGlobalFilter, SentryModule } from '@sentry/nestjs/setup';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
+import { LoggerModule } from './logger';
 import { PrismaModule } from './prisma/prisma.module';
 import { CsrfModule } from './csrf/csrf.module';
 import { InventoryModule } from './inventory/inventory.module';
@@ -17,13 +21,24 @@ import { AuthModule } from './auth/auth.module';
 import { SeedModule } from './seed/seed.module';
 import { AuditModule } from './audit/audit.module';
 import { HealthModule } from './health/health.module';
+import { AlertsModule } from './alerts/alerts.module';
+import { TransferRequestsModule } from './transfer-requests/transfer-requests.module';
+import { ReportsModule } from './reports/reports.module';
+import { StockTakeModule } from './stock-take/stock-take.module';
+import { EmailModule } from './email/email.module';
+import { QrModule } from './qr/qr.module';
+import { EventsModule } from './events/events.module';
+import { SearchModule } from './common/search/search.module';
 
 @Module({
   imports: [
+    // Sentry must be first to capture all errors
+    SentryModule.forRoot(),
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: '.env',
     }),
+    LoggerModule,
     // Rate limiting: 100 requests per minute per IP
     ThrottlerModule.forRoot([
       {
@@ -42,8 +57,16 @@ import { HealthModule } from './health/health.module';
         limit: 1000, // 1000 requests per hour
       },
     ]),
+    ScheduleModule.forRoot(),
+    // Cache configuration: 60 seconds TTL, max 100 items
+    CacheModule.register({
+      isGlobal: true,
+      ttl: 60000, // 60 seconds
+      max: 100, // maximum number of items in cache
+    }),
     PrismaModule,
-    CsrfModule, // Global CSRF protection
+    EmailModule,
+    QrModule,
     AuthModule,
     HealthModule,
     InventoryModule,
@@ -55,10 +78,21 @@ import { HealthModule } from './health/health.module';
     LoansModule,
     SeedModule,
     AuditModule,
+    AlertsModule,
+    TransferRequestsModule,
+    ReportsModule,
+    StockTakeModule,
+    EventsModule,
+    SearchModule,
   ],
   controllers: [AppController],
   providers: [
     AppService,
+    // Sentry error filter (must be first)
+    {
+      provide: APP_FILTER,
+      useClass: SentryGlobalFilter,
+    },
     // Apply throttling globally
     {
       provide: APP_GUARD,

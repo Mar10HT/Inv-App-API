@@ -2,11 +2,22 @@ import { Injectable, NotFoundException, ConflictException } from '@nestjs/common
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
+import { PaginationDto, PaginatedResult } from '../common/dto';
 import * as bcrypt from 'bcrypt';
 
 @Injectable()
 export class UsersService {
   constructor(private prisma: PrismaService) {}
+
+  private readonly userSelect = {
+    id: true,
+    email: true,
+    name: true,
+    role: true,
+    createdAt: true,
+    updatedAt: true,
+    // Exclude password
+  };
 
   async create(createUserDto: CreateUserDto) {
     try {
@@ -31,26 +42,43 @@ export class UsersService {
     }
   }
 
-  async findAll() {
-    const users = await this.prisma.user.findMany({
-      where: {
-        deletedAt: null, // Exclude soft-deleted users
-      },
-      orderBy: {
-        createdAt: 'desc',
-      },
-      select: {
-        id: true,
-        email: true,
-        name: true,
-        role: true,
-        createdAt: true,
-        updatedAt: true,
-        // Exclude password
-      },
-    });
+  async findAll(pagination?: PaginationDto): Promise<PaginatedResult<any>> {
+    const page = pagination?.page || 1;
+    const limit = pagination?.limit || 10;
+    const skip = (page - 1) * limit;
 
-    return users;
+    const [data, total] = await Promise.all([
+      this.prisma.user.findMany({
+        where: {
+          deletedAt: null, // Exclude soft-deleted users
+        },
+        skip,
+        take: limit,
+        orderBy: {
+          createdAt: pagination?.sortOrder || 'desc',
+        },
+        select: this.userSelect,
+      }),
+      this.prisma.user.count({
+        where: {
+          deletedAt: null,
+        },
+      }),
+    ]);
+
+    const totalPages = Math.ceil(total / limit);
+
+    return {
+      data,
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages,
+        hasNextPage: page < totalPages,
+        hasPrevPage: page > 1,
+      },
+    };
   }
 
   async findOne(id: string) {

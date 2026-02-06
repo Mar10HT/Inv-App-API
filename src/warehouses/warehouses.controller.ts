@@ -6,6 +6,7 @@ import {
   Patch,
   Param,
   Delete,
+  Query,
   HttpCode,
   HttpStatus,
   ValidationPipe,
@@ -14,6 +15,7 @@ import {
 import { WarehousesService } from './warehouses.service';
 import { CreateWarehouseDto } from './dto/create-warehouse.dto';
 import { UpdateWarehouseDto } from './dto/update-warehouse.dto';
+import { PaginationDto } from '../common/dto';
 import { JwtAuthGuard, RolesGuard } from '../auth/guards';
 import { Roles } from '../auth/decorators';
 
@@ -30,8 +32,8 @@ export class WarehousesController {
   }
 
   @Get()
-  findAll() {
-    return this.warehousesService.findAll();
+  findAll(@Query(new ValidationPipe({ transform: true })) pagination: PaginationDto) {
+    return this.warehousesService.findAll(pagination);
   }
 
   @Get(':id')

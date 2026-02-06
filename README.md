@@ -1,98 +1,411 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+<div align="center">
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+# 🔧 Inv-App API
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+### RESTful Backend for Inventory Management
 
-## Description
+[![NestJS](https://img.shields.io/badge/NestJS-10.0-E0234E?style=for-the-badge&logo=nestjs&logoColor=white)](https://nestjs.com)
+[![Prisma](https://img.shields.io/badge/Prisma-5.0-2D3748?style=for-the-badge&logo=prisma&logoColor=white)](https://prisma.io)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.8-3178C6?style=for-the-badge&logo=typescript&logoColor=white)](https://typescriptlang.org)
+[![Jest](https://img.shields.io/badge/Jest-141_tests-C21325?style=for-the-badge&logo=jest&logoColor=white)](https://jestjs.io)
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+<br/>
 
-## Project setup
+[Features](#-features) •
+[Quick Start](#-quick-start) •
+[API Docs](#-api-documentation) •
+[Testing](#-testing)
+
+</div>
+
+---
+
+## ✨ Features
+
+<table>
+<tr>
+<td>
+
+### 🔐 Security
+- JWT + HttpOnly cookies
+- Role-based access (RBAC)
+- Rate limiting (tiered)
+- Password hashing (bcrypt)
+- CSRF protection
+
+</td>
+<td>
+
+### 📊 Core Features
+- Full CRUD for all entities
+- Paginated responses
+- Advanced filtering
+- Soft deletes
+- Audit logging
+
+</td>
+</tr>
+<tr>
+<td>
+
+### 📦 Advanced
+- Bulk operations
+- Excel/PDF export
+- Stock alerts (cron)
+- Transfer workflows
+- Stock reconciliation
+
+</td>
+<td>
+
+### 🛠 Infrastructure
+- Winston logging
+- Swagger docs
+- Health checks
+- Input validation
+- Error handling
+
+</td>
+</tr>
+</table>
+
+---
+
+## 🚀 Quick Start
 
 ```bash
-$ npm install
+# Install dependencies
+npm install
+
+# Setup environment
+cp .env.example .env
+
+# Run migrations
+npx prisma migrate dev
+
+# Seed database (optional)
+npm run seed
+
+# Start development
+npm run start:dev
+# → http://localhost:3000
+# → Swagger: http://localhost:3000/api/docs
 ```
 
-## Compile and run the project
+### Environment Variables
+
+```env
+# Database
+DATABASE_URL="file:./dev.db"           # SQLite (dev)
+# DATABASE_URL="postgresql://..."       # PostgreSQL (prod)
+
+# Security
+JWT_SECRET="your-super-secret-key"
+JWT_EXPIRATION="7d"
+
+# Server
+PORT=3000
+NODE_ENV=development
+```
+
+---
+
+## 📁 Project Structure
+
+```
+src/
+├── 📂 auth/                 # Authentication
+│   ├── guards/              # JWT & Role guards
+│   ├── decorators/          # @Roles, @CurrentUser
+│   ├── dto/                 # Login, Register DTOs
+│   └── strategies/          # Passport JWT strategy
+│
+├── 📂 inventory/            # Core inventory module
+│   ├── dto/                 # Create, Update, Filter, Bulk DTOs
+│   └── inventory.service.ts # Business logic
+│
+├── 📂 warehouses/           # Warehouse CRUD
+├── 📂 suppliers/            # Supplier CRUD
+├── 📂 categories/           # Category CRUD
+├── 📂 transactions/         # Stock movements
+├── 📂 loans/                # Item lending
+├── 📂 users/                # User management
+│
+├── 📂 alerts/               # Stock alerts + cron jobs
+├── 📂 reports/              # Excel/PDF generation
+├── 📂 transfer-requests/    # Approval workflow
+├── 📂 stock-take/           # Inventory reconciliation
+├── 📂 audit/                # Activity logging
+│
+├── 📂 health/               # Health check endpoint
+├── 📂 seed/                 # Database seeding
+├── 📂 prisma/               # Database service
+├── 📂 logger/               # Winston configuration
+└── 📂 common/               # Shared DTOs, filters
+
+prisma/
+├── schema.prisma            # Database schema
+└── migrations/              # Migration history
+```
+
+---
+
+## 📡 API Documentation
+
+### Swagger UI
+
+Access interactive documentation at: **http://localhost:3000/api/docs**
+
+### Endpoint Overview
+
+| Module | Endpoints | Description |
+|--------|-----------|-------------|
+| Auth | 6 | Login, register, logout, profile, password |
+| Inventory | 12 | CRUD + bulk + stats |
+| Warehouses | 5 | CRUD operations |
+| Suppliers | 5 | CRUD operations |
+| Categories | 5 | CRUD operations |
+| Transactions | 6 | Stock movements |
+| Loans | 11 | Item lending |
+| Alerts | 9 | Stock alerts |
+| Reports | 5 | Excel/PDF export |
+| Transfer Requests | 9 | Approval workflow |
+| Stock Take | 8 | Reconciliation |
+| Audit | 3 | Activity logs |
+| Health | 1 | Health check |
+
+### Example Requests
+
+<details>
+<summary><b>Authentication</b></summary>
 
 ```bash
-# development
-$ npm run start
+# Login
+curl -X POST http://localhost:3000/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email": "admin@inventory.com", "password": "Admin123!"}'
 
-# watch mode
-$ npm run start:dev
-
-# production mode
-$ npm run start:prod
+# Response
+{
+  "access_token": "eyJhbG...",
+  "user": {
+    "id": "...",
+    "email": "admin@inventory.com",
+    "role": "SYSTEM_ADMIN"
+  }
+}
 ```
 
-## Run tests
+</details>
+
+<details>
+<summary><b>Inventory CRUD</b></summary>
 
 ```bash
-# unit tests
-$ npm run test
+# List items (paginated)
+curl http://localhost:3000/api/inventory?page=1&limit=10 \
+  -H "Authorization: Bearer <token>"
 
-# e2e tests
-$ npm run test:e2e
+# Create item
+curl -X POST http://localhost:3000/api/inventory \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Dell Latitude 5430",
+    "category": "Laptops",
+    "quantity": 10,
+    "warehouseId": "..."
+  }'
 
-# test coverage
-$ npm run test:cov
+# Bulk import
+curl -X POST http://localhost:3000/api/inventory/bulk-import/excel \
+  -H "Authorization: Bearer <token>" \
+  -F "file=@inventory.xlsx"
 ```
 
-## Deployment
+</details>
 
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
-
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+<details>
+<summary><b>Reports</b></summary>
 
 ```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
+# Export to Excel
+curl http://localhost:3000/api/reports/inventory/excel \
+  -H "Authorization: Bearer <token>" \
+  -o inventory.xlsx
+
+# Export to PDF
+curl http://localhost:3000/api/reports/inventory/pdf \
+  -H "Authorization: Bearer <token>" \
+  -o inventory.pdf
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+</details>
 
-## Resources
+---
 
-Check out a few resources that may come in handy when working with NestJS:
+## 🧪 Testing
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
+```bash
+# Run all tests
+npm test
 
-## Support
+# Watch mode
+npm run test:watch
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
+# Coverage report
+npm run test:cov
 
-## Stay in touch
+# E2E tests
+npm run test:e2e
+```
 
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
+### Test Summary
 
-## License
+| Suite | Tests | Coverage |
+|-------|-------|----------|
+| Auth | 22 | Services & Guards |
+| Inventory | 28 | CRUD + Bulk |
+| Warehouses | 14 | CRUD |
+| Suppliers | 14 | CRUD |
+| Categories | 14 | CRUD |
+| Transactions | 14 | Stock movements |
+| Loans | 21 | Lending workflow |
+| Users | 14 | User management |
+| **Total** | **141** | **~32%** |
 
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+---
+
+## 🔐 Security
+
+### Rate Limiting
+
+```typescript
+// Tiered rate limiting
+ThrottlerModule.forRoot([
+  { name: 'short', ttl: 1000, limit: 10 },    // 10/sec
+  { name: 'medium', ttl: 60000, limit: 100 }, // 100/min
+  { name: 'long', ttl: 3600000, limit: 1000 } // 1000/hr
+])
+```
+
+### Role-Based Access
+
+```typescript
+// Decorator usage
+@Roles('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER')
+@UseGuards(JwtAuthGuard, RolesGuard)
+async create(@Body() dto: CreateItemDto) { ... }
+
+// Available roles
+enum Role {
+  SYSTEM_ADMIN,      // Full access
+  WAREHOUSE_MANAGER, // Manage assigned warehouse
+  USER,              // Basic operations
+  VIEWER             // Read-only
+}
+```
+
+### Password Policy
+
+- Minimum 12 characters
+- At least 1 uppercase, 1 lowercase
+- At least 1 number, 1 special character
+- bcrypt hashing with salt rounds
+
+---
+
+## 📦 Database
+
+### Schema Overview
+
+```prisma
+model User {
+  id       String @id @default(cuid())
+  email    String @unique
+  password String
+  role     Role   @default(USER)
+  // ... relations
+}
+
+model InventoryItem {
+  id          String @id @default(cuid())
+  name        String
+  quantity    Int
+  status      InventoryStatus
+  itemType    ItemType
+  warehouseId String
+  // ... relations, soft delete
+}
+
+// Additional models:
+// Warehouse, Supplier, Category, Transaction,
+// Loan, AuditLog, StockAlert, TransferRequest, StockTake
+```
+
+### Migrations
+
+```bash
+# Create migration
+npx prisma migrate dev --name add_feature
+
+# Apply migrations
+npx prisma migrate deploy
+
+# Reset database
+npx prisma migrate reset
+```
+
+---
+
+## 🚢 Deployment
+
+### Railway
+
+```bash
+# Install CLI
+npm i -g @railway/cli
+
+# Login and deploy
+railway login
+railway link
+railway up
+```
+
+See [RAILWAY-DEPLOY.md](../context/RAILWAY-DEPLOY.md) for details.
+
+### Docker
+
+```dockerfile
+FROM node:18-alpine
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci --only=production
+COPY dist ./dist
+COPY prisma ./prisma
+RUN npx prisma generate
+EXPOSE 3000
+CMD ["node", "dist/main"]
+```
+
+---
+
+## 📚 Related Documentation
+
+| Document | Description |
+|----------|-------------|
+| [Plan de Mejoras](./context/PLAN_DE_MEJORAS.md) | Improvement roadmap |
+| [Optimizations](./context/OPTIMIZATIONS.md) | Full-stack analysis |
+| [Permissions Guide](./context/PERMISSIONS_GUIDE.md) | RBAC configuration |
+| [Deployment Guide](./context/DEPLOYMENT-GUIDE.md) | Production setup |
+| [Railway Deploy](./context/RAILWAY-DEPLOY.md) | Railway hosting |
+| [Build Optimization](./context/BUILD-OPTIMIZATION.md) | Performance |
+| [Production Checklist](./context/PRODUCTION-CHECKLIST.md) | Pre-launch |
+
+---
+
+<div align="center">
+
+**Inventory Management System - Backend**
+
+</div>

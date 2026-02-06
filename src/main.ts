@@ -1,14 +1,26 @@
+// Sentry must be imported first to capture all errors
+import './instrument';
+
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
+import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
 import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
+import compression from 'compression';
+import * as Sentry from '@sentry/nestjs';
 import { AppModule } from './app.module';
 import { CsrfService } from './csrf/csrf.service';
 import { GlobalExceptionFilter } from './common/filters';
+import { LoggingInterceptor } from './common/interceptors';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create(AppModule, {
+    bufferLogs: true, // Buffer logs until Winston is ready
+  });
+
+  // Use Winston for NestJS logging
+  app.useLogger(app.get(WINSTON_MODULE_NEST_PROVIDER));
 
   // Security middleware - Helmet
   app.use(
@@ -25,7 +37,10 @@ async function bootstrap() {
     }),
   );
 
-  // Cookie parser middleware (must be before CSRF)
+  // Response compression (GZIP)
+  app.use(compression());
+
+  // Cookie parser middleware
   app.use(cookieParser());
 
   // Get CSRF service and apply middleware globally
@@ -33,11 +48,22 @@ async function bootstrap() {
   app.use(csrfService.getProtectionMiddleware());
 
   // Enable CORS
-  const corsOrigin = process.env.CORS_ORIGIN || 'http://localhost:4200';
+  const corsOrigins = process.env.CORS_ORIGIN?.split(',').map(o => o.trim()) || ['http://localhost:4200'];
 
   app.enableCors({
-    origin: corsOrigin,
+    origin: (origin, callback) => {
+      // Allow requests with no origin (like mobile apps or curl)
+      if (!origin) return callback(null, true);
+
+      if (corsOrigins.some(allowed => origin === allowed || origin.endsWith(allowed.replace('https://', '.')))) {
+        return callback(null, true);
+      }
+
+      console.log(`CORS blocked origin: ${origin}, allowed: ${corsOrigins.join(', ')}`);
+      return callback(null, false);
+    },
     credentials: true,
+    exposedHeaders: ['set-cookie'],
   });
 
   // Global validation pipe
@@ -53,7 +79,10 @@ async function bootstrap() {
   );
 
   // Global exception filter for centralized error handling
-  app.useGlobalFilters(new GlobalExceptionFilter());
+  app.useGlobalFilters(new GlobalExceptionFilter(app.get(WINSTON_MODULE_NEST_PROVIDER)));
+
+  // Global logging interceptor
+  app.useGlobalInterceptors(new LoggingInterceptor(app.get(WINSTON_MODULE_NEST_PROVIDER)));
 
   // Global prefix for all routes
   app.setGlobalPrefix('api');

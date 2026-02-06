@@ -27,6 +27,21 @@ model User {
   auditLogs        AuditLog[]
   transactions     Transaction[]
   loans            Loan[]
+  receivedLoans    Loan[]               @relation("ReceivedLoans")
+  returnConfirmedLoans Loan[]           @relation("ReturnConfirmedLoans")
+
+  // Transfer Request relations
+  requestedTransfers  TransferRequest[]   @relation("RequestedTransfers")
+  approvedTransfers   TransferRequest[]   @relation("ApprovedTransfers")
+  receivedTransfers   TransferRequest[]   @relation("ReceivedTransfers")
+
+  // Stock Take relations
+  startedStockTakes   StockTake[]         @relation("StartedStockTakes")
+  completedStockTakes StockTake[]         @relation("CompletedStockTakes")
+
+  // Auth tokens relations
+  refreshTokens       RefreshToken[]
+  passwordResetTokens PasswordResetToken[]
 
   @@index([deletedAt])
   @@map("users")
@@ -57,6 +72,13 @@ model Warehouse {
   sourceLoans             Loan[]           @relation("SourceLoans")
   destinationLoans        Loan[]           @relation("DestinationLoans")
 
+  // Transfer Request relations
+  sourceTransferRequests      TransferRequest[] @relation("SourceTransferRequests")
+  destinationTransferRequests TransferRequest[] @relation("DestinationTransferRequests")
+
+  // Stock Take relation
+  stockTakes              StockTake[]
+
   @@map("warehouses")
 }
 
@@ -67,7 +89,9 @@ model InventoryItem {
   description  String?
   quantity     Int               @default(0)
   minQuantity  Int               @default(10) // For low stock alerts
-  category     String
+  category     String            // Legacy: category name as string
+  categoryRef  Category?         @relation(fields: [categoryId], references: [id])
+  categoryId   String?           // New: relation to Category model
   status       InventoryStatus   @default(IN_STOCK)
   price        Float?
   currency     Currency          @default(USD) // Currency type
@@ -104,7 +128,13 @@ model InventoryItem {
   transactionItems  TransactionItem[]
   loans             Loan[]
 
+  // New relations for Phase 3
+  stockAlerts            StockAlert[]
+  transferRequestItems   TransferRequestItem[]
+  stockTakeItems         StockTakeItem[]
+
   @@index([category])
+  @@index([categoryId])
   @@index([status])
   @@index([currency])
   @@index([warehouseId])
@@ -174,6 +204,9 @@ model Category {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
+  // Relations
+  inventoryItems InventoryItem[]
+
   @@map("categories")
 }
 
@@ -229,17 +262,31 @@ model Loan {
   loanDate               DateTime   @default(now())
   dueDate                DateTime
   returnDate             DateTime?
-  status                 LoanStatus @default(ACTIVE)
+  status                 LoanStatus @default(PENDING)
   notes                  String?
   createdById            String
   createdAt              DateTime   @default(now())
   updatedAt              DateTime   @updatedAt
+
+  // QR Code fields for confirmation flow
+  sendQrCode             String?    @unique  // QR to confirm shipment receipt
+  returnQrCode           String?    @unique  // QR to confirm return receipt
+
+  // Receipt confirmation
+  receivedAt             DateTime?           // When receiver confirmed receipt
+  receivedById           String?             // Who confirmed receipt
+
+  // Return confirmation
+  returnConfirmedAt      DateTime?           // When return was confirmed
+  returnConfirmedById    String?             // Who confirmed return
 
   // Relations
   inventoryItem        InventoryItem @relation(fields: [inventoryItemId], references: [id])
   sourceWarehouse      Warehouse     @relation("SourceLoans", fields: [sourceWarehouseId], references: [id])
   destinationWarehouse Warehouse     @relation("DestinationLoans", fields: [destinationWarehouseId], references: [id])
   createdBy            User          @relation(fields: [createdById], references: [id])
+  receivedBy           User?         @relation("ReceivedLoans", fields: [receivedById], references: [id])
+  returnConfirmedBy    User?         @relation("ReturnConfirmedLoans", fields: [returnConfirmedById], references: [id])
 
   @@index([inventoryItemId])
   @@index([sourceWarehouseId])
@@ -247,11 +294,206 @@ model Loan {
   @@index([status])
   @@index([dueDate])
   @@index([createdById])
+  @@index([sendQrCode])
+  @@index([returnQrCode])
   @@map("loans")
 }
 
 enum LoanStatus {
-  ACTIVE
-  OVERDUE
-  RETURNED
+  PENDING        // Created, waiting to be sent
+  SENT           // Shipped, QR generated for receipt
+  RECEIVED       // Receiver confirmed receipt
+  RETURN_PENDING // Return initiated, QR generated
+  RETURNED       // Return confirmed
+  OVERDUE        // Past due date (can be in SENT or RECEIVED state)
+  CANCELLED      // Loan cancelled
+}
+
+// Stock Alert model for low stock notifications
+model StockAlert {
+  id            String      @id @default(cuid())
+  itemId        String
+  type          AlertType
+  threshold     Int         // The minQuantity threshold
+  currentQty    Int         // Quantity when alert was created
+  notified      Boolean     @default(false)
+  notifiedAt    DateTime?
+  resolvedAt    DateTime?   // When stock was replenished
+  createdAt     DateTime    @default(now())
+
+  // Relations
+  item          InventoryItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@index([itemId])
+  @@index([type])
+  @@index([notified])
+  @@index([createdAt])
+  @@map("stock_alerts")
+}
+
+enum AlertType {
+  LOW_STOCK
+  OUT_OF_STOCK
+  EXPIRING_SOON
+}
+
+// Transfer Request model for approval workflow
+model TransferRequest {
+  id                     String        @id @default(cuid())
+  status                 RequestStatus @default(PENDING)
+  sourceWarehouseId      String
+  destinationWarehouseId String
+  requestedById          String
+  approvedById           String?
+  approvedAt             DateTime?
+  rejectedAt             DateTime?
+  rejectedReason         String?
+  notes                  String?
+  createdAt              DateTime      @default(now())
+  updatedAt              DateTime      @updatedAt
+
+  // QR Code fields for confirmation workflow
+  sendQrCode             String?       @unique
+  receivedAt             DateTime?
+  receivedById           String?
+
+  // Relations
+  sourceWarehouse      Warehouse              @relation("SourceTransferRequests", fields: [sourceWarehouseId], references: [id])
+  destinationWarehouse Warehouse              @relation("DestinationTransferRequests", fields: [destinationWarehouseId], references: [id])
+  requestedBy          User                   @relation("RequestedTransfers", fields: [requestedById], references: [id])
+  approvedBy           User?                  @relation("ApprovedTransfers", fields: [approvedById], references: [id])
+  receivedBy           User?                  @relation("ReceivedTransfers", fields: [receivedById], references: [id])
+  items                TransferRequestItem[]
+
+  @@index([status])
+  @@index([sourceWarehouseId])
+  @@index([destinationWarehouseId])
+  @@index([requestedById])
+  @@index([createdAt])
+  @@map("transfer_requests")
+}
+
+model TransferRequestItem {
+  id                String          @id @default(cuid())
+  transferRequestId String
+  inventoryItemId   String
+  quantity          Int
+
+  // Relations
+  transferRequest TransferRequest @relation(fields: [transferRequestId], references: [id], onDelete: Cascade)
+  inventoryItem   InventoryItem   @relation(fields: [inventoryItemId], references: [id])
+
+  @@index([transferRequestId])
+  @@index([inventoryItemId])
+  @@map("transfer_request_items")
+}
+
+enum RequestStatus {
+  PENDING      // Created, awaiting approval
+  APPROVED     // Approved by manager
+  SENT         // Items shipped, QR generated for receipt
+  RECEIVED     // Receiver confirmed via QR scan
+  COMPLETED    // Transfer finalized
+  REJECTED     // Rejected by approver
+  CANCELLED    // Cancelled
+}
+
+// Stock Take model for inventory reconciliation
+model StockTake {
+  id            String          @id @default(cuid())
+  warehouseId   String
+  status        StockTakeStatus @default(IN_PROGRESS)
+  startedAt     DateTime        @default(now())
+  completedAt   DateTime?
+  startedById   String
+  completedById String?
+  notes         String?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  // Relations
+  warehouse     Warehouse       @relation(fields: [warehouseId], references: [id])
+  startedBy     User            @relation("StartedStockTakes", fields: [startedById], references: [id])
+  completedBy   User?           @relation("CompletedStockTakes", fields: [completedById], references: [id])
+  items         StockTakeItem[]
+
+  @@index([warehouseId])
+  @@index([status])
+  @@index([startedAt])
+  @@map("stock_takes")
+}
+
+model StockTakeItem {
+  id            String     @id @default(cuid())
+  stockTakeId   String
+  itemId        String
+  expectedQty   Int        // System quantity
+  countedQty    Int?       // Physical count
+  variance      Int?       // Difference (countedQty - expectedQty)
+  notes         String?
+  countedAt     DateTime?
+  createdAt     DateTime   @default(now())
+
+  // Relations
+  stockTake     StockTake     @relation(fields: [stockTakeId], references: [id], onDelete: Cascade)
+  item          InventoryItem @relation(fields: [itemId], references: [id])
+
+  @@index([stockTakeId])
+  @@index([itemId])
+  @@map("stock_take_items")
+}
+
+enum StockTakeStatus {
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+// ============================================
+// Phase 5: Production Security Models
+// ============================================
+
+// Login attempts tracking for brute force protection
+model LoginAttempt {
+  id        String   @id @default(cuid())
+  email     String
+  ip        String
+  success   Boolean
+  createdAt DateTime @default(now())
+
+  @@index([email, createdAt])
+  @@index([ip, createdAt])
+  @@map("login_attempts")
+}
+
+// Refresh tokens for secure token rotation
+model RefreshToken {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String
+  expiresAt DateTime
+  revoked   Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("refresh_tokens")
+}
+
+// Password reset tokens
+model PasswordResetToken {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String
+  expiresAt DateTime
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("password_reset_tokens")
 }

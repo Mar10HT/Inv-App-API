@@ -11,6 +11,7 @@ import {
   ValidationPipe,
   Query,
   UseGuards,
+  Request,
 } from '@nestjs/common';
 import { LoansService } from './loans.service';
 import { CreateLoanDto } from './dto/create-loan.dto';
@@ -27,8 +28,11 @@ export class LoansController {
   @Post()
   @HttpCode(HttpStatus.CREATED)
   @Roles('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER', 'USER')
-  create(@Body(ValidationPipe) createLoanDto: CreateLoanDto) {
-    return this.loansService.create(createLoanDto);
+  create(
+    @Body(ValidationPipe) createLoanDto: CreateLoanDto,
+    @Request() req: { user: { userId: string } },
+  ) {
+    return this.loansService.create(createLoanDto, req.user.userId);
   }
 
   @Get()
@@ -67,6 +71,80 @@ export class LoansController {
     return this.loansService.findOne(id);
   }
 
+  // ==================== QR Code Endpoints ====================
+
+  /**
+   * Send loan - generates QR code for receipt confirmation
+   */
+  @Patch(':id/send')
+  @Roles('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER', 'USER')
+  sendLoan(@Param('id') id: string) {
+    return this.loansService.sendLoan(id);
+  }
+
+  /**
+   * Get QR code image for a loan
+   */
+  @Get(':id/qr/:type')
+  @Roles('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER', 'USER')
+  async getQrCode(
+    @Param('id') id: string,
+    @Param('type') type: 'send' | 'return',
+  ) {
+    const qrDataUrl = await this.loansService.getQrCode(id, type);
+    return { qrDataUrl };
+  }
+
+  /**
+   * Confirm receipt by QR code
+   */
+  @Post('confirm-receipt')
+  @HttpCode(HttpStatus.OK)
+  @Roles('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER', 'USER')
+  confirmReceipt(
+    @Body('qrCode') qrCode: string,
+    @Request() req: { user: { userId: string } },
+  ) {
+    return this.loansService.confirmReceipt(qrCode, req.user.userId);
+  }
+
+  /**
+   * Initiate return - generates QR code for return confirmation
+   */
+  @Patch(':id/initiate-return')
+  @Roles('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER', 'USER')
+  initiateReturn(@Param('id') id: string) {
+    return this.loansService.initiateReturn(id);
+  }
+
+  /**
+   * Confirm return by QR code
+   */
+  @Post('confirm-return')
+  @HttpCode(HttpStatus.OK)
+  @Roles('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER', 'USER')
+  confirmReturn(
+    @Body('qrCode') qrCode: string,
+    @Request() req: { user: { userId: string } },
+  ) {
+    return this.loansService.confirmReturn(qrCode, req.user.userId);
+  }
+
+  /**
+   * Process scanned QR code (auto-detect type)
+   */
+  @Post('scan-qr')
+  @HttpCode(HttpStatus.OK)
+  @Roles('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER', 'USER')
+  scanQr(
+    @Body('scannedData') scannedData: string,
+    @Request() req: { user: { userId: string } },
+  ) {
+    return this.loansService.processQrCode(scannedData, req.user.userId);
+  }
+
+  // ==================== Standard Endpoints ====================
+
   @Patch(':id')
   @Roles('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER')
   update(
@@ -76,6 +154,9 @@ export class LoansController {
     return this.loansService.update(id, updateLoanDto);
   }
 
+  /**
+   * Legacy return endpoint (without QR confirmation)
+   */
   @Patch(':id/return')
   @Roles('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER', 'USER')
   returnLoan(
@@ -83,6 +164,15 @@ export class LoansController {
     @Body(ValidationPipe) returnLoanDto: ReturnLoanDto,
   ) {
     return this.loansService.returnLoan(id, returnLoanDto);
+  }
+
+  /**
+   * Cancel a loan
+   */
+  @Patch(':id/cancel')
+  @Roles('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER')
+  cancelLoan(@Param('id') id: string) {
+    return this.loansService.cancel(id);
   }
 
   @Delete(':id')
