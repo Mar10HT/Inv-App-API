@@ -65,6 +65,7 @@ import { SearchModule } from './common/search/search.module';
       max: 100, // maximum number of items in cache
     }),
     PrismaModule,
+    CsrfModule,
     EmailModule,
     QrModule,
     AuthModule,

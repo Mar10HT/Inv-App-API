@@ -1,5 +1,11 @@
 import * as Sentry from '@sentry/nestjs';
-import { nodeProfilingIntegration } from '@sentry/profiling-node';
+
+let nodeProfilingIntegration: (() => any) | undefined;
+try {
+  nodeProfilingIntegration = require('@sentry/profiling-node').nodeProfilingIntegration;
+} catch {
+  console.log('Sentry profiling not available - skipping profiling integration');
+}
 
 const dsn = process.env.SENTRY_DSN;
 
@@ -15,7 +21,7 @@ if (dsn) {
     profilesSampleRate: process.env.NODE_ENV === 'production' ? 0.1 : 0,
 
     integrations: [
-      nodeProfilingIntegration(),
+      ...(nodeProfilingIntegration ? [nodeProfilingIntegration()] : []),
     ],
 
     // Filter out sensitive data

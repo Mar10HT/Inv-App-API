@@ -8,7 +8,13 @@ const {
   generateCsrfToken,
   doubleCsrfProtection,
 } = doubleCsrf({
-  getSecret: () => process.env.CSRF_SECRET || 'your-csrf-secret-change-in-production',
+  getSecret: () => {
+    const secret = process.env.CSRF_SECRET;
+    if (!secret) {
+      throw new Error('CSRF_SECRET environment variable is required');
+    }
+    return secret;
+  },
   // For stateless JWT auth, use IP as session identifier
   getSessionIdentifier: (req) => req.ip || req.socket.remoteAddress || 'unknown',
   cookieName: '_csrf',

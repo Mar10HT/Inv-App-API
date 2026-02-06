@@ -33,6 +33,7 @@ model User {
   // Transfer Request relations
   requestedTransfers  TransferRequest[]   @relation("RequestedTransfers")
   approvedTransfers   TransferRequest[]   @relation("ApprovedTransfers")
+  receivedTransfers   TransferRequest[]   @relation("ReceivedTransfers")
 
   // Stock Take relations
   startedStockTakes   StockTake[]         @relation("StartedStockTakes")
@@ -351,11 +352,17 @@ model TransferRequest {
   createdAt              DateTime      @default(now())
   updatedAt              DateTime      @updatedAt
 
+  // QR Code fields for confirmation workflow
+  sendQrCode             String?       @unique
+  receivedAt             DateTime?
+  receivedById           String?
+
   // Relations
   sourceWarehouse      Warehouse              @relation("SourceTransferRequests", fields: [sourceWarehouseId], references: [id])
   destinationWarehouse Warehouse              @relation("DestinationTransferRequests", fields: [destinationWarehouseId], references: [id])
   requestedBy          User                   @relation("RequestedTransfers", fields: [requestedById], references: [id])
   approvedBy           User?                  @relation("ApprovedTransfers", fields: [approvedById], references: [id])
+  receivedBy           User?                  @relation("ReceivedTransfers", fields: [receivedById], references: [id])
   items                TransferRequestItem[]
 
   @@index([status])
@@ -382,11 +389,13 @@ model TransferRequestItem {
 }
 
 enum RequestStatus {
-  PENDING
-  APPROVED
-  REJECTED
-  COMPLETED
-  CANCELLED
+  PENDING      // Created, awaiting approval
+  APPROVED     // Approved by manager
+  SENT         // Items shipped, QR generated for receipt
+  RECEIVED     // Receiver confirmed via QR scan
+  COMPLETED    // Transfer finalized
+  REJECTED     // Rejected by approver
+  CANCELLED    // Cancelled
 }
 
 // Stock Take model for inventory reconciliation
