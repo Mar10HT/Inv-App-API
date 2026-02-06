@@ -1,13 +1,13 @@
 [phases.setup]
-nixPkgs = ["nodejs_20", "openssl"]
+nixPkgs = ["nodejs_20", "openssl", "bun"]
 
 [phases.install]
 dependsOn = ["setup"]
 cmds = [
-  "npm ci --prefer-offline --no-audit --legacy-peer-deps",
-  "npx prisma generate --schema=./prisma/schema.prod.prisma",
-  "npm run build"
+  "bun install --frozen-lockfile",
+  "bunx prisma generate --schema=./prisma/schema.prod.prisma",
+  "bun run build"
 ]
 
 [start]
-cmd = "npm run start"
+cmd = "bun run start"
