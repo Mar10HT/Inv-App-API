@@ -4,6 +4,7 @@ import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
 import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
 import compression from 'compression';
+import cors from 'cors';
 import { AppModule } from './app.module';
 import { CsrfService } from './csrf/csrf.service';
 import { GlobalExceptionFilter } from './common/filters';
@@ -46,10 +47,10 @@ async function bootstrap() {
   // Cookie parser middleware
   app.use(cookieParser());
 
-  // Enable CORS — must be BEFORE CSRF so error responses include CORS headers
+  // CORS middleware — must run BEFORE CSRF so all responses (including errors) have CORS headers
   const corsOrigins = process.env.CORS_ORIGIN?.split(',').map(o => o.trim()) || ['http://localhost:4200'];
 
-  app.enableCors({
+  app.use(cors({
     origin: (origin, callback) => {
       // Allow requests with no origin (like mobile apps or curl)
       if (!origin) return callback(null, true);
@@ -63,9 +64,9 @@ async function bootstrap() {
     },
     credentials: true,
     exposedHeaders: ['set-cookie'],
-  });
+  }));
 
-  // Get CSRF service and apply middleware globally (after CORS)
+  // CSRF protection middleware (after CORS)
   const csrfService = app.get(CsrfService);
   app.use(csrfService.getProtectionMiddleware());
 
