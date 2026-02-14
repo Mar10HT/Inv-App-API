@@ -15,8 +15,9 @@ const {
     }
     return secret;
   },
-  // For stateless JWT auth, use IP as session identifier
-  getSessionIdentifier: (req) => req.ip || req.socket.remoteAddress || 'unknown',
+  // Use a fixed identifier - CSRF security comes from the double-submit cookie pattern itself,
+  // not from binding to IP (which is unreliable behind proxies/load balancers)
+  getSessionIdentifier: () => 'csrf-session',
   cookieName: '_csrf',
   cookieOptions: {
     httpOnly: true,

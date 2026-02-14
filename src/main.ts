@@ -21,6 +21,10 @@ async function bootstrap() {
   // Use Winston for NestJS logging
   app.useLogger(app.get(WINSTON_MODULE_NEST_PROVIDER));
 
+  // Trust proxy (Railway, Vercel, etc. use reverse proxies)
+  const expressApp = app.getHttpAdapter().getInstance();
+  expressApp.set('trust proxy', 1);
+
   // Security middleware - Helmet
   app.use(
     helmet({
@@ -42,11 +46,7 @@ async function bootstrap() {
   // Cookie parser middleware
   app.use(cookieParser());
 
-  // Get CSRF service and apply middleware globally
-  const csrfService = app.get(CsrfService);
-  app.use(csrfService.getProtectionMiddleware());
-
-  // Enable CORS
+  // Enable CORS — must be BEFORE CSRF so error responses include CORS headers
   const corsOrigins = process.env.CORS_ORIGIN?.split(',').map(o => o.trim()) || ['http://localhost:4200'];
 
   app.enableCors({
@@ -64,6 +64,10 @@ async function bootstrap() {
     credentials: true,
     exposedHeaders: ['set-cookie'],
   });
+
+  // Get CSRF service and apply middleware globally (after CORS)
+  const csrfService = app.get(CsrfService);
+  app.use(csrfService.getProtectionMiddleware());
 
   // Global validation pipe
   app.useGlobalPipes(
