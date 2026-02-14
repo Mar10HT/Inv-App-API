@@ -4,7 +4,7 @@
     "builder": "NIXPACKS"
   },
   "deploy": {
-    "startCommand": "export LD_LIBRARY_PATH=$(find /nix/store -maxdepth 3 -name 'libssl.so.3' -exec dirname {} \\; 2>/dev/null | head -1):/usr/lib:/usr/lib/x86_64-linux-gnu:$LD_LIBRARY_PATH && npx prisma db push --schema=./prisma/schema.prod.prisma --skip-generate --accept-data-loss && node dist/main",
+    "startCommand": "npx prisma db push --schema=./prisma/schema.prod.prisma --skip-generate --accept-data-loss && node dist/main",
     "restartPolicyType": "ON_FAILURE",
     "restartPolicyMaxRetries": 10
   }

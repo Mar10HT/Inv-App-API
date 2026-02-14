@@ -1,6 +1,6 @@
 [phases.setup]
-nixPkgs = ["nodejs_20", "openssl_3", "bun"]
-aptPkgs = ["libssl3"]
+nixPkgs = ["nodejs_22", "openssl", "bun"]
+aptPkgs = []
 
 [phases.install]
 dependsOn = ["setup"]
