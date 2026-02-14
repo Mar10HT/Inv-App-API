@@ -1,10 +1,9 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { APP_FILTER, APP_GUARD } from '@nestjs/core';
+import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { ScheduleModule } from '@nestjs/schedule';
 import { CacheModule } from '@nestjs/cache-manager';
-import { SentryGlobalFilter, SentryModule } from '@sentry/nestjs/setup';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { LoggerModule } from './logger';
@@ -32,8 +31,6 @@ import { SearchModule } from './common/search/search.module';
 
 @Module({
   imports: [
-    // Sentry must be first to capture all errors
-    SentryModule.forRoot(),
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: '.env',
@@ -89,11 +86,6 @@ import { SearchModule } from './common/search/search.module';
   controllers: [AppController],
   providers: [
     AppService,
-    // Sentry error filter (must be first)
-    {
-      provide: APP_FILTER,
-      useClass: SentryGlobalFilter,
-    },
     // Apply throttling globally
     {
       provide: APP_GUARD,

@@ -1,13 +1,9 @@
-// Sentry must be imported first to capture all errors
-import './instrument';
-
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
 import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
 import compression from 'compression';
-import * as Sentry from '@sentry/nestjs';
 import { AppModule } from './app.module';
 import { CsrfService } from './csrf/csrf.service';
 import { GlobalExceptionFilter } from './common/filters';
