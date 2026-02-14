@@ -26,7 +26,7 @@ const {
   },
   size: 64,
   ignoredMethods: ['GET', 'HEAD', 'OPTIONS'],
-  getTokenFromRequest: (req) => req.headers['x-csrf-token'] as string,
+  getCsrfTokenFromRequest: (req) => req.headers['x-csrf-token'] as string,
 });
 
 @Injectable()
