@@ -14,7 +14,6 @@ import {
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
-import { randomBytes } from 'crypto';
 import type { Response as ExpressResponse, Request as ExpressRequest } from 'express';
 import { AuthService } from './auth.service';
 import { CsrfService } from '../csrf/csrf.service';
@@ -30,24 +29,21 @@ import { JwtAuthGuard } from './guards/jwt-auth.guard';
 @ApiTags('auth')
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(
+    private readonly authService: AuthService,
+    private readonly csrfService: CsrfService,
+  ) {}
 
   /**
    * Get CSRF token for frontend protection.
    */
   @Get('csrf-token')
-  getCsrfToken(@Response({ passthrough: true }) res: ExpressResponse) {
-    const token = randomBytes(32).toString('hex');
-    const isProduction = process.env.NODE_ENV === 'production';
-
-    res.cookie('XSRF-TOKEN', token, {
-      httpOnly: false, // Must be readable by JavaScript
-      secure: isProduction,
-      sameSite: isProduction ? 'none' as const : 'strict' as const,
-      maxAge: 24 * 60 * 60 * 1000,
-    });
-
-    return { csrfToken: token };
+  getCsrfToken(
+    @Request() req: ExpressRequest,
+    @Response({ passthrough: true }) res: ExpressResponse,
+  ) {
+    const csrfToken = this.csrfService.generateToken(req, res);
+    return { csrfToken };
   }
 
   @Post('login')
@@ -67,12 +63,6 @@ export class AuthController {
       secure: isProduction, // Must be true for sameSite: 'none'
       sameSite: isProduction ? 'none' as const : 'strict' as const,
     };
-
-    console.log(`[Auth] Login success for ${loginDto.email}, setting cookies with:`, {
-      secure: cookieOptions.secure,
-      sameSite: cookieOptions.sameSite,
-      NODE_ENV: process.env.NODE_ENV,
-    });
 
     // Access token cookie (short-lived, 15 min)
     res.cookie('access_token', result.access_token, {
@@ -198,17 +188,20 @@ export class AuthController {
   }
 
   /**
-   * Debug endpoint to check environment and cookie configuration
+   * Debug endpoint to check environment and cookie configuration.
+   * Only available in non-production environments.
    */
   @Get('debug-env')
   debugEnv(@Request() req: ExpressRequest) {
-    const isProduction = process.env.NODE_ENV === 'production';
+    if (process.env.NODE_ENV === 'production') {
+      return { message: 'Not available in production' };
+    }
+
     return {
       NODE_ENV: process.env.NODE_ENV,
-      isProduction,
       cookieConfig: {
-        secure: isProduction,
-        sameSite: isProduction ? 'none' : 'strict',
+        secure: false,
+        sameSite: 'strict',
       },
       cors: {
         CORS_ORIGIN: process.env.CORS_ORIGIN,

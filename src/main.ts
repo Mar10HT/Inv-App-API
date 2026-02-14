@@ -13,6 +13,9 @@ import { CsrfService } from './csrf/csrf.service';
 import { GlobalExceptionFilter } from './common/filters';
 import { LoggingInterceptor } from './common/interceptors';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { PrismaService } from './prisma/prisma.service';
+import { UserRole } from '@prisma/client';
+import * as bcrypt from 'bcryptjs';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
@@ -108,6 +111,26 @@ async function bootstrap() {
 
     const document = SwaggerModule.createDocument(app, config);
     SwaggerModule.setup('api/docs', app, document);
+  }
+
+  // Auto-seed: create demo admin if no users exist
+  try {
+    const prisma = app.get(PrismaService);
+    const userCount = await prisma.user.count();
+    if (userCount === 0) {
+      const hashedPassword = await bcrypt.hash('password123', 10);
+      await prisma.user.create({
+        data: {
+          email: 'admin@example.com',
+          password: hashedPassword,
+          name: 'System Administrator',
+          role: UserRole.SYSTEM_ADMIN,
+        },
+      });
+      console.log('🌱 Demo admin created (admin@example.com / password123)');
+    }
+  } catch (e) {
+    console.error('Auto-seed failed:', e.message);
   }
 
   const port = process.env.PORT ?? 3000;

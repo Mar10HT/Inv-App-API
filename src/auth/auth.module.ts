@@ -20,7 +20,7 @@ import { UsersModule } from '../users/users.module';
         }
         return {
           secret,
-          signOptions: { expiresIn: (configService.get<string>('JWT_EXPIRES_IN') || '7d') as any },
+          signOptions: { expiresIn: (configService.get<string>('JWT_EXPIRES_IN') || '15m') as any },
         };
       },
       inject: [ConfigService],

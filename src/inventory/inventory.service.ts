@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, ConflictException, BadRequestException, Inject } from '@nestjs/common';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
-import { Cache } from 'cache-manager';
+import type { Cache } from 'cache-manager';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { CreateInventoryDto } from './dto/create-inventory.dto';
@@ -646,7 +646,7 @@ export class InventoryService {
           entity: 'InventoryItem',
           entityId: item.id,
           userId,
-          changes: { bulk: true, fields: Object.keys(updateData) },
+          changes: { after: { bulk: true }, fields: Object.keys(updateData) },
         });
 
         result.success++;
@@ -708,7 +708,7 @@ export class InventoryService {
           entity: 'InventoryItem',
           entityId: id,
           userId,
-          changes: { bulk: true, reason: dto.reason },
+          changes: { after: { bulk: true, reason: dto.reason } },
         });
 
         result.success++;
@@ -812,7 +812,7 @@ export class InventoryService {
           entity: 'InventoryItem',
           entityId: created.id,
           userId: dto.createdById,
-          changes: { bulk: true, name: item.name },
+          changes: { after: { bulk: true, name: item.name } },
         });
 
         result.success++;
@@ -839,7 +839,7 @@ export class InventoryService {
     // Dynamic import for exceljs
     const ExcelJS = await import('exceljs');
     const workbook = new ExcelJS.Workbook();
-    await workbook.xlsx.load(buffer);
+    await workbook.xlsx.load(buffer as any);
 
     const worksheet = workbook.worksheets[0];
     if (!worksheet) {
