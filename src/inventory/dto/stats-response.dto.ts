@@ -3,6 +3,7 @@ export class StatsResponseDto {
   inStock: number;
   lowStock: number;
   outOfStock: number;
+  inUse: number;
   totalValue: number;
   categories: { name: string; count: number }[];
   locations: { name: string; count: number }[];

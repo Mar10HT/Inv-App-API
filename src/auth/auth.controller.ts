@@ -11,12 +11,14 @@ import {
   Response,
   Param,
   Ip,
+  NotFoundException,
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import type { Response as ExpressResponse, Request as ExpressRequest } from 'express';
 import { AuthService } from './auth.service';
 import { CsrfService } from '../csrf/csrf.service';
+import { UsersService } from '../users/users.service';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
@@ -24,7 +26,8 @@ import { UpdateProfileDto } from './dto/update-profile.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
-import { JwtAuthGuard } from './guards/jwt-auth.guard';
+import { JwtAuthGuard, RolesGuard } from './guards';
+import { Roles } from './decorators';
 
 @ApiTags('auth')
 @Controller('auth')
@@ -32,6 +35,7 @@ export class AuthController {
   constructor(
     private readonly authService: AuthService,
     private readonly csrfService: CsrfService,
+    private readonly usersService: UsersService,
   ) {}
 
   /**
@@ -223,15 +227,10 @@ export class AuthController {
   async forgotPassword(@Body(ValidationPipe) dto: ForgotPasswordDto) {
     const token = await this.authService.createPasswordResetToken(dto.email);
 
-    // TODO: Send email with reset link
-    // For now, we return a generic message (don't reveal if email exists)
-    // In production, integrate with email service
-
     if (token && process.env.NODE_ENV !== 'production') {
       // Only in development: return token for testing
       return {
         message: 'If an account exists with this email, a reset link has been sent.',
-        // DEV ONLY - remove in production
         _dev_token: token,
         _dev_reset_url: `${process.env.FRONTEND_URL || 'http://localhost:4200'}/reset-password/${token}`,
       };
@@ -239,6 +238,44 @@ export class AuthController {
 
     return {
       message: 'If an account exists with this email, a reset link has been sent.',
+    };
+  }
+
+  /**
+   * Get users with pending (active) password reset tokens.
+   * SYSTEM_ADMIN only.
+   */
+  @Get('pending-resets')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('SYSTEM_ADMIN')
+  async getPendingResets() {
+    return this.authService.getPendingResets();
+  }
+
+  /**
+   * Generate a password reset link for a specific user.
+   * SYSTEM_ADMIN only.
+   */
+  @Post('admin/generate-reset-link/:userId')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('SYSTEM_ADMIN')
+  async generateResetLink(@Param('userId') userId: string) {
+    // Verify user exists
+    const user = await this.usersService.findOne(userId);
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    const token = await this.authService.createResetTokenForUser(userId);
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:4200';
+    const resetUrl = `${frontendUrl}/reset-password/${token}`;
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+
+    return {
+      resetUrl,
+      token,
+      expiresAt,
     };
   }
 

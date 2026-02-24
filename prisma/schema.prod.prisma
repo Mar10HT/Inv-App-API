@@ -39,6 +39,9 @@ model User {
   startedStockTakes   StockTake[]         @relation("StartedStockTakes")
   completedStockTakes StockTake[]         @relation("CompletedStockTakes")
 
+  // Discharge Request relations
+  resolvedDischarges  DischargeRequest[]  @relation("ResolvedDischarges")
+
   // Auth tokens relations
   refreshTokens       RefreshToken[]
   passwordResetTokens PasswordResetToken[]
@@ -78,6 +81,9 @@ model Warehouse {
 
   // Stock Take relation
   stockTakes              StockTake[]
+
+  // Discharge Request relations
+  dischargeRequests       DischargeRequest[]
 
   @@map("warehouses")
 }
@@ -132,6 +138,7 @@ model InventoryItem {
   stockAlerts            StockAlert[]
   transferRequestItems   TransferRequestItem[]
   stockTakeItems         StockTakeItem[]
+  dischargeRequestItems  DischargeRequestItem[]
 
   @@index([category])
   @@index([categoryId])
@@ -149,6 +156,7 @@ enum InventoryStatus {
   IN_STOCK
   LOW_STOCK
   OUT_OF_STOCK
+  IN_USE        // UNIQUE item assigned to a user
 }
 
 enum Currency {
@@ -480,6 +488,59 @@ model RefreshToken {
   @@index([userId])
   @@index([expiresAt])
   @@map("refresh_tokens")
+}
+
+// ============================================
+// Phase 6: Discharge Request Models
+// ============================================
+
+// Discharge Request - public form for requesting materials
+model DischargeRequest {
+  id                 String                  @id @default(cuid())
+  requesterName      String
+  requesterPosition  String?
+  requesterPhone     String?
+  neededByDate       DateTime?
+  justification      String?
+  warehouseId        String
+  status             DischargeRequestStatus  @default(PENDING)
+  resolvedById       String?
+  resolvedAt         DateTime?
+  rejectedReason     String?
+  notes              String?
+  createdAt          DateTime                @default(now())
+  updatedAt          DateTime                @updatedAt
+
+  // Relations
+  warehouse          Warehouse               @relation(fields: [warehouseId], references: [id])
+  resolvedBy         User?                   @relation("ResolvedDischarges", fields: [resolvedById], references: [id])
+  items              DischargeRequestItem[]
+
+  @@index([status])
+  @@index([warehouseId])
+  @@index([createdAt])
+  @@map("discharge_requests")
+}
+
+model DischargeRequestItem {
+  id                  String            @id @default(cuid())
+  dischargeRequestId  String
+  inventoryItemId     String
+  quantity            Int
+
+  // Relations
+  dischargeRequest    DischargeRequest  @relation(fields: [dischargeRequestId], references: [id], onDelete: Cascade)
+  inventoryItem       InventoryItem     @relation(fields: [inventoryItemId], references: [id])
+
+  @@index([dischargeRequestId])
+  @@index([inventoryItemId])
+  @@map("discharge_request_items")
+}
+
+enum DischargeRequestStatus {
+  PENDING    // Created, awaiting resolution
+  COMPLETED  // Approved and items delivered
+  REJECTED   // Rejected by manager
 }
 
 // Password reset tokens

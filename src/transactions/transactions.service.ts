@@ -259,11 +259,13 @@ export class TransactionsService {
       }
       // TRANSFER doesn't change total quantity, just location
 
-      // Determine new status based on quantity
+      // Determine new status based on quantity and assignment
       let newStatus = 'IN_STOCK';
       if (newQuantity <= 0) {
         newStatus = 'OUT_OF_STOCK';
         newQuantity = Math.max(0, newQuantity); // Don't allow negative
+      } else if (currentItem.itemType === 'UNIQUE' && currentItem.assignedToUserId) {
+        newStatus = 'IN_USE';
       } else if (newQuantity <= currentItem.minQuantity) {
         newStatus = 'LOW_STOCK';
       }

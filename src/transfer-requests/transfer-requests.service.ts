@@ -49,14 +49,14 @@ export class TransferRequestsService {
       where: { id: dto.sourceWarehouseId },
     });
     if (!sourceWarehouse) {
-      throw new NotFoundException(`Source warehouse with ID ${dto.sourceWarehouseId} not found`);
+      throw new NotFoundException('Source warehouse not found');
     }
 
     const destWarehouse = await this.prisma.warehouse.findUnique({
       where: { id: dto.destinationWarehouseId },
     });
     if (!destWarehouse) {
-      throw new NotFoundException(`Destination warehouse with ID ${dto.destinationWarehouseId} not found`);
+      throw new NotFoundException('Destination warehouse not found');
     }
 
     for (const item of dto.items) {
@@ -65,7 +65,7 @@ export class TransferRequestsService {
       });
 
       if (!inventoryItem) {
-        throw new NotFoundException(`Inventory item with ID ${item.inventoryItemId} not found`);
+        throw new NotFoundException('Inventory item not found');
       }
 
       if (inventoryItem.warehouseId !== dto.sourceWarehouseId) {
@@ -146,7 +146,7 @@ export class TransferRequestsService {
     });
 
     if (!request) {
-      throw new NotFoundException(`Transfer request with ID ${id} not found`);
+      throw new NotFoundException('Transfer request not found');
     }
 
     return request;
@@ -257,54 +257,71 @@ export class TransferRequestsService {
       );
     }
 
-    // Execute the transfer - update inventory quantities
-    for (const item of request.items) {
-      await this.prisma.inventoryItem.update({
-        where: { id: item.inventoryItemId },
-        data: { quantity: { decrement: item.quantity } },
-      });
+    // Execute the transfer - all inventory modifications in a single transaction
+    const updated = await this.prisma.$transaction(async (tx) => {
+      // Decrement source quantities in parallel
+      await Promise.all(
+        request.items.map((item) =>
+          tx.inventoryItem.update({
+            where: { id: item.inventoryItemId },
+            data: { quantity: { decrement: item.quantity } },
+          }),
+        ),
+      );
 
-      const existingInDest = await this.prisma.inventoryItem.findFirst({
-        where: {
-          warehouseId: request.destinationWarehouseId,
-          name: item.inventoryItem.name,
-          category: item.inventoryItem.category,
-          sku: item.inventoryItem.sku,
+      // Find existing items at destination in parallel
+      const existingInDestItems = await Promise.all(
+        request.items.map((item) =>
+          tx.inventoryItem.findFirst({
+            where: {
+              warehouseId: request.destinationWarehouseId,
+              name: item.inventoryItem.name,
+              category: item.inventoryItem.category,
+              sku: item.inventoryItem.sku,
+            },
+          }),
+        ),
+      );
+
+      // Increment or create destination items in parallel
+      await Promise.all(
+        request.items.map((item, index) => {
+          const existingInDest = existingInDestItems[index];
+          if (existingInDest) {
+            return tx.inventoryItem.update({
+              where: { id: existingInDest.id },
+              data: { quantity: { increment: item.quantity } },
+            });
+          } else {
+            return tx.inventoryItem.create({
+              data: {
+                name: item.inventoryItem.name,
+                description: item.inventoryItem.description,
+                quantity: item.quantity,
+                minQuantity: item.inventoryItem.minQuantity,
+                category: item.inventoryItem.category,
+                price: item.inventoryItem.price,
+                currency: item.inventoryItem.currency,
+                sku: item.inventoryItem.sku ? `${item.inventoryItem.sku}-${request.destinationWarehouseId.slice(0, 4)}` : null,
+                warehouseId: request.destinationWarehouseId,
+                supplierId: item.inventoryItem.supplierId,
+                itemType: item.inventoryItem.itemType,
+              },
+            });
+          }
+        }),
+      );
+
+      // Update transfer request status within the same transaction
+      return tx.transferRequest.update({
+        where: { id: request.id },
+        data: {
+          status: RequestStatus.COMPLETED,
+          receivedAt: new Date(),
+          receivedById: userId,
         },
+        include: this.includeFull,
       });
-
-      if (existingInDest) {
-        await this.prisma.inventoryItem.update({
-          where: { id: existingInDest.id },
-          data: { quantity: { increment: item.quantity } },
-        });
-      } else {
-        await this.prisma.inventoryItem.create({
-          data: {
-            name: item.inventoryItem.name,
-            description: item.inventoryItem.description,
-            quantity: item.quantity,
-            minQuantity: item.inventoryItem.minQuantity,
-            category: item.inventoryItem.category,
-            price: item.inventoryItem.price,
-            currency: item.inventoryItem.currency,
-            sku: item.inventoryItem.sku ? `${item.inventoryItem.sku}-${request.destinationWarehouseId.slice(0, 4)}` : null,
-            warehouseId: request.destinationWarehouseId,
-            supplierId: item.inventoryItem.supplierId,
-            itemType: item.inventoryItem.itemType,
-          },
-        });
-      }
-    }
-
-    const updated = await this.prisma.transferRequest.update({
-      where: { id: request.id },
-      data: {
-        status: RequestStatus.COMPLETED,
-        receivedAt: new Date(),
-        receivedById: userId,
-      },
-      include: this.includeFull,
     });
 
     await this.auditService.log({
@@ -398,49 +415,66 @@ export class TransferRequestsService {
       );
     }
 
-    for (const item of request.items) {
-      await this.prisma.inventoryItem.update({
-        where: { id: item.inventoryItemId },
-        data: { quantity: { decrement: item.quantity } },
+    // Execute the transfer - all inventory modifications in a single transaction
+    const updated = await this.prisma.$transaction(async (tx) => {
+      // Decrement source quantities in parallel
+      await Promise.all(
+        request.items.map((item) =>
+          tx.inventoryItem.update({
+            where: { id: item.inventoryItemId },
+            data: { quantity: { decrement: item.quantity } },
+          }),
+        ),
+      );
+
+      // Find existing items at destination in parallel
+      const existingInDestItems = await Promise.all(
+        request.items.map((item) =>
+          tx.inventoryItem.findFirst({
+            where: {
+              warehouseId: request.destinationWarehouseId,
+              name: item.inventoryItem.name,
+              category: item.inventoryItem.category,
+              sku: item.inventoryItem.sku,
+            },
+          }),
+        ),
+      );
+
+      // Increment or create destination items in parallel
+      await Promise.all(
+        request.items.map((item, index) => {
+          const existingInDest = existingInDestItems[index];
+          if (existingInDest) {
+            return tx.inventoryItem.update({
+              where: { id: existingInDest.id },
+              data: { quantity: { increment: item.quantity } },
+            });
+          } else {
+            return tx.inventoryItem.create({
+              data: {
+                name: item.inventoryItem.name,
+                description: item.inventoryItem.description,
+                quantity: item.quantity,
+                minQuantity: item.inventoryItem.minQuantity,
+                category: item.inventoryItem.category,
+                price: item.inventoryItem.price,
+                currency: item.inventoryItem.currency,
+                sku: item.inventoryItem.sku ? `${item.inventoryItem.sku}-${request.destinationWarehouseId.slice(0, 4)}` : null,
+                warehouseId: request.destinationWarehouseId,
+                supplierId: item.inventoryItem.supplierId,
+                itemType: item.inventoryItem.itemType,
+              },
+            });
+          }
+        }),
+      );
+
+      return tx.transferRequest.update({
+        where: { id },
+        data: { status: RequestStatus.COMPLETED },
+        include: this.includeFull,
       });
-
-      const existingInDest = await this.prisma.inventoryItem.findFirst({
-        where: {
-          warehouseId: request.destinationWarehouseId,
-          name: item.inventoryItem.name,
-          category: item.inventoryItem.category,
-          sku: item.inventoryItem.sku,
-        },
-      });
-
-      if (existingInDest) {
-        await this.prisma.inventoryItem.update({
-          where: { id: existingInDest.id },
-          data: { quantity: { increment: item.quantity } },
-        });
-      } else {
-        await this.prisma.inventoryItem.create({
-          data: {
-            name: item.inventoryItem.name,
-            description: item.inventoryItem.description,
-            quantity: item.quantity,
-            minQuantity: item.inventoryItem.minQuantity,
-            category: item.inventoryItem.category,
-            price: item.inventoryItem.price,
-            currency: item.inventoryItem.currency,
-            sku: item.inventoryItem.sku ? `${item.inventoryItem.sku}-${request.destinationWarehouseId.slice(0, 4)}` : null,
-            warehouseId: request.destinationWarehouseId,
-            supplierId: item.inventoryItem.supplierId,
-            itemType: item.inventoryItem.itemType,
-          },
-        });
-      }
-    }
-
-    const updated = await this.prisma.transferRequest.update({
-      where: { id },
-      data: { status: RequestStatus.COMPLETED },
-      include: this.includeFull,
     });
 
     await this.auditService.log({

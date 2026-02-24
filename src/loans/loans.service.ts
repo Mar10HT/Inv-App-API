@@ -108,9 +108,7 @@ export class LoansService {
     });
 
     if (!item) {
-      throw new NotFoundException(
-        `Inventory item with ID ${createLoanDto.inventoryItemId} not found`,
-      );
+      throw new NotFoundException('Inventory item not found');
     }
 
     if (item.warehouseId !== createLoanDto.sourceWarehouseId) {
@@ -397,7 +395,7 @@ export class LoansService {
     });
 
     if (!loan) {
-      throw new NotFoundException(`Loan with ID ${id} not found`);
+      throw new NotFoundException('Loan not found');
     }
 
     return loan;
@@ -438,7 +436,7 @@ export class LoansService {
       });
     } catch (error) {
       if (error.code === 'P2025') {
-        throw new NotFoundException(`Loan with ID ${id} not found`);
+        throw new NotFoundException('Loan not found');
       }
       throw error;
     }
@@ -495,7 +493,7 @@ export class LoansService {
       });
     } catch (error) {
       if (error.code === 'P2025') {
-        throw new NotFoundException(`Loan with ID ${id} not found`);
+        throw new NotFoundException('Loan not found');
       }
       throw error;
     }

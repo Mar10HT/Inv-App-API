@@ -122,6 +122,13 @@ export class InventoryController {
     return this.inventoryService.bulkImport(dto);
   }
 
+  @Delete('reset-all')
+  @HttpCode(HttpStatus.OK)
+  @Roles('SYSTEM_ADMIN')
+  async resetAll(@CurrentUser() user: any) {
+    return this.inventoryService.resetAll(user?.id);
+  }
+
   @Post('bulk-import/excel')
   @HttpCode(HttpStatus.CREATED)
   @Roles('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER')

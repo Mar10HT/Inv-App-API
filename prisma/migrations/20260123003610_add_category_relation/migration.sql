@@ -399,3 +399,48 @@ CREATE INDEX "password_reset_tokens_userId_idx" ON "password_reset_tokens"("user
 
 -- CreateIndex
 CREATE INDEX "password_reset_tokens_expiresAt_idx" ON "password_reset_tokens"("expiresAt");
+
+-- CreateTable
+CREATE TABLE "discharge_requests" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "requesterName" TEXT NOT NULL,
+    "requesterPosition" TEXT,
+    "requesterPhone" TEXT,
+    "neededByDate" DATETIME,
+    "justification" TEXT,
+    "warehouseId" TEXT NOT NULL,
+    "status" TEXT NOT NULL DEFAULT 'PENDING',
+    "resolvedById" TEXT,
+    "resolvedAt" DATETIME,
+    "rejectedReason" TEXT,
+    "notes" TEXT,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" DATETIME NOT NULL,
+    CONSTRAINT "discharge_requests_warehouseId_fkey" FOREIGN KEY ("warehouseId") REFERENCES "warehouses" ("id") ON DELETE RESTRICT ON UPDATE CASCADE,
+    CONSTRAINT "discharge_requests_resolvedById_fkey" FOREIGN KEY ("resolvedById") REFERENCES "users" ("id") ON DELETE SET NULL ON UPDATE CASCADE
+);
+
+-- CreateTable
+CREATE TABLE "discharge_request_items" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "dischargeRequestId" TEXT NOT NULL,
+    "inventoryItemId" TEXT NOT NULL,
+    "quantity" INTEGER NOT NULL,
+    CONSTRAINT "discharge_request_items_dischargeRequestId_fkey" FOREIGN KEY ("dischargeRequestId") REFERENCES "discharge_requests" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT "discharge_request_items_inventoryItemId_fkey" FOREIGN KEY ("inventoryItemId") REFERENCES "inventory_items" ("id") ON DELETE RESTRICT ON UPDATE CASCADE
+);
+
+-- CreateIndex
+CREATE INDEX "discharge_requests_status_idx" ON "discharge_requests"("status");
+
+-- CreateIndex
+CREATE INDEX "discharge_requests_warehouseId_idx" ON "discharge_requests"("warehouseId");
+
+-- CreateIndex
+CREATE INDEX "discharge_requests_createdAt_idx" ON "discharge_requests"("createdAt");
+
+-- CreateIndex
+CREATE INDEX "discharge_request_items_dischargeRequestId_idx" ON "discharge_request_items"("dischargeRequestId");
+
+-- CreateIndex
+CREATE INDEX "discharge_request_items_inventoryItemId_idx" ON "discharge_request_items"("inventoryItemId");

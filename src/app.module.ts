@@ -28,6 +28,7 @@ import { EmailModule } from './email/email.module';
 import { QrModule } from './qr/qr.module';
 import { EventsModule } from './events/events.module';
 import { SearchModule } from './common/search/search.module';
+import { DischargeRequestsModule } from './discharge-requests/discharge-requests.module';
 
 @Module({
   imports: [
@@ -82,6 +83,7 @@ import { SearchModule } from './common/search/search.module';
     StockTakeModule,
     EventsModule,
     SearchModule,
+    DischargeRequestsModule,
   ],
   controllers: [AppController],
   providers: [

@@ -116,13 +116,30 @@ export class AuthService {
       throw new UnauthorizedException('Refresh token has expired');
     }
 
-    // Rotate the refresh token (revoke old, create new)
-    await this.prisma.refreshToken.update({
-      where: { id: storedToken.id },
-      data: { revoked: true },
+    // Rotate the refresh token atomically (revoke old, create new)
+    const newRefreshTokenValue = randomBytes(64).toString('hex');
+    const expiresAt = new Date(
+      Date.now() + this.REFRESH_TOKEN_EXPIRY_DAYS * 24 * 60 * 60 * 1000,
+    );
+
+    const { newToken } = await this.prisma.$transaction(async (tx) => {
+      await tx.refreshToken.update({
+        where: { id: storedToken.id },
+        data: { revoked: true },
+      });
+
+      const newToken = await tx.refreshToken.create({
+        data: {
+          token: newRefreshTokenValue,
+          userId: storedToken.userId,
+          expiresAt,
+        },
+      });
+
+      return { newToken };
     });
 
-    const newRefreshToken = await this.createRefreshToken(storedToken.userId);
+    const newRefreshToken = newToken.token;
 
     // Generate new access token
     const payload = {
@@ -162,18 +179,24 @@ export class AuthService {
   // Password Reset Methods
   // ============================================
 
-  async createPasswordResetToken(email: string): Promise<boolean> {
+  async createPasswordResetToken(email: string): Promise<string | null> {
     const user = await this.usersService.findByEmail(email);
 
     // Don't reveal if user exists or not (security)
-    // Always return true to prevent email enumeration
     if (!user) {
-      return true;
+      return null;
     }
 
+    return this.createResetTokenForUser(user.id);
+  }
+
+  /**
+   * Creates a reset token for a specific user (used by admin flow).
+   */
+  async createResetTokenForUser(userId: string): Promise<string> {
     // Invalidate any existing reset tokens
     await this.prisma.passwordResetToken.updateMany({
-      where: { userId: user.id, used: false },
+      where: { userId, used: false },
       data: { used: true },
     });
 
@@ -185,17 +208,54 @@ export class AuthService {
     await this.prisma.passwordResetToken.create({
       data: {
         token,
-        userId: user.id,
+        userId,
         expiresAt,
       },
     });
 
     // Send password reset email (don't await to not slow down response)
-    this.emailService
-      .sendPasswordResetEmail(user.email, token, user.name || undefined)
-      .catch((err) => console.error('Failed to send password reset email:', err));
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (user) {
+      this.emailService
+        .sendPasswordResetEmail(user.email, token, user.name || undefined)
+        .catch((err) => console.error('Failed to send password reset email:', err));
+    }
 
-    return true;
+    return token;
+  }
+
+  /**
+   * Returns users with active (non-expired, non-used) password reset tokens.
+   */
+  async getPendingResets() {
+    const now = new Date();
+    const tokens = await this.prisma.passwordResetToken.findMany({
+      where: {
+        used: false,
+        expiresAt: { gt: now },
+      },
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:4200';
+    return tokens.map((t) => ({
+      userId: t.user.id,
+      userName: t.user.name,
+      userEmail: t.user.email,
+      token: t.token,
+      resetUrl: `${frontendUrl}/reset-password/${t.token}`,
+      createdAt: t.createdAt,
+      expiresAt: t.expiresAt,
+    }));
   }
 
   async resetPassword(token: string, newPassword: string): Promise<void> {

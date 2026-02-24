@@ -40,7 +40,7 @@ export class InventoryService {
       where: { id: createInventoryDto.warehouseId },
     });
     if (!warehouse) {
-      throw new NotFoundException(`Warehouse with ID ${createInventoryDto.warehouseId} not found`);
+      throw new NotFoundException('Warehouse not found');
     }
 
     // Validate supplier if provided
@@ -49,7 +49,7 @@ export class InventoryService {
         where: { id: createInventoryDto.supplierId },
       });
       if (!supplier) {
-        throw new NotFoundException(`Supplier with ID ${createInventoryDto.supplierId} not found`);
+        throw new NotFoundException('Supplier not found');
       }
     }
 
@@ -59,7 +59,7 @@ export class InventoryService {
         where: { id: createInventoryDto.assignedToUserId },
       });
       if (!user) {
-        throw new NotFoundException(`User with ID ${createInventoryDto.assignedToUserId} not found`);
+        throw new NotFoundException('Assigned user not found');
       }
     }
 
@@ -67,8 +67,8 @@ export class InventoryService {
 
     // Validate UNIQUE item requirements
     if (itemType === ItemType.UNIQUE) {
-      if (createInventoryDto.quantity !== 1) {
-        throw new BadRequestException('UNIQUE items must have quantity of 1');
+      if (createInventoryDto.quantity > 1) {
+        throw new BadRequestException('UNIQUE items must have quantity of 0 or 1');
       }
       if (!createInventoryDto.serviceTag && !createInventoryDto.serialNumber) {
         throw new BadRequestException('UNIQUE items must have either serviceTag or serialNumber');
@@ -109,11 +109,13 @@ export class InventoryService {
       }
     }
 
-    // Auto-calculate status based on quantity if not provided
+    // Auto-calculate status based on quantity and assignment
     let status = createInventoryDto.status;
     if (!status) {
       const minQty = createInventoryDto.minQuantity || 10;
-      if (createInventoryDto.quantity === 0) {
+      if (itemType === ItemType.UNIQUE && createInventoryDto.assignedToUserId) {
+        status = InventoryStatus.IN_USE;
+      } else if (createInventoryDto.quantity === 0) {
         status = InventoryStatus.OUT_OF_STOCK;
       } else if (createInventoryDto.quantity <= minQty) {
         status = InventoryStatus.LOW_STOCK;
@@ -301,7 +303,7 @@ export class InventoryService {
     });
 
     if (!item) {
-      throw new NotFoundException(`Inventory item with ID ${id} not found`);
+      throw new NotFoundException('Inventory item not found');
     }
 
     return item;
@@ -324,18 +326,24 @@ export class InventoryService {
       }
     }
 
-    // Auto-update status if quantity is being updated
+    // Auto-update status if quantity or assignment is being updated
     let status = updateInventoryDto.status;
-    if (updateInventoryDto.quantity !== undefined && !status) {
+    if ((updateInventoryDto.quantity !== undefined || updateInventoryDto.assignedToUserId !== undefined) && !status) {
       const item = await this.prisma.inventoryItem.findUnique({ where: { id } });
       if (!item) {
-        throw new NotFoundException(`Inventory item with ID ${id} not found`);
+        throw new NotFoundException('Inventory item not found');
       }
-      const minQty = updateInventoryDto.minQuantity || item.minQuantity;
+      const quantity = updateInventoryDto.quantity ?? item.quantity;
+      const minQty = updateInventoryDto.minQuantity ?? item.minQuantity;
+      const assignedToUserId = updateInventoryDto.assignedToUserId !== undefined
+        ? updateInventoryDto.assignedToUserId
+        : item.assignedToUserId;
 
-      if (updateInventoryDto.quantity === 0) {
+      if (item.itemType === ItemType.UNIQUE && assignedToUserId) {
+        status = InventoryStatus.IN_USE;
+      } else if (quantity === 0) {
         status = InventoryStatus.OUT_OF_STOCK;
-      } else if (updateInventoryDto.quantity <= minQty) {
+      } else if (quantity <= minQty) {
         status = InventoryStatus.LOW_STOCK;
       } else {
         status = InventoryStatus.IN_STOCK;
@@ -398,7 +406,7 @@ export class InventoryService {
     });
 
     if (!item) {
-      throw new NotFoundException(`Inventory item with ID ${id} not found`);
+      throw new NotFoundException('Inventory item not found');
     }
 
     if (!item.deletedAt) {
@@ -440,6 +448,7 @@ export class InventoryService {
       inStock,
       lowStock,
       outOfStock,
+      inUse,
       items,
       categoryStats,
       warehousesWithCounts,
@@ -448,6 +457,7 @@ export class InventoryService {
       this.prisma.inventoryItem.count({ where: { status: InventoryStatus.IN_STOCK, deletedAt: null } }),
       this.prisma.inventoryItem.count({ where: { status: InventoryStatus.LOW_STOCK, deletedAt: null } }),
       this.prisma.inventoryItem.count({ where: { status: InventoryStatus.OUT_OF_STOCK, deletedAt: null } }),
+      this.prisma.inventoryItem.count({ where: { status: InventoryStatus.IN_USE, deletedAt: null } }),
       this.prisma.inventoryItem.findMany({
         where: { deletedAt: null },
         select: { price: true, quantity: true }
@@ -488,6 +498,7 @@ export class InventoryService {
       inStock,
       lowStock,
       outOfStock,
+      inUse,
       totalValue,
       categories: categoryStats.map(stat => ({
         name: stat.category,
@@ -595,7 +606,7 @@ export class InventoryService {
           result.errors.push({
             index: i,
             id: item.id,
-            error: `Item with ID ${item.id} not found`,
+            error: 'Item not found',
           });
           continue;
         }
@@ -610,7 +621,7 @@ export class InventoryService {
             result.errors.push({
               index: i,
               id: item.id,
-              error: `Warehouse with ID ${item.warehouseId} not found`,
+              error: 'Warehouse not found',
             });
             continue;
           }
@@ -620,7 +631,9 @@ export class InventoryService {
         let status = item.status;
         if (item.quantity !== undefined && !status) {
           const minQty = item.minQuantity || existing.minQuantity;
-          if (item.quantity === 0) {
+          if (existing.itemType === ItemType.UNIQUE && existing.assignedToUserId) {
+            status = InventoryStatus.IN_USE;
+          } else if (item.quantity === 0) {
             status = InventoryStatus.OUT_OF_STOCK;
           } else if (item.quantity <= minQty) {
             status = InventoryStatus.LOW_STOCK;
@@ -691,7 +704,7 @@ export class InventoryService {
           result.errors.push({
             index: i,
             id,
-            error: `Item with ID ${id} not found`,
+            error: 'Item not found',
           });
           continue;
         }
@@ -751,7 +764,7 @@ export class InventoryService {
           result.failed++;
           result.errors.push({
             index: i,
-            error: `Warehouse with ID ${item.warehouseId} not found`,
+            error: 'Warehouse not found',
           });
           continue;
         }
@@ -833,6 +846,34 @@ export class InventoryService {
     }
 
     return result;
+  }
+
+  async resetAll(userId?: string): Promise<{ deletedCount: number }> {
+    const count = await this.prisma.inventoryItem.count({ where: { deletedAt: null } });
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.inventoryItem.updateMany({
+        where: { deletedAt: null },
+        data: { deletedAt: new Date() },
+      });
+    });
+
+    // Log audit
+    await this.auditService.log({
+      action: 'DELETE',
+      entity: 'InventoryItem',
+      entityId: 'ALL',
+      userId,
+      changes: { after: { resetAll: true, deletedCount: count } },
+    });
+
+    // Invalidate cache
+    await this.invalidateCache();
+
+    // Emit WebSocket event
+    this.eventsService.emitInventoryChange('reset', undefined, { count });
+
+    return { deletedCount: count };
   }
 
   async parseExcelFile(buffer: Buffer): Promise<BulkImportDto['items']> {

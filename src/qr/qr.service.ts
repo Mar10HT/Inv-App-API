@@ -44,6 +44,18 @@ export class QrService {
   }
 
   /**
+   * Generate QR code from a plain URL string as base64 data URL
+   */
+  async generateUrlQrDataUrl(url: string): Promise<string> {
+    return QRCode.toDataURL(url, {
+      errorCorrectionLevel: 'M',
+      type: 'image/png',
+      width: 300,
+      margin: 2,
+    });
+  }
+
+  /**
    * Parse QR code data from scanned string
    */
   parseQrData(scannedData: string): QrCodeData | null {

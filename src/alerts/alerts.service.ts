@@ -70,12 +70,12 @@ export class AlertsService {
         }
       }
 
-      // Resolve alerts for items that are now in stock
+      // Resolve alerts for items that are now in stock or in use
       const resolvedAlerts = await this.prisma.stockAlert.updateMany({
         where: {
           resolvedAt: null,
           item: {
-            status: InventoryStatus.IN_STOCK,
+            status: { in: [InventoryStatus.IN_STOCK, InventoryStatus.IN_USE] },
           },
         },
         data: {
