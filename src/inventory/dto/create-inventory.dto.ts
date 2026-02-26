@@ -54,6 +54,12 @@ export class CreateInventoryDto {
   @MaxLength(500)
   imageUrl?: string;
 
+  // Product model/brand
+  @IsString()
+  @IsOptional()
+  @MaxLength(255)
+  model?: string;
+
   // Item type (UNIQUE or BULK)
   @IsEnum(ItemType)
   @IsOptional()

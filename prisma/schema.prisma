@@ -105,6 +105,9 @@ model InventoryItem {
   barcode      String?
   imageUrl     String?
 
+  // Product model/brand
+  model        String?
+
   // Item type fields
   itemType     ItemType          @default(BULK) // UNIQUE or BULK
   serviceTag   String?           @unique // For unique items (PCs, laptops, etc.)
