@@ -1,18 +1,19 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { FilterInventoryDto } from '../inventory/dto/filter-inventory.dto';
+import { warehouseFilter, warehouseFilterMultiField } from '../common/warehouse-access/warehouse-filter.util';
 
 @Injectable()
 export class ReportsService {
   constructor(private prisma: PrismaService) {}
 
-  async generateInventoryExcel(filters?: FilterInventoryDto): Promise<Buffer> {
+  async generateInventoryExcel(filters?: FilterInventoryDto, warehouseIds?: string[] | null): Promise<Buffer> {
     const ExcelJS = await import('exceljs');
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet('Inventario');
 
     // Build where clause
-    const where: any = { deletedAt: null };
+    const where: any = { deletedAt: null, ...warehouseFilter(warehouseIds) };
     if (filters?.category) where.category = filters.category;
     if (filters?.status) where.status = filters.status;
     if (filters?.warehouseId) where.warehouseId = filters.warehouseId;
@@ -85,11 +86,11 @@ export class ReportsService {
     return Buffer.from(buffer);
   }
 
-  async generateInventoryPdf(filters?: FilterInventoryDto): Promise<Buffer> {
+  async generateInventoryPdf(filters?: FilterInventoryDto, warehouseIds?: string[] | null): Promise<Buffer> {
     const PDFDocument = (await import('pdfkit')).default;
 
     // Build where clause
-    const where: any = { deletedAt: null };
+    const where: any = { deletedAt: null, ...warehouseFilter(warehouseIds) };
     if (filters?.category) where.category = filters.category;
     if (filters?.status) where.status = filters.status;
     if (filters?.warehouseId) where.warehouseId = filters.warehouseId;
@@ -176,7 +177,7 @@ export class ReportsService {
     });
   }
 
-  async generateLowStockReport(): Promise<Buffer> {
+  async generateLowStockReport(warehouseIds?: string[] | null): Promise<Buffer> {
     const ExcelJS = await import('exceljs');
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet('Stock Bajo');
@@ -184,6 +185,7 @@ export class ReportsService {
     const items = await this.prisma.inventoryItem.findMany({
       where: {
         deletedAt: null,
+        ...warehouseFilter(warehouseIds),
         OR: [
           { status: 'LOW_STOCK' },
           { status: 'OUT_OF_STOCK' },
@@ -243,12 +245,14 @@ export class ReportsService {
     return Buffer.from(buffer);
   }
 
-  async generateTransactionsReport(startDate?: Date, endDate?: Date): Promise<Buffer> {
+  async generateTransactionsReport(startDate?: Date, endDate?: Date, warehouseIds?: string[] | null): Promise<Buffer> {
     const ExcelJS = await import('exceljs');
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet('Transacciones');
 
-    const where: any = {};
+    const where: any = {
+      ...warehouseFilterMultiField(warehouseIds, ['sourceWarehouseId', 'destinationWarehouseId']),
+    };
     if (startDate || endDate) {
       where.date = {};
       if (startDate) where.date.gte = startDate;
@@ -306,12 +310,15 @@ export class ReportsService {
     return Buffer.from(buffer);
   }
 
-  async generateLoansReport(): Promise<Buffer> {
+  async generateLoansReport(warehouseIds?: string[] | null): Promise<Buffer> {
     const ExcelJS = await import('exceljs');
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet('Prestamos');
 
+    const where = warehouseFilterMultiField(warehouseIds, ['sourceWarehouseId', 'destinationWarehouseId']);
+
     const loans = await this.prisma.loan.findMany({
+      where,
       include: {
         inventoryItem: true,
         sourceWarehouse: true,

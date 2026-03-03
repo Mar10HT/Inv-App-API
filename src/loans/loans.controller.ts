@@ -12,13 +12,15 @@ import {
   Query,
   UseGuards,
   Request,
+  ForbiddenException,
 } from '@nestjs/common';
 import { LoansService } from './loans.service';
 import { CreateLoanDto } from './dto/create-loan.dto';
 import { UpdateLoanDto, ReturnLoanDto } from './dto/update-loan.dto';
 import { JwtAuthGuard, RolesGuard } from '../auth/guards';
-import { Roles } from '../auth/decorators';
+import { Roles, CurrentUser } from '../auth/decorators';
 import { PaginationDto } from '../common/dto';
+import { AuthenticatedUser } from '../auth/interfaces/auth-user.interface';
 
 @Controller('loans')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -30,24 +32,36 @@ export class LoansController {
   @Roles('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER', 'USER')
   create(
     @Body(ValidationPipe) createLoanDto: CreateLoanDto,
-    @Request() req: { user: { userId: string } },
+    @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.loansService.create(createLoanDto, req.user.userId);
+    // Validate user has access to at least one of the warehouses involved
+    if (user.warehouseIds !== null) {
+      const hasAccess =
+        user.warehouseIds.includes(createLoanDto.sourceWarehouseId) ||
+        user.warehouseIds.includes(createLoanDto.destinationWarehouseId);
+      if (!hasAccess) {
+        throw new ForbiddenException('You do not have access to the involved warehouses');
+      }
+    }
+    return this.loansService.create(createLoanDto, user.userId);
   }
 
   @Get()
-  findAll(@Query(ValidationPipe) pagination: PaginationDto) {
-    return this.loansService.findAll(pagination);
+  findAll(
+    @Query(ValidationPipe) pagination: PaginationDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.loansService.findAll(pagination, user.warehouseIds);
   }
 
   @Get('active')
-  findActive() {
-    return this.loansService.findActive();
+  findActive(@CurrentUser() user: AuthenticatedUser) {
+    return this.loansService.findActive(user.warehouseIds);
   }
 
   @Get('stats')
-  getStats() {
-    return this.loansService.getStats();
+  getStats(@CurrentUser() user: AuthenticatedUser) {
+    return this.loansService.getStats(user.warehouseIds);
   }
 
   @Get('item/:itemId')
@@ -73,18 +87,12 @@ export class LoansController {
 
   // ==================== QR Code Endpoints ====================
 
-  /**
-   * Send loan - generates QR code for receipt confirmation
-   */
   @Patch(':id/send')
   @Roles('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER', 'USER')
   sendLoan(@Param('id') id: string) {
     return this.loansService.sendLoan(id);
   }
 
-  /**
-   * Get QR code image for a loan
-   */
   @Get(':id/qr/:type')
   @Roles('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER', 'USER')
   async getQrCode(
@@ -95,52 +103,40 @@ export class LoansController {
     return { qrDataUrl };
   }
 
-  /**
-   * Confirm receipt by QR code
-   */
   @Post('confirm-receipt')
   @HttpCode(HttpStatus.OK)
   @Roles('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER', 'USER')
   confirmReceipt(
     @Body('qrCode') qrCode: string,
-    @Request() req: { user: { userId: string } },
+    @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.loansService.confirmReceipt(qrCode, req.user.userId);
+    return this.loansService.confirmReceipt(qrCode, user.userId);
   }
 
-  /**
-   * Initiate return - generates QR code for return confirmation
-   */
   @Patch(':id/initiate-return')
   @Roles('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER', 'USER')
   initiateReturn(@Param('id') id: string) {
     return this.loansService.initiateReturn(id);
   }
 
-  /**
-   * Confirm return by QR code
-   */
   @Post('confirm-return')
   @HttpCode(HttpStatus.OK)
   @Roles('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER', 'USER')
   confirmReturn(
     @Body('qrCode') qrCode: string,
-    @Request() req: { user: { userId: string } },
+    @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.loansService.confirmReturn(qrCode, req.user.userId);
+    return this.loansService.confirmReturn(qrCode, user.userId);
   }
 
-  /**
-   * Process scanned QR code (auto-detect type)
-   */
   @Post('scan-qr')
   @HttpCode(HttpStatus.OK)
   @Roles('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER', 'USER')
   scanQr(
     @Body('scannedData') scannedData: string,
-    @Request() req: { user: { userId: string } },
+    @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.loansService.processQrCode(scannedData, req.user.userId);
+    return this.loansService.processQrCode(scannedData, user.userId);
   }
 
   // ==================== Standard Endpoints ====================
@@ -154,9 +150,6 @@ export class LoansController {
     return this.loansService.update(id, updateLoanDto);
   }
 
-  /**
-   * Legacy return endpoint (without QR confirmation)
-   */
   @Patch(':id/return')
   @Roles('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER', 'USER')
   returnLoan(
@@ -166,9 +159,6 @@ export class LoansController {
     return this.loansService.returnLoan(id, returnLoanDto);
   }
 
-  /**
-   * Cancel a loan
-   */
   @Patch(':id/cancel')
   @Roles('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER')
   cancelLoan(@Param('id') id: string) {

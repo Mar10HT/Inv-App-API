@@ -46,6 +46,10 @@ model User {
   refreshTokens       RefreshToken[]
   passwordResetTokens PasswordResetToken[]
 
+  // Warehouse access control
+  managedWarehouses   Warehouse[]     @relation("WarehouseManager")
+  warehouseAccess     UserWarehouse[]
+
   @@index([deletedAt])
   @@map("users")
 }
@@ -65,10 +69,13 @@ model Warehouse {
   location    String
   description String?
   isActive    Boolean  @default(true)
+  managerId   String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
   // Relations
+  manager                 User?            @relation("WarehouseManager", fields: [managerId], references: [id])
+  userAccess              UserWarehouse[]
   inventoryItems          InventoryItem[]
   sourceTransactions      Transaction[]    @relation("SourceTransactions")
   destinationTransactions Transaction[]    @relation("DestinationTransactions")
@@ -86,6 +93,22 @@ model Warehouse {
   dischargeRequests       DischargeRequest[]
 
   @@map("warehouses")
+}
+
+// Junction table for user-warehouse access control
+model UserWarehouse {
+  id          String   @id @default(cuid())
+  userId      String
+  warehouseId String
+  createdAt   DateTime @default(now())
+
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  warehouse   Warehouse @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, warehouseId])
+  @@index([userId])
+  @@index([warehouseId])
+  @@map("user_warehouses")
 }
 
 // Inventory Item model

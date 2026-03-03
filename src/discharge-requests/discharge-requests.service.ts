@@ -5,6 +5,7 @@ import { QrService } from '../qr/qr.service';
 import { CreateDischargeRequestDto } from './dto/create-discharge-request.dto';
 import { FilterDischargeRequestDto } from './dto/filter-discharge-request.dto';
 import { DischargeRequestStatus } from '@prisma/client';
+import { warehouseFilter } from '../common/warehouse-access/warehouse-filter.util';
 
 @Injectable()
 export class DischargeRequestsService {
@@ -151,12 +152,14 @@ export class DischargeRequestsService {
   /**
    * Find all discharge requests with filters and pagination
    */
-  async findAll(filters: FilterDischargeRequestDto) {
+  async findAll(filters: FilterDischargeRequestDto, warehouseIds?: string[] | null) {
     const page = filters.page || 1;
     const limit = filters.limit || 10;
     const skip = (page - 1) * limit;
 
-    const where: any = {};
+    const where: any = {
+      ...warehouseFilter(warehouseIds),
+    };
     if (filters.status) {
       where.status = filters.status;
     }
@@ -309,12 +312,14 @@ export class DischargeRequestsService {
   /**
    * Get stats - count by status
    */
-  async getStats() {
+  async getStats(warehouseIds?: string[] | null) {
+    const wFilter = warehouseFilter(warehouseIds);
+
     const [total, pending, completed, rejected] = await Promise.all([
-      this.prisma.dischargeRequest.count(),
-      this.prisma.dischargeRequest.count({ where: { status: DischargeRequestStatus.PENDING } }),
-      this.prisma.dischargeRequest.count({ where: { status: DischargeRequestStatus.COMPLETED } }),
-      this.prisma.dischargeRequest.count({ where: { status: DischargeRequestStatus.REJECTED } }),
+      this.prisma.dischargeRequest.count({ where: { ...wFilter } }),
+      this.prisma.dischargeRequest.count({ where: { status: DischargeRequestStatus.PENDING, ...wFilter } }),
+      this.prisma.dischargeRequest.count({ where: { status: DischargeRequestStatus.COMPLETED, ...wFilter } }),
+      this.prisma.dischargeRequest.count({ where: { status: DischargeRequestStatus.REJECTED, ...wFilter } }),
     ]);
 
     return {

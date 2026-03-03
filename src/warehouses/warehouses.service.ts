@@ -1,32 +1,126 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { BaseRepository, BaseRepositoryOptions } from '../common/repository';
 import { CreateWarehouseDto } from './dto/create-warehouse.dto';
 import { UpdateWarehouseDto } from './dto/update-warehouse.dto';
+import { PaginationDto, PaginatedResult } from '../common/dto';
+import { warehouseFilter } from '../common/warehouse-access/warehouse-filter.util';
 
 @Injectable()
-export class WarehousesService extends BaseRepository<CreateWarehouseDto, UpdateWarehouseDto> {
-  protected readonly options: BaseRepositoryOptions = {
-    modelName: 'warehouse',
-    defaultOrderBy: { createdAt: 'desc' },
-    findAllInclude: {
-      _count: {
-        select: {
-          inventoryItems: true,
-        },
-      },
-    },
-    findOneInclude: {
-      inventoryItems: true,
-      _count: {
-        select: {
-          inventoryItems: true,
-        },
-      },
-    },
-  };
+export class WarehousesService {
+  constructor(private readonly prisma: PrismaService) {}
 
-  constructor(prisma: PrismaService) {
-    super(prisma);
+  async create(createDto: CreateWarehouseDto) {
+    try {
+      return await this.prisma.warehouse.create({
+        data: createDto,
+      });
+    } catch (error: any) {
+      if (error.code === 'P2002') {
+        throw new ConflictException('Warehouse with this value already exists');
+      }
+      throw error;
+    }
+  }
+
+  async findAll(
+    pagination?: PaginationDto,
+    warehouseIds?: string[] | null,
+  ): Promise<PaginatedResult<any>> {
+    const page = pagination?.page || 1;
+    const limit = pagination?.limit || 10;
+    const skip = (page - 1) * limit;
+
+    const where = warehouseFilter(warehouseIds, 'id');
+
+    const [data, total] = await Promise.all([
+      this.prisma.warehouse.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: { createdAt: 'desc' },
+        include: {
+          manager: {
+            select: { id: true, name: true, email: true },
+          },
+          _count: {
+            select: {
+              inventoryItems: true,
+            },
+          },
+        },
+      }),
+      this.prisma.warehouse.count({ where }),
+    ]);
+
+    const totalPages = Math.ceil(total / limit);
+
+    return {
+      data,
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages,
+        hasNextPage: page < totalPages,
+        hasPrevPage: page > 1,
+      },
+    };
+  }
+
+  async findOne(id: string) {
+    const entity = await this.prisma.warehouse.findUnique({
+      where: { id },
+      include: {
+        manager: {
+          select: { id: true, name: true, email: true },
+        },
+        inventoryItems: true,
+        _count: {
+          select: {
+            inventoryItems: true,
+          },
+        },
+      },
+    });
+
+    if (!entity) {
+      throw new NotFoundException(`Warehouse with ID ${id} not found`);
+    }
+
+    return entity;
+  }
+
+  async update(id: string, updateDto: UpdateWarehouseDto) {
+    try {
+      return await this.prisma.warehouse.update({
+        where: { id },
+        data: updateDto,
+      });
+    } catch (error: any) {
+      if (error.code === 'P2002') {
+        throw new ConflictException('Warehouse with this value already exists');
+      }
+      if (error.code === 'P2025') {
+        throw new NotFoundException(`Warehouse with ID ${id} not found`);
+      }
+      throw error;
+    }
+  }
+
+  async remove(id: string): Promise<void> {
+    try {
+      await this.prisma.warehouse.delete({
+        where: { id },
+      });
+    } catch (error: any) {
+      if (error.code === 'P2025') {
+        throw new NotFoundException(`Warehouse with ID ${id} not found`);
+      }
+      throw error;
+    }
+  }
+
+  async count(where?: Record<string, any>): Promise<number> {
+    return this.prisma.warehouse.count({ where });
   }
 }

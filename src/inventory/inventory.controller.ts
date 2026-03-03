@@ -14,6 +14,7 @@ import {
   UseInterceptors,
   UploadedFile,
   BadRequestException,
+  ForbiddenException,
   Req,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
@@ -24,6 +25,7 @@ import { FilterInventoryDto } from './dto/filter-inventory.dto';
 import { BulkUpdateDto, BulkDeleteDto, BulkImportDto } from './dto/bulk-operations.dto';
 import { JwtAuthGuard, RolesGuard } from '../auth/guards';
 import { Roles, CurrentUser } from '../auth/decorators';
+import { AuthenticatedUser } from '../auth/interfaces/auth-user.interface';
 
 @Controller('inventory')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -33,23 +35,33 @@ export class InventoryController {
   @Post()
   @HttpCode(HttpStatus.CREATED)
   @Roles('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER', 'USER')
-  create(@Body(ValidationPipe) createInventoryDto: CreateInventoryDto) {
+  create(
+    @Body(ValidationPipe) createInventoryDto: CreateInventoryDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    // Validate user has access to the target warehouse
+    if (user.warehouseIds !== null && !user.warehouseIds.includes(createInventoryDto.warehouseId)) {
+      throw new ForbiddenException('You do not have access to this warehouse');
+    }
     return this.inventoryService.create(createInventoryDto);
   }
 
   @Get()
-  findAll(@Query(ValidationPipe) filters: FilterInventoryDto) {
-    return this.inventoryService.findAll(filters);
+  findAll(
+    @Query(ValidationPipe) filters: FilterInventoryDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.inventoryService.findAll(filters, user.warehouseIds);
   }
 
   @Get('stats')
-  getStats() {
-    return this.inventoryService.getStats();
+  getStats(@CurrentUser() user: AuthenticatedUser) {
+    return this.inventoryService.getStats(user.warehouseIds);
   }
 
   @Get('low-stock')
-  getLowStockItems() {
-    return this.inventoryService.getLowStockItems();
+  getLowStockItems(@CurrentUser() user: AuthenticatedUser) {
+    return this.inventoryService.getLowStockItems(user.warehouseIds);
   }
 
   @Get('categories')
@@ -72,7 +84,12 @@ export class InventoryController {
   update(
     @Param('id') id: string,
     @Body(ValidationPipe) updateInventoryDto: UpdateInventoryDto,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
+    // If changing warehouse, validate access to target warehouse
+    if (updateInventoryDto.warehouseId && user.warehouseIds !== null && !user.warehouseIds.includes(updateInventoryDto.warehouseId)) {
+      throw new ForbiddenException('You do not have access to the target warehouse');
+    }
     return this.inventoryService.update(id, updateInventoryDto);
   }
 
@@ -96,9 +113,9 @@ export class InventoryController {
   @Roles('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER')
   bulkUpdate(
     @Body(ValidationPipe) dto: BulkUpdateDto,
-    @CurrentUser() user: any,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.inventoryService.bulkUpdate(dto, user?.id);
+    return this.inventoryService.bulkUpdate(dto, user?.userId);
   }
 
   @Delete('bulk-delete')
@@ -106,9 +123,9 @@ export class InventoryController {
   @Roles('SYSTEM_ADMIN')
   bulkDelete(
     @Body(ValidationPipe) dto: BulkDeleteDto,
-    @CurrentUser() user: any,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.inventoryService.bulkDelete(dto, user?.id);
+    return this.inventoryService.bulkDelete(dto, user?.userId);
   }
 
   @Post('bulk-import')
@@ -116,17 +133,17 @@ export class InventoryController {
   @Roles('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER')
   bulkImport(
     @Body(ValidationPipe) dto: BulkImportDto,
-    @CurrentUser() user: any,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
-    dto.createdById = user?.id;
+    dto.createdById = user?.userId;
     return this.inventoryService.bulkImport(dto);
   }
 
   @Delete('reset-all')
   @HttpCode(HttpStatus.OK)
   @Roles('SYSTEM_ADMIN')
-  async resetAll(@CurrentUser() user: any) {
-    return this.inventoryService.resetAll(user?.id);
+  async resetAll(@CurrentUser() user: AuthenticatedUser) {
+    return this.inventoryService.resetAll(user?.userId);
   }
 
   @Post('bulk-import/excel')
@@ -135,7 +152,7 @@ export class InventoryController {
   @UseInterceptors(FileInterceptor('file'))
   async bulkImportExcel(
     @UploadedFile() file: Express.Multer.File,
-    @CurrentUser() user: any,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
     if (!file) {
       throw new BadRequestException('No file uploaded');
@@ -158,7 +175,7 @@ export class InventoryController {
 
     return this.inventoryService.bulkImport({
       items,
-      createdById: user?.id,
+      createdById: user?.userId,
     });
   }
 }

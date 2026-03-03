@@ -18,12 +18,16 @@ import { UpdateUserDto } from './dto/update-user.dto';
 import { PaginationDto } from '../common/dto';
 import { JwtAuthGuard, RolesGuard } from '../auth/guards';
 import { Roles } from '../auth/decorators';
+import { WarehouseAccessService } from '../common/warehouse-access/warehouse-access.service';
 
 @Controller('users')
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles('SYSTEM_ADMIN') // Solo administradores pueden gestionar usuarios
+@Roles('SYSTEM_ADMIN') // Only admins can manage users
 export class UsersController {
-  constructor(private readonly usersService: UsersService) {}
+  constructor(
+    private readonly usersService: UsersService,
+    private readonly warehouseAccessService: WarehouseAccessService,
+  ) {}
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
@@ -58,5 +62,22 @@ export class UsersController {
   @Patch(':id/restore')
   restore(@Param('id') id: string) {
     return this.usersService.restore(id);
+  }
+
+  // Warehouse access management
+
+  @Get(':id/warehouses')
+  getUserWarehouses(@Param('id') id: string) {
+    return this.warehouseAccessService.getUserWarehouses(id);
+  }
+
+  @Post(':id/warehouses')
+  @HttpCode(HttpStatus.OK)
+  async assignWarehouses(
+    @Param('id') id: string,
+    @Body('warehouseIds') warehouseIds: string[],
+  ) {
+    await this.warehouseAccessService.setUserWarehouses(id, warehouseIds);
+    return this.warehouseAccessService.getUserWarehouses(id);
   }
 }

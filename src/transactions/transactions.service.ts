@@ -4,6 +4,7 @@ import { CreateTransactionDto, TransactionType } from './dto/create-transaction.
 import { UpdateTransactionDto } from './dto/update-transaction.dto';
 import { PaginationDto, PaginatedResult } from '../common/dto';
 import { EventsService } from '../events/events.service';
+import { warehouseFilterMultiField } from '../common/warehouse-access/warehouse-filter.util';
 
 @Injectable()
 export class TransactionsService {
@@ -64,13 +65,16 @@ export class TransactionsService {
     return result;
   }
 
-  async findAll(pagination?: PaginationDto): Promise<PaginatedResult<any>> {
+  async findAll(pagination?: PaginationDto, warehouseIds?: string[] | null): Promise<PaginatedResult<any>> {
     const page = pagination?.page || 1;
     const limit = pagination?.limit || 10;
     const skip = (page - 1) * limit;
 
+    const where = warehouseFilterMultiField(warehouseIds, ['sourceWarehouseId', 'destinationWarehouseId']);
+
     const [data, total] = await Promise.all([
       this.prisma.transaction.findMany({
+        where,
         skip,
         take: limit,
         orderBy: {
@@ -93,7 +97,7 @@ export class TransactionsService {
           },
         },
       }),
-      this.prisma.transaction.count(),
+      this.prisma.transaction.count({ where }),
     ]);
 
     const totalPages = Math.ceil(total / limit);
@@ -111,8 +115,11 @@ export class TransactionsService {
     };
   }
 
-  async findRecent(limit: number = 10) {
+  async findRecent(limit: number = 10, warehouseIds?: string[] | null) {
+    const where = warehouseFilterMultiField(warehouseIds, ['sourceWarehouseId', 'destinationWarehouseId']);
+
     return this.prisma.transaction.findMany({
+      where,
       take: limit,
       orderBy: {
         date: 'desc',

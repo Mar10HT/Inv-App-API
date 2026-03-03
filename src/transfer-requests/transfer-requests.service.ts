@@ -5,6 +5,7 @@ import { QrService } from '../qr/qr.service';
 import { CreateTransferRequestDto } from './dto/create-transfer-request.dto';
 import { RequestStatus } from '@prisma/client';
 import { PaginationDto } from '../common/dto/pagination.dto';
+import { warehouseFilterMultiField } from '../common/warehouse-access/warehouse-filter.util';
 
 @Injectable()
 export class TransferRequestsService {
@@ -106,12 +107,15 @@ export class TransferRequestsService {
     return transferRequest;
   }
 
-  async findAll(pagination?: PaginationDto, status?: RequestStatus) {
+  async findAll(pagination?: PaginationDto, status?: RequestStatus, warehouseIds?: string[] | null) {
     const page = pagination?.page || 1;
     const limit = pagination?.limit || 10;
     const skip = (page - 1) * limit;
 
-    const where = status ? { status } : {};
+    const where: any = {
+      ...(status ? { status } : {}),
+      ...warehouseFilterMultiField(warehouseIds, ['sourceWarehouseId', 'destinationWarehouseId']),
+    };
 
     const [requests, total] = await Promise.all([
       this.prisma.transferRequest.findMany({
@@ -135,8 +139,8 @@ export class TransferRequestsService {
     };
   }
 
-  async findPending(pagination?: PaginationDto) {
-    return this.findAll(pagination, RequestStatus.PENDING);
+  async findPending(pagination?: PaginationDto, warehouseIds?: string[] | null) {
+    return this.findAll(pagination, RequestStatus.PENDING, warehouseIds);
   }
 
   async findOne(id: string) {
@@ -512,15 +516,17 @@ export class TransferRequestsService {
     return updated;
   }
 
-  async getStats() {
+  async getStats(warehouseIds?: string[] | null) {
+    const wFilter = warehouseFilterMultiField(warehouseIds, ['sourceWarehouseId', 'destinationWarehouseId']);
+
     const [total, pending, approved, sent, completed, rejected, cancelled] = await Promise.all([
-      this.prisma.transferRequest.count(),
-      this.prisma.transferRequest.count({ where: { status: RequestStatus.PENDING } }),
-      this.prisma.transferRequest.count({ where: { status: RequestStatus.APPROVED } }),
-      this.prisma.transferRequest.count({ where: { status: RequestStatus.SENT } }),
-      this.prisma.transferRequest.count({ where: { status: RequestStatus.COMPLETED } }),
-      this.prisma.transferRequest.count({ where: { status: RequestStatus.REJECTED } }),
-      this.prisma.transferRequest.count({ where: { status: RequestStatus.CANCELLED } }),
+      this.prisma.transferRequest.count({ where: { ...wFilter } }),
+      this.prisma.transferRequest.count({ where: { status: RequestStatus.PENDING, ...wFilter } }),
+      this.prisma.transferRequest.count({ where: { status: RequestStatus.APPROVED, ...wFilter } }),
+      this.prisma.transferRequest.count({ where: { status: RequestStatus.SENT, ...wFilter } }),
+      this.prisma.transferRequest.count({ where: { status: RequestStatus.COMPLETED, ...wFilter } }),
+      this.prisma.transferRequest.count({ where: { status: RequestStatus.REJECTED, ...wFilter } }),
+      this.prisma.transferRequest.count({ where: { status: RequestStatus.CANCELLED, ...wFilter } }),
     ]);
 
     return {

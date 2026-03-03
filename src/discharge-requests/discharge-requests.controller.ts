@@ -17,6 +17,7 @@ import { CreateDischargeRequestDto } from './dto/create-discharge-request.dto';
 import { FilterDischargeRequestDto } from './dto/filter-discharge-request.dto';
 import { JwtAuthGuard, RolesGuard } from '../auth/guards';
 import { Roles, CurrentUser } from '../auth/decorators';
+import { AuthenticatedUser } from '../auth/interfaces/auth-user.interface';
 
 @ApiTags('discharge-requests')
 @Controller('discharge-requests')
@@ -41,15 +42,18 @@ export class DischargeRequestsController {
   @Get()
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER')
-  findAll(@Query(ValidationPipe) filters: FilterDischargeRequestDto) {
-    return this.dischargeRequestsService.findAll(filters);
+  findAll(
+    @Query(ValidationPipe) filters: FilterDischargeRequestDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.dischargeRequestsService.findAll(filters, user.warehouseIds);
   }
 
   @Get('stats')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER')
-  getStats() {
-    return this.dischargeRequestsService.getStats();
+  getStats(@CurrentUser() user: AuthenticatedUser) {
+    return this.dischargeRequestsService.getStats(user.warehouseIds);
   }
 
   @Get('request-form-qr')
@@ -71,9 +75,9 @@ export class DischargeRequestsController {
   @Roles('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER')
   complete(
     @Param('id') id: string,
-    @CurrentUser() user: any,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.dischargeRequestsService.complete(id, user.id);
+    return this.dischargeRequestsService.complete(id, user.userId);
   }
 
   @Patch(':id/reject')
@@ -82,8 +86,8 @@ export class DischargeRequestsController {
   reject(
     @Param('id') id: string,
     @Body('reason') reason: string,
-    @CurrentUser() user: any,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.dischargeRequestsService.reject(id, user.id, reason);
+    return this.dischargeRequestsService.reject(id, user.userId, reason);
   }
 }

@@ -9,6 +9,7 @@ import { CreateLoanDto } from './dto/create-loan.dto';
 import { UpdateLoanDto, ReturnLoanDto, LoanStatus } from './dto/update-loan.dto';
 import { PaginationDto, PaginatedResult } from '../common/dto';
 import { EventsService } from '../events/events.service';
+import { warehouseFilterMultiField } from '../common/warehouse-access/warehouse-filter.util';
 
 @Injectable()
 export class LoansService {
@@ -348,19 +349,22 @@ export class LoansService {
     }
   }
 
-  async findAll(pagination?: PaginationDto): Promise<PaginatedResult<any>> {
+  async findAll(pagination?: PaginationDto, warehouseIds?: string[] | null): Promise<PaginatedResult<any>> {
     const page = pagination?.page || 1;
     const limit = pagination?.limit || 10;
     const skip = (page - 1) * limit;
 
+    const where = warehouseFilterMultiField(warehouseIds, ['sourceWarehouseId', 'destinationWarehouseId']);
+
     const [data, total] = await Promise.all([
       this.prisma.loan.findMany({
+        where,
         skip,
         take: limit,
         orderBy: { loanDate: pagination?.sortOrder || 'desc' },
         include: this.loanIncludeLight, // Use light include for faster list loading
       }),
-      this.prisma.loan.count(),
+      this.prisma.loan.count({ where }),
     ]);
 
     const totalPages = Math.ceil(total / limit);
@@ -378,10 +382,13 @@ export class LoansService {
     };
   }
 
-  async findActive() {
+  async findActive(warehouseIds?: string[] | null) {
+    const wFilter = warehouseFilterMultiField(warehouseIds, ['sourceWarehouseId', 'destinationWarehouseId']);
+
     return this.prisma.loan.findMany({
       where: {
         status: { in: ['PENDING', 'SENT', 'RECEIVED', 'RETURN_PENDING', 'OVERDUE'] as any },
+        ...wFilter,
       },
       orderBy: { loanDate: 'desc' },
       include: this.loanIncludeLight,
@@ -499,18 +506,19 @@ export class LoansService {
     }
   }
 
-  async getStats() {
+  async getStats(warehouseIds?: string[] | null) {
     const now = new Date();
     const sevenDaysFromNow = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+    const wFilter = warehouseFilterMultiField(warehouseIds, ['sourceWarehouseId', 'destinationWarehouseId']);
 
     const [totalPending, totalSent, totalReceived, totalReturnPending, totalReturned, totalOverdue, dueSoon] =
       await Promise.all([
-        this.prisma.loan.count({ where: { status: 'PENDING' } }),
-        this.prisma.loan.count({ where: { status: 'SENT' } }),
-        this.prisma.loan.count({ where: { status: 'RECEIVED' } }),
-        this.prisma.loan.count({ where: { status: 'RETURN_PENDING' } }),
-        this.prisma.loan.count({ where: { status: 'RETURNED' } }),
-        this.prisma.loan.count({ where: { status: 'OVERDUE' } }),
+        this.prisma.loan.count({ where: { status: 'PENDING', ...wFilter } }),
+        this.prisma.loan.count({ where: { status: 'SENT', ...wFilter } }),
+        this.prisma.loan.count({ where: { status: 'RECEIVED', ...wFilter } }),
+        this.prisma.loan.count({ where: { status: 'RETURN_PENDING', ...wFilter } }),
+        this.prisma.loan.count({ where: { status: 'RETURNED', ...wFilter } }),
+        this.prisma.loan.count({ where: { status: 'OVERDUE', ...wFilter } }),
         this.prisma.loan.count({
           where: {
             status: { in: ['SENT', 'RECEIVED'] },
@@ -518,6 +526,7 @@ export class LoansService {
               lte: sevenDaysFromNow,
               gt: now,
             },
+            ...wFilter,
           },
         }),
       ]);

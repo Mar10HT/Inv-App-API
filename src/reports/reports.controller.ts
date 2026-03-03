@@ -10,8 +10,9 @@ import { ApiTags } from '@nestjs/swagger';
 import { Response } from 'express';
 import { ReportsService } from './reports.service';
 import { JwtAuthGuard, RolesGuard } from '../auth/guards';
-import { Roles } from '../auth/decorators';
+import { Roles, CurrentUser } from '../auth/decorators';
 import { FilterInventoryDto } from '../inventory/dto/filter-inventory.dto';
+import { AuthenticatedUser } from '../auth/interfaces/auth-user.interface';
 
 @ApiTags('reports')
 @Controller('reports')
@@ -23,9 +24,10 @@ export class ReportsController {
   @Roles('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER', 'USER', 'VIEWER')
   async exportInventoryExcel(
     @Query(ValidationPipe) filters: FilterInventoryDto,
+    @CurrentUser() user: AuthenticatedUser,
     @Res() res: Response,
   ) {
-    const buffer = await this.reportsService.generateInventoryExcel(filters);
+    const buffer = await this.reportsService.generateInventoryExcel(filters, user.warehouseIds);
 
     res.set({
       'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -40,9 +42,10 @@ export class ReportsController {
   @Roles('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER', 'USER', 'VIEWER')
   async exportInventoryPdf(
     @Query(ValidationPipe) filters: FilterInventoryDto,
+    @CurrentUser() user: AuthenticatedUser,
     @Res() res: Response,
   ) {
-    const buffer = await this.reportsService.generateInventoryPdf(filters);
+    const buffer = await this.reportsService.generateInventoryPdf(filters, user.warehouseIds);
 
     res.set({
       'Content-Type': 'application/pdf',
@@ -55,8 +58,11 @@ export class ReportsController {
 
   @Get('low-stock/excel')
   @Roles('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER')
-  async exportLowStockExcel(@Res() res: Response) {
-    const buffer = await this.reportsService.generateLowStockReport();
+  async exportLowStockExcel(
+    @CurrentUser() user: AuthenticatedUser,
+    @Res() res: Response,
+  ) {
+    const buffer = await this.reportsService.generateLowStockReport(user.warehouseIds);
 
     res.set({
       'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -72,12 +78,13 @@ export class ReportsController {
   async exportTransactionsExcel(
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
+    @CurrentUser() user?: AuthenticatedUser,
     @Res() res?: Response,
   ) {
     const start = startDate ? new Date(startDate) : undefined;
     const end = endDate ? new Date(endDate) : undefined;
 
-    const buffer = await this.reportsService.generateTransactionsReport(start, end);
+    const buffer = await this.reportsService.generateTransactionsReport(start, end, user?.warehouseIds);
 
     res.set({
       'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -90,8 +97,11 @@ export class ReportsController {
 
   @Get('loans/excel')
   @Roles('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER')
-  async exportLoansExcel(@Res() res: Response) {
-    const buffer = await this.reportsService.generateLoansReport();
+  async exportLoansExcel(
+    @CurrentUser() user: AuthenticatedUser,
+    @Res() res: Response,
+  ) {
+    const buffer = await this.reportsService.generateLoansReport(user.warehouseIds);
 
     res.set({
       'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',

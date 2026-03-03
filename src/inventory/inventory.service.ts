@@ -17,6 +17,7 @@ import {
 import { InventoryItem, InventoryStatus, ItemType } from '@prisma/client';
 import { EventsService } from '../events/events.service';
 import { SearchService } from '../common/search/search.service';
+import { warehouseFilter } from '../common/warehouse-access/warehouse-filter.util';
 
 @Injectable()
 export class InventoryService {
@@ -172,7 +173,7 @@ export class InventoryService {
     return item;
   }
 
-  async findAll(filters?: FilterInventoryDto): Promise<PaginatedResponseDto<InventoryItem>> {
+  async findAll(filters?: FilterInventoryDto, warehouseIds?: string[] | null): Promise<PaginatedResponseDto<InventoryItem>> {
     const page = filters?.page || 1;
     const limit = filters?.limit || 10;
     const skip = (page - 1) * limit;
@@ -180,6 +181,7 @@ export class InventoryService {
     // Build where clause - always exclude soft-deleted items
     const where: any = {
       deletedAt: null,
+      ...warehouseFilter(warehouseIds),
     };
 
     if (filters?.search) {
@@ -435,12 +437,17 @@ export class InventoryService {
     return restoredItem;
   }
 
-  async getStats(): Promise<StatsResponseDto> {
-    // Check cache first
-    const cachedStats = await this.cacheManager.get<StatsResponseDto>(this.CACHE_KEYS.STATS);
-    if (cachedStats) {
-      return cachedStats;
+  async getStats(warehouseIds?: string[] | null): Promise<StatsResponseDto> {
+    // Skip cache when filtering by warehouse (per-user)
+    if (warehouseIds === undefined || warehouseIds === null) {
+      const cachedStats = await this.cacheManager.get<StatsResponseDto>(this.CACHE_KEYS.STATS);
+      if (cachedStats) {
+        return cachedStats;
+      }
     }
+
+    const wFilter = warehouseFilter(warehouseIds);
+    const wIdFilter = warehouseFilter(warehouseIds, 'id');
 
     // Optimized query: fetch all warehouses with their item counts in one query
     const [
@@ -453,22 +460,23 @@ export class InventoryService {
       categoryStats,
       warehousesWithCounts,
     ] = await Promise.all([
-      this.prisma.inventoryItem.count({ where: { deletedAt: null } }),
-      this.prisma.inventoryItem.count({ where: { status: InventoryStatus.IN_STOCK, deletedAt: null } }),
-      this.prisma.inventoryItem.count({ where: { status: InventoryStatus.LOW_STOCK, deletedAt: null } }),
-      this.prisma.inventoryItem.count({ where: { status: InventoryStatus.OUT_OF_STOCK, deletedAt: null } }),
-      this.prisma.inventoryItem.count({ where: { status: InventoryStatus.IN_USE, deletedAt: null } }),
+      this.prisma.inventoryItem.count({ where: { deletedAt: null, ...wFilter } }),
+      this.prisma.inventoryItem.count({ where: { status: InventoryStatus.IN_STOCK, deletedAt: null, ...wFilter } }),
+      this.prisma.inventoryItem.count({ where: { status: InventoryStatus.LOW_STOCK, deletedAt: null, ...wFilter } }),
+      this.prisma.inventoryItem.count({ where: { status: InventoryStatus.OUT_OF_STOCK, deletedAt: null, ...wFilter } }),
+      this.prisma.inventoryItem.count({ where: { status: InventoryStatus.IN_USE, deletedAt: null, ...wFilter } }),
       this.prisma.inventoryItem.findMany({
-        where: { deletedAt: null },
+        where: { deletedAt: null, ...wFilter },
         select: { price: true, quantity: true }
       }),
       this.prisma.inventoryItem.groupBy({
         by: ['category'],
-        where: { deletedAt: null },
+        where: { deletedAt: null, ...wFilter },
         _count: { category: true },
       }),
       // Optimized: Fetch warehouses with item count using include
       this.prisma.warehouse.findMany({
+        where: wIdFilter,
         select: {
           id: true,
           name: true,
@@ -513,9 +521,10 @@ export class InventoryService {
     return stats;
   }
 
-  async getLowStockItems(): Promise<InventoryItem[]> {
+  async getLowStockItems(warehouseIds?: string[] | null): Promise<InventoryItem[]> {
     return this.prisma.inventoryItem.findMany({
       where: {
+        ...warehouseFilter(warehouseIds),
         OR: [
           { status: InventoryStatus.LOW_STOCK },
           { status: InventoryStatus.OUT_OF_STOCK },

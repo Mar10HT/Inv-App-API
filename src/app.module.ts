@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { APP_GUARD } from '@nestjs/core';
+import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { ScheduleModule } from '@nestjs/schedule';
 import { CacheModule } from '@nestjs/cache-manager';
@@ -29,6 +29,8 @@ import { QrModule } from './qr/qr.module';
 import { EventsModule } from './events/events.module';
 import { SearchModule } from './common/search/search.module';
 import { DischargeRequestsModule } from './discharge-requests/discharge-requests.module';
+import { WarehouseAccessModule } from './common/warehouse-access/warehouse-access.module';
+import { WarehouseAccessInterceptor } from './common/warehouse-access/warehouse-access.interceptor';
 
 @Module({
   imports: [
@@ -84,6 +86,7 @@ import { DischargeRequestsModule } from './discharge-requests/discharge-requests
     EventsModule,
     SearchModule,
     DischargeRequestsModule,
+    WarehouseAccessModule,
   ],
   controllers: [AppController],
   providers: [
@@ -92,6 +95,11 @@ import { DischargeRequestsModule } from './discharge-requests/discharge-requests
     {
       provide: APP_GUARD,
       useClass: ThrottlerGuard,
+    },
+    // Resolve warehouse access for authenticated users
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: WarehouseAccessInterceptor,
     },
   ],
 })

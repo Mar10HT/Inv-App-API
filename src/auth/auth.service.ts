@@ -16,6 +16,7 @@ import { UpdateProfileDto } from './dto/update-profile.dto';
 import * as bcrypt from 'bcryptjs';
 import { randomBytes } from 'crypto';
 import { UserRole } from '@prisma/client';
+import { WarehouseAccessService } from '../common/warehouse-access/warehouse-access.service';
 
 @Injectable()
 export class AuthService {
@@ -31,6 +32,7 @@ export class AuthService {
     private jwtService: JwtService,
     private prisma: PrismaService,
     private emailService: EmailService,
+    private warehouseAccessService: WarehouseAccessService,
   ) {}
 
   // ============================================
@@ -149,6 +151,8 @@ export class AuthService {
     };
     const accessToken = this.jwtService.sign(payload);
 
+    const warehouseIds = await this.warehouseAccessService.getAccessibleWarehouseIds(storedToken.user.id, storedToken.user.role) ?? [];
+
     return {
       access_token: accessToken,
       refresh_token: newRefreshToken,
@@ -157,6 +161,7 @@ export class AuthService {
         email: storedToken.user.email,
         name: storedToken.user.name,
         role: storedToken.user.role,
+        warehouseIds,
       },
     };
   }
@@ -335,6 +340,8 @@ export class AuthService {
       loginDto.rememberMe,
     );
 
+    const warehouseIds = await this.warehouseAccessService.getAccessibleWarehouseIds(user.id, user.role) ?? [];
+
     return {
       access_token: accessToken,
       refresh_token: refreshToken,
@@ -343,6 +350,7 @@ export class AuthService {
         email: user.email,
         name: user.name,
         role: user.role,
+        warehouseIds,
       },
     };
   }
