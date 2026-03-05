@@ -5,6 +5,7 @@ import {
   Res,
   UseGuards,
   ValidationPipe,
+  BadRequestException,
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { Response } from 'express';
@@ -83,6 +84,13 @@ export class ReportsController {
   ) {
     const start = startDate ? new Date(startDate) : undefined;
     const end = endDate ? new Date(endDate) : undefined;
+
+    if (start && isNaN(start.getTime())) {
+      throw new BadRequestException('Invalid startDate format');
+    }
+    if (end && isNaN(end.getTime())) {
+      throw new BadRequestException('Invalid endDate format');
+    }
 
     const buffer = await this.reportsService.generateTransactionsReport(start, end, user?.warehouseIds);
 

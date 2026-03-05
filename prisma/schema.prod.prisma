@@ -279,7 +279,7 @@ model TransactionItem {
 
   // Relations
   transaction   Transaction   @relation(fields: [transactionId], references: [id], onDelete: Cascade)
-  inventoryItem InventoryItem @relation(fields: [inventoryItemId], references: [id])
+  inventoryItem InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
 
   @@index([transactionId])
   @@index([inventoryItemId])
@@ -415,7 +415,7 @@ model TransferRequestItem {
 
   // Relations
   transferRequest TransferRequest @relation(fields: [transferRequestId], references: [id], onDelete: Cascade)
-  inventoryItem   InventoryItem   @relation(fields: [inventoryItemId], references: [id])
+  inventoryItem   InventoryItem   @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
 
   @@index([transferRequestId])
   @@index([inventoryItemId])
@@ -470,7 +470,7 @@ model StockTakeItem {
 
   // Relations
   stockTake     StockTake     @relation(fields: [stockTakeId], references: [id], onDelete: Cascade)
-  item          InventoryItem @relation(fields: [itemId], references: [id])
+  item          InventoryItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
 
   @@index([stockTakeId])
   @@index([itemId])
@@ -556,7 +556,7 @@ model DischargeRequestItem {
 
   // Relations
   dischargeRequest    DischargeRequest  @relation(fields: [dischargeRequestId], references: [id], onDelete: Cascade)
-  inventoryItem       InventoryItem     @relation(fields: [inventoryItemId], references: [id])
+  inventoryItem       InventoryItem     @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
 
   @@index([dischargeRequestId])
   @@index([inventoryItemId])

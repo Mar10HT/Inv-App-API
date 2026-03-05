@@ -114,24 +114,31 @@ async function bootstrap() {
     SwaggerModule.setup('api/docs', app, document);
   }
 
-  // Auto-seed: create demo admin if no users exist
+  // Auto-seed: create initial admin if no users exist (dev only, or via env vars in prod)
   try {
     const prisma = app.get(PrismaService);
     const userCount = await prisma.user.count();
     if (userCount === 0) {
-      const hashedPassword = await bcrypt.hash('password123', 10);
-      await prisma.user.create({
-        data: {
-          email: 'admin@example.com',
-          password: hashedPassword,
-          name: 'System Administrator',
-          role: UserRole.SYSTEM_ADMIN,
-        },
-      });
-      console.log('🌱 Demo admin created (admin@example.com / password123)');
+      const adminEmail = process.env.ADMIN_EMAIL || (process.env.NODE_ENV !== 'production' ? 'admin@example.com' : null);
+      const adminPassword = process.env.ADMIN_PASSWORD || (process.env.NODE_ENV !== 'production' ? 'password123' : null);
+
+      if (adminEmail && adminPassword) {
+        const hashedPassword = await bcrypt.hash(adminPassword, 10);
+        await prisma.user.create({
+          data: {
+            email: adminEmail,
+            password: hashedPassword,
+            name: 'System Administrator',
+            role: UserRole.SYSTEM_ADMIN,
+          },
+        });
+        console.log(`[Bootstrap] Initial admin created (${adminEmail})`);
+      } else {
+        console.warn('[Bootstrap] No users exist. Set ADMIN_EMAIL and ADMIN_PASSWORD env vars to create initial admin.');
+      }
     }
   } catch (e) {
-    console.error('Auto-seed failed:', e.message);
+    console.error('[Bootstrap] Auto-seed failed:', e.message);
   }
 
   const port = process.env.PORT ?? 3000;

@@ -1,12 +1,17 @@
-import { Controller, Post, ForbiddenException } from '@nestjs/common';
-import { PrismaClient, UserRole } from '@prisma/client';
+import { Controller, Post, ForbiddenException, UseGuards } from '@nestjs/common';
+import { PrismaService } from '../prisma/prisma.service';
+import { JwtAuthGuard, RolesGuard } from '../auth/guards';
+import { Roles } from '../auth/decorators';
+import { UserRole } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 
 @Controller('seed')
 export class SeedController {
-  private prisma = new PrismaClient();
+  constructor(private readonly prisma: PrismaService) {}
 
   @Post()
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('SYSTEM_ADMIN')
   async runSeed() {
     // Block seed endpoint in production
     if (process.env.NODE_ENV === 'production') {

@@ -12,6 +12,7 @@ import {
   HttpStatus,
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { DischargeRequestsService } from './discharge-requests.service';
 import { CreateDischargeRequestDto } from './dto/create-discharge-request.dto';
 import { FilterDischargeRequestDto } from './dto/filter-discharge-request.dto';
@@ -28,11 +29,13 @@ export class DischargeRequestsController {
 
   @Post('public')
   @HttpCode(HttpStatus.CREATED)
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
   createPublic(@Body(ValidationPipe) dto: CreateDischargeRequestDto) {
     return this.dischargeRequestsService.createFromPublicForm(dto);
   }
 
   @Get('public/available-items')
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
   getAvailableItems() {
     return this.dischargeRequestsService.getAvailableItems();
   }

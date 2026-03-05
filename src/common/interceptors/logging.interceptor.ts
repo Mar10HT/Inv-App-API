@@ -22,6 +22,7 @@ export class LoggingInterceptor implements NestInterceptor {
     const userId = (request as any).user?.userId || 'anonymous';
 
     const startTime = Date.now();
+    const sanitizedBody = this.sanitizeBody(body);
 
     return next.handle().pipe(
       tap({
@@ -29,10 +30,12 @@ export class LoggingInterceptor implements NestInterceptor {
           const duration = Date.now() - startTime;
           const { statusCode } = response;
 
-          this.logger.log(
-            `${method} ${url} ${statusCode} - ${duration}ms - ${userId} - ${ip}`,
-            'HTTP',
-          );
+          const logMessage = `${method} ${url} ${statusCode} - ${duration}ms - ${userId} - ${ip}`;
+          if (sanitizedBody && Object.keys(sanitizedBody).length > 0 && method !== 'GET') {
+            this.logger.log(`${logMessage} - body: ${JSON.stringify(sanitizedBody)}`, 'HTTP');
+          } else {
+            this.logger.log(logMessage, 'HTTP');
+          }
         },
         error: (error) => {
           const duration = Date.now() - startTime;

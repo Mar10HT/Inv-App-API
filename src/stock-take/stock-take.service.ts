@@ -191,17 +191,24 @@ export class StockTakeService {
       );
     }
 
-    // Apply inventory changes if requested
+    // Apply inventory changes if requested (atomic transaction)
     if (applyChanges) {
+      await this.prisma.$transaction(async (tx) => {
+        for (const stockItem of stockTake.items) {
+          if (stockItem.variance !== 0 && stockItem.countedQty !== null) {
+            await tx.inventoryItem.update({
+              where: { id: stockItem.itemId },
+              data: {
+                quantity: stockItem.countedQty,
+              },
+            });
+          }
+        }
+      });
+
+      // Audit logs outside transaction (non-critical)
       for (const stockItem of stockTake.items) {
         if (stockItem.variance !== 0 && stockItem.countedQty !== null) {
-          await this.prisma.inventoryItem.update({
-            where: { id: stockItem.itemId },
-            data: {
-              quantity: stockItem.countedQty,
-            },
-          });
-
           await this.auditService.log({
             action: 'UPDATE',
             entity: 'InventoryItem',

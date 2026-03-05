@@ -32,7 +32,7 @@ export class StockTakeController {
     @Body(ValidationPipe) dto: CreateStockTakeDto,
     @CurrentUser() user: any,
   ) {
-    return this.stockTakeService.create(dto, user.id);
+    return this.stockTakeService.create(dto, user.userId);
   }
 
   @Get()
@@ -67,7 +67,7 @@ export class StockTakeController {
     @Body(ValidationPipe) dto: UpdateStockTakeItemDto,
     @CurrentUser() user: any,
   ) {
-    return this.stockTakeService.updateItem(id, dto, user.id);
+    return this.stockTakeService.updateItem(id, dto, user.userId);
   }
 
   @Patch(':id/complete')
@@ -78,7 +78,7 @@ export class StockTakeController {
     @CurrentUser() user: any,
   ) {
     const apply = applyChanges === 'true';
-    return this.stockTakeService.complete(id, user.id, apply);
+    return this.stockTakeService.complete(id, user.userId, apply);
   }
 
   @Patch(':id/cancel')
@@ -87,6 +87,6 @@ export class StockTakeController {
     @Param('id') id: string,
     @CurrentUser() user: any,
   ) {
-    return this.stockTakeService.cancel(id, user.id);
+    return this.stockTakeService.cancel(id, user.userId);
   }
 }
