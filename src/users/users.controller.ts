@@ -17,7 +17,8 @@ import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { PaginationDto } from '../common/dto';
 import { JwtAuthGuard, RolesGuard } from '../auth/guards';
-import { Roles } from '../auth/decorators';
+import { Roles, CurrentUser } from '../auth/decorators';
+import { AuthenticatedUser } from '../auth/interfaces/auth-user.interface';
 import { WarehouseAccessService } from '../common/warehouse-access/warehouse-access.service';
 
 @Controller('users')
@@ -38,6 +39,22 @@ export class UsersController {
   @Get()
   findAll(@Query(new ValidationPipe({ transform: true })) pagination: PaginationDto) {
     return this.usersService.findAll(pagination);
+  }
+
+  // Notification preferences - accessible to ALL authenticated users
+  @Get('preferences')
+  @Roles('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER', 'USER', 'VIEWER', 'EXTERNAL')
+  getPreferences(@CurrentUser() user: AuthenticatedUser) {
+    return this.usersService.getPreferences(user.userId);
+  }
+
+  @Patch('preferences')
+  @Roles('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER', 'USER', 'VIEWER', 'EXTERNAL')
+  updatePreferences(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() prefs: { emailNotifications?: boolean; lowStockAlerts?: boolean },
+  ) {
+    return this.usersService.updatePreferences(user.userId, prefs);
   }
 
   @Get(':id')

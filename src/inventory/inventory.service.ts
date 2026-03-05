@@ -311,9 +311,9 @@ export class InventoryService {
     return item;
   }
 
-  async update(id: string, updateInventoryDto: UpdateInventoryDto): Promise<InventoryItem> {
-    // Check if item exists
-    await this.findOne(id);
+  async update(id: string, updateInventoryDto: UpdateInventoryDto, userId?: string): Promise<InventoryItem> {
+    // Capture item before update for audit log
+    const oldItem = await this.findOne(id);
 
     // Check if SKU is being updated and already exists
     if (updateInventoryDto.sku) {
@@ -366,6 +366,19 @@ export class InventoryService {
             email: true,
           },
         },
+      },
+    });
+
+    // Log audit with before/after
+    await this.auditService.log({
+      action: 'UPDATE',
+      entity: 'InventoryItem',
+      entityId: id,
+      userId,
+      changes: {
+        before: { name: oldItem.name, quantity: oldItem.quantity, category: oldItem.category, status: oldItem.status },
+        after: { name: updatedItem.name, quantity: updatedItem.quantity, category: updatedItem.category, status: updatedItem.status },
+        fields: Object.keys(updateInventoryDto),
       },
     });
 

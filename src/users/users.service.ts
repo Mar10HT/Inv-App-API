@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { EmailService } from '../email/email.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { PaginationDto, PaginatedResult } from '../common/dto';
@@ -7,7 +8,10 @@ import * as bcrypt from 'bcryptjs';
 
 @Injectable()
 export class UsersService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private emailService: EmailService,
+  ) {}
 
   private readonly userSelect = {
     id: true,
@@ -30,6 +34,9 @@ export class UsersService {
           password: hashedPassword,
         },
       });
+
+      // Send welcome email (fire-and-forget)
+      this.emailService.sendWelcomeEmail(user.email, user.name || undefined).catch(() => {});
 
       // Remove password from response
       const { password, ...result } = user;
@@ -170,6 +177,41 @@ export class UsersService {
         updatedAt: true,
       },
     });
+  }
+
+  // Notification preferences
+  async getPreferences(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        emailNotifications: true,
+        lowStockAlerts: true,
+      },
+    });
+
+    if (!user) {
+      throw new NotFoundException(`User with ID ${userId} not found`);
+    }
+
+    return user;
+  }
+
+  async updatePreferences(userId: string, prefs: { emailNotifications?: boolean; lowStockAlerts?: boolean }) {
+    try {
+      return await this.prisma.user.update({
+        where: { id: userId },
+        data: prefs,
+        select: {
+          emailNotifications: true,
+          lowStockAlerts: true,
+        },
+      });
+    } catch (error) {
+      if (error.code === 'P2025') {
+        throw new NotFoundException(`User with ID ${userId} not found`);
+      }
+      throw error;
+    }
   }
 
   // Method to find user by email (for auth)

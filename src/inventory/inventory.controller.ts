@@ -90,7 +90,7 @@ export class InventoryController {
     if (updateInventoryDto.warehouseId && user.warehouseIds !== null && !user.warehouseIds.includes(updateInventoryDto.warehouseId)) {
       throw new ForbiddenException('You do not have access to the target warehouse');
     }
-    return this.inventoryService.update(id, updateInventoryDto);
+    return this.inventoryService.update(id, updateInventoryDto, user.userId);
   }
 
   @Delete(':id')

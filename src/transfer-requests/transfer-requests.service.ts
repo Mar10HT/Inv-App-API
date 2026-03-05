@@ -60,6 +60,14 @@ export class TransferRequestsService {
       throw new NotFoundException('Destination warehouse not found');
     }
 
+    // Validate both warehouses are active
+    if (!sourceWarehouse.isActive) {
+      throw new BadRequestException('Source warehouse is inactive');
+    }
+    if (!destWarehouse.isActive) {
+      throw new BadRequestException('Destination warehouse is inactive');
+    }
+
     for (const item of dto.items) {
       const inventoryItem = await this.prisma.inventoryItem.findUnique({
         where: { id: item.inventoryItemId },

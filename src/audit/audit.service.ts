@@ -53,22 +53,47 @@ export class AuditService {
     });
   }
 
-  async getRecentLogs(limit: number = 50) {
-    return this.prisma.auditLog.findMany({
-      take: limit,
-      orderBy: {
-        createdAt: 'desc',
-      },
-      include: {
-        user: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
+  async getRecentLogs(options?: { limit?: number; offset?: number; action?: string; entity?: string }) {
+    const limit = options?.limit || 50;
+    const offset = options?.offset || 0;
+
+    const where: any = {};
+    if (options?.action) {
+      where.action = options.action;
+    }
+    if (options?.entity) {
+      where.entity = options.entity;
+    }
+
+    const [data, total] = await Promise.all([
+      this.prisma.auditLog.findMany({
+        where,
+        take: limit,
+        skip: offset,
+        orderBy: {
+          createdAt: 'desc',
+        },
+        include: {
+          user: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+            },
           },
         },
+      }),
+      this.prisma.auditLog.count({ where }),
+    ]);
+
+    return {
+      data,
+      meta: {
+        total,
+        limit,
+        offset,
       },
-    });
+    };
   }
 
   async getLogsByUser(userId: string, limit: number = 50) {

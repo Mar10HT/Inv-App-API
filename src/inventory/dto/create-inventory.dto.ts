@@ -1,4 +1,4 @@
-import { IsString, IsNotEmpty, IsOptional, IsInt, Min, IsNumber, IsEnum, MinLength, MaxLength } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional, IsInt, Min, IsNumber, IsEnum, MinLength, MaxLength, IsDateString } from 'class-validator';
 import { InventoryStatus, Currency, ItemType } from '@prisma/client';
 
 export class CreateInventoryDto {
@@ -95,4 +95,9 @@ export class CreateInventoryDto {
   @IsString()
   @IsOptional()
   createdById?: string;
+
+  // Expiration date for perishable items
+  @IsDateString()
+  @IsOptional()
+  expirationDate?: string;
 }

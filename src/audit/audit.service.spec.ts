@@ -22,6 +22,7 @@ describe('AuditService', () => {
       auditLog: {
         create: jest.fn(),
         findMany: jest.fn(),
+        count: jest.fn(),
       },
     };
 
@@ -144,38 +145,42 @@ describe('AuditService', () => {
   });
 
   describe('getRecentLogs', () => {
-    it('should return recent logs with default limit', async () => {
+    it('should return paginated logs with default limit', async () => {
       const logs = [mockAuditLog];
       (prisma.auditLog.findMany as jest.Mock).mockResolvedValue(logs);
+      (prisma.auditLog.count as jest.Mock).mockResolvedValue(1);
 
       const result = await service.getRecentLogs();
 
-      expect(result).toEqual(logs);
-      expect(prisma.auditLog.findMany).toHaveBeenCalledWith({
-        take: 50,
-        orderBy: { createdAt: 'desc' },
-        include: {
-          user: {
-            select: {
-              id: true,
-              name: true,
-              email: true,
-            },
-          },
-        },
+      expect(result).toEqual({
+        data: logs,
+        meta: { total: 1, limit: 50, offset: 0 },
       });
+      expect(prisma.auditLog.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          take: 50,
+          skip: 0,
+          orderBy: { createdAt: 'desc' },
+        }),
+      );
     });
 
-    it('should return recent logs with custom limit', async () => {
+    it('should return paginated logs with custom options', async () => {
       (prisma.auditLog.findMany as jest.Mock).mockResolvedValue([]);
+      (prisma.auditLog.count as jest.Mock).mockResolvedValue(0);
 
-      await service.getRecentLogs(10);
+      const result = await service.getRecentLogs({ limit: 10, offset: 5, action: 'CREATE' });
 
-      expect(prisma.auditLog.findMany).toHaveBeenCalledWith({
-        take: 10,
-        orderBy: { createdAt: 'desc' },
-        include: expect.any(Object),
+      expect(result).toEqual({
+        data: [],
+        meta: { total: 0, limit: 10, offset: 5 },
       });
+      expect(prisma.auditLog.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          take: 10,
+          skip: 5,
+        }),
+      );
     });
   });
 

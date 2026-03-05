@@ -25,10 +25,11 @@ export class ReportsController {
   @Roles('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER', 'USER', 'VIEWER')
   async exportInventoryExcel(
     @Query(ValidationPipe) filters: FilterInventoryDto,
+    @Query('locale') locale: 'en' | 'es' = 'es',
     @CurrentUser() user: AuthenticatedUser,
     @Res() res: Response,
   ) {
-    const buffer = await this.reportsService.generateInventoryExcel(filters, user.warehouseIds);
+    const buffer = await this.reportsService.generateInventoryExcel(filters, user.warehouseIds, locale);
 
     res.set({
       'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -43,10 +44,11 @@ export class ReportsController {
   @Roles('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER', 'USER', 'VIEWER')
   async exportInventoryPdf(
     @Query(ValidationPipe) filters: FilterInventoryDto,
+    @Query('locale') locale: 'en' | 'es' = 'es',
     @CurrentUser() user: AuthenticatedUser,
     @Res() res: Response,
   ) {
-    const buffer = await this.reportsService.generateInventoryPdf(filters, user.warehouseIds);
+    const buffer = await this.reportsService.generateInventoryPdf(filters, user.warehouseIds, locale);
 
     res.set({
       'Content-Type': 'application/pdf',
@@ -60,10 +62,11 @@ export class ReportsController {
   @Get('low-stock/excel')
   @Roles('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER')
   async exportLowStockExcel(
+    @Query('locale') locale: 'en' | 'es' = 'es',
     @CurrentUser() user: AuthenticatedUser,
     @Res() res: Response,
   ) {
-    const buffer = await this.reportsService.generateLowStockReport(user.warehouseIds);
+    const buffer = await this.reportsService.generateLowStockReport(user.warehouseIds, locale);
 
     res.set({
       'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -79,6 +82,7 @@ export class ReportsController {
   async exportTransactionsExcel(
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
+    @Query('locale') locale: 'en' | 'es' = 'es',
     @CurrentUser() user?: AuthenticatedUser,
     @Res() res?: Response,
   ) {
@@ -92,7 +96,7 @@ export class ReportsController {
       throw new BadRequestException('Invalid endDate format');
     }
 
-    const buffer = await this.reportsService.generateTransactionsReport(start, end, user?.warehouseIds);
+    const buffer = await this.reportsService.generateTransactionsReport(start, end, user?.warehouseIds, locale);
 
     res.set({
       'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -106,10 +110,11 @@ export class ReportsController {
   @Get('loans/excel')
   @Roles('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER')
   async exportLoansExcel(
+    @Query('locale') locale: 'en' | 'es' = 'es',
     @CurrentUser() user: AuthenticatedUser,
     @Res() res: Response,
   ) {
-    const buffer = await this.reportsService.generateLoansReport(user.warehouseIds);
+    const buffer = await this.reportsService.generateLoansReport(user.warehouseIds, locale);
 
     res.set({
       'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',

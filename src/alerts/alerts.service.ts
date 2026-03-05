@@ -70,6 +70,49 @@ export class AlertsService {
         }
       }
 
+      // Check for expiring items (within 7 days)
+      const sevenDaysFromNow = new Date();
+      sevenDaysFromNow.setDate(sevenDaysFromNow.getDate() + 7);
+
+      const expiringItems = await this.prisma.inventoryItem.findMany({
+        where: {
+          deletedAt: null,
+          expirationDate: {
+            not: null,
+            lte: sevenDaysFromNow,
+            gt: new Date(), // Not yet expired
+          },
+        },
+        include: {
+          warehouse: true,
+        },
+      });
+
+      for (const item of expiringItems) {
+        // Check if there's already an unresolved EXPIRING_SOON alert
+        const existingAlert = await this.prisma.stockAlert.findFirst({
+          where: {
+            itemId: item.id,
+            type: AlertType.EXPIRING_SOON,
+            resolvedAt: null,
+          },
+        });
+
+        if (!existingAlert) {
+          await this.prisma.stockAlert.create({
+            data: {
+              itemId: item.id,
+              type: AlertType.EXPIRING_SOON,
+              threshold: item.minQuantity,
+              currentQty: item.quantity,
+            },
+          });
+
+          alertsCreated++;
+          this.logger.log(`Expiring soon alert created for item ${item.name} (${item.id})`);
+        }
+      }
+
       // Resolve alerts for items that are now in stock or in use
       const resolvedAlerts = await this.prisma.stockAlert.updateMany({
         where: {

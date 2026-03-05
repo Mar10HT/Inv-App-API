@@ -21,6 +21,10 @@ model User {
   updatedAt DateTime  @updatedAt
   deletedAt DateTime? // Soft delete
 
+  // Notification preferences
+  emailNotifications Boolean @default(true)
+  lowStockAlerts     Boolean @default(true)
+
   // Relations
   inventoryItems   InventoryItem[]      @relation("CreatedItems")
   assignedItems    InventoryItem[]      @relation("AssignedItems")
@@ -149,6 +153,9 @@ model InventoryItem {
   assignedToUserId String?
   assignedAt       DateTime?
 
+  // Expiration tracking
+  expirationDate DateTime?
+
   createdAt    DateTime          @default(now())
   updatedAt    DateTime          @updatedAt
   deletedAt    DateTime?         // Soft delete
@@ -175,6 +182,7 @@ model InventoryItem {
   @@index([supplierId])
   @@index([assignedToUserId])
   @@index([deletedAt])
+  @@index([expirationDate])
   @@map("inventory_items")
 }
 

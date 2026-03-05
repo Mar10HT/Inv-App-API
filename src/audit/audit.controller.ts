@@ -16,9 +16,18 @@ export class AuditController {
   constructor(private readonly auditService: AuditService) {}
 
   @Get()
-  getRecentLogs(@Query('limit') limit?: string) {
-    const limitNum = limit ? parseInt(limit, 10) : 50;
-    return this.auditService.getRecentLogs(limitNum);
+  getRecentLogs(
+    @Query('limit') limit?: string,
+    @Query('offset') offset?: string,
+    @Query('action') action?: string,
+    @Query('entity') entity?: string,
+  ) {
+    return this.auditService.getRecentLogs({
+      limit: limit ? parseInt(limit, 10) : 50,
+      offset: offset ? parseInt(offset, 10) : 0,
+      action,
+      entity,
+    });
   }
 
   @Get('entity/:entity/:entityId')
