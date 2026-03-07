@@ -278,11 +278,12 @@ export class AlertsService {
   }
 
   async getStats() {
-    const [total, active, lowStock, outOfStock, notified] = await Promise.all([
+    const [total, active, lowStock, outOfStock, expiringItems, notified] = await Promise.all([
       this.prisma.stockAlert.count(),
       this.prisma.stockAlert.count({ where: { resolvedAt: null } }),
       this.prisma.stockAlert.count({ where: { type: AlertType.LOW_STOCK, resolvedAt: null } }),
       this.prisma.stockAlert.count({ where: { type: AlertType.OUT_OF_STOCK, resolvedAt: null } }),
+      this.prisma.stockAlert.count({ where: { type: AlertType.EXPIRING_SOON, resolvedAt: null } }),
       this.prisma.stockAlert.count({ where: { notified: true, resolvedAt: null } }),
     ]);
 
@@ -293,6 +294,7 @@ export class AlertsService {
       byType: {
         lowStock,
         outOfStock,
+        expiringItems,
       },
       notified,
       pendingNotification: active - notified,

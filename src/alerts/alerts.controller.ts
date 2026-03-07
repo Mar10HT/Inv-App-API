@@ -46,6 +46,11 @@ export class AlertsController {
     return this.alertsService.findByType(AlertType.OUT_OF_STOCK, pagination);
   }
 
+  @Get('expiring-soon')
+  findExpiringSoon(@Query(ValidationPipe) pagination: PaginationDto) {
+    return this.alertsService.findByType(AlertType.EXPIRING_SOON, pagination);
+  }
+
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.alertsService.findOne(id);
