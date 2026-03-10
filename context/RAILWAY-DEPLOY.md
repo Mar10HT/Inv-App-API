@@ -185,7 +185,7 @@ curl https://your-app-name.up.railway.app/api/inventory/stats
 # Login
 curl -X POST https://your-app-name.up.railway.app/api/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"email":"admin@example.com","password":"password123"}'
+  -d '{"email":"your@email.com","password":"YourPassword123!"}'
 ```
 
 ---

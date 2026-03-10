@@ -94,8 +94,8 @@ async function bootstrap() {
   // Swagger API Documentation
   if (process.env.NODE_ENV !== 'production') {
     const config = new DocumentBuilder()
-      .setTitle('Inventory Management API')
-      .setDescription('API for managing inventory, warehouses, suppliers, and transactions')
+      .setTitle('Obsid API')
+      .setDescription('Obsid — RESTful inventory management API')
       .setVersion('1.0')
       .addBearerAuth()
       .addCookieAuth('auth_token')
