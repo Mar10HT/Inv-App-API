@@ -1,383 +1,124 @@
 <div align="center">
 
-# 🔧 Inv-App API
+<h1>Obsid API</h1>
 
-### RESTful Backend for Inventory Management
+**RESTful backend for inventory management.**
 
-[![NestJS](https://img.shields.io/badge/NestJS-10.0-E0234E?style=for-the-badge&logo=nestjs&logoColor=white)](https://nestjs.com)
-[![Prisma](https://img.shields.io/badge/Prisma-5.0-2D3748?style=for-the-badge&logo=prisma&logoColor=white)](https://prisma.io)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.8-3178C6?style=for-the-badge&logo=typescript&logoColor=white)](https://typescriptlang.org)
-[![Jest](https://img.shields.io/badge/Jest-141_tests-C21325?style=for-the-badge&logo=jest&logoColor=white)](https://jestjs.io)
+[![NestJS](https://img.shields.io/badge/NestJS-10-E0234E?style=flat-square&logo=nestjs&logoColor=white)](https://nestjs.com)
+[![Prisma](https://img.shields.io/badge/Prisma-5-2D3748?style=flat-square&logo=prisma&logoColor=white)](https://prisma.io)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.8-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://typescriptlang.org)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green?style=flat-square)](./LICENSE)
 
-<br/>
-
-[Features](#-features) •
-[Quick Start](#-quick-start) •
-[API Docs](#-api-documentation) •
-[Testing](#-testing)
+[API Docs](http://localhost:3000/api/docs) · [Deployment](./context/DEPLOYMENT-GUIDE.md) · [Changelog](./CHANGELOG.md) · [Frontend](https://github.com/mherrerabl/Inv-App)
 
 </div>
 
 ---
 
-## ✨ Features
+Handles authentication, stock operations, multi-warehouse logistics, and reporting with role-based access control. Built with NestJS, Prisma, and PostgreSQL.
 
-<table>
-<tr>
-<td>
+## Features
 
-### 🔐 Security
-- JWT + HttpOnly cookies
-- Role-based access (RBAC)
-- Rate limiting (tiered)
-- Password hashing (bcrypt)
-- CSRF protection
+- **Authentication** — JWT with HttpOnly cookies, CSRF protection, strong password policy
+- **Inventory CRUD** — Paginated responses, advanced filtering, bulk operations, soft deletes
+- **Warehouse Logistics** — Transfer requests with approval flow, stock reconciliation, inventory counts
+- **Loan Management** — Due dates, automatic overdue detection, multi-item support
+- **Reports** — Excel and PDF export, inventory value and status analytics
+- **Audit Trail** — Full activity logging with user, action, and change tracking
+- **Stock Alerts** — Scheduled cron jobs for low stock and overdue loan notifications
+- **Security** — Rate limiting, input validation, Helmet headers, RBAC with 5 roles
 
-</td>
-<td>
+## Tech Stack
 
-### 📊 Core Features
-- Full CRUD for all entities
-- Paginated responses
-- Advanced filtering
-- Soft deletes
-- Audit logging
+| | Technology |
+|---|---|
+| **Framework** | NestJS 10 |
+| **ORM** | Prisma 5 |
+| **Database** | SQLite (dev) · PostgreSQL (prod) |
+| **Auth** | Passport JWT · bcrypt |
+| **Docs** | Swagger / OpenAPI |
+| **Logging** | Winston |
+| **Testing** | Jest |
 
-</td>
-</tr>
-<tr>
-<td>
+## Getting Started
 
-### 📦 Advanced
-- Bulk operations
-- Excel/PDF export
-- Stock alerts (cron)
-- Transfer workflows
-- Stock reconciliation
-
-</td>
-<td>
-
-### 🛠 Infrastructure
-- Winston logging
-- Swagger docs
-- Health checks
-- Input validation
-- Error handling
-
-</td>
-</tr>
-</table>
-
----
-
-## 🚀 Quick Start
+**Prerequisites:** Node.js 20+
 
 ```bash
-# Install dependencies
 npm install
-
-# Setup environment
-cp .env.example .env
-
-# Run migrations
-npx prisma migrate dev
-
-# Seed database (optional)
-npm run seed
-
-# Start development
-npm run start:dev
-# → http://localhost:3000
-# → Swagger: http://localhost:3000/api/docs
+cp .env.example .env           # Configure environment
+npx prisma migrate dev         # Run migrations
+npm run seed                   # Seed sample data (optional)
+npm run start:dev              # → http://localhost:3000
 ```
 
-### Environment Variables
+Swagger documentation is available at [`/api/docs`](http://localhost:3000/api/docs).
 
-```env
-# Database
-DATABASE_URL="file:./dev.db"           # SQLite (dev)
-# DATABASE_URL="postgresql://..."       # PostgreSQL (prod)
-
-# Security
-JWT_SECRET="your-super-secret-key"
-JWT_EXPIRATION="7d"
-
-# Server
-PORT=3000
-NODE_ENV=development
-```
-
----
-
-## 📁 Project Structure
-
-```
-src/
-├── 📂 auth/                 # Authentication
-│   ├── guards/              # JWT & Role guards
-│   ├── decorators/          # @Roles, @CurrentUser
-│   ├── dto/                 # Login, Register DTOs
-│   └── strategies/          # Passport JWT strategy
-│
-├── 📂 inventory/            # Core inventory module
-│   ├── dto/                 # Create, Update, Filter, Bulk DTOs
-│   └── inventory.service.ts # Business logic
-│
-├── 📂 warehouses/           # Warehouse CRUD
-├── 📂 suppliers/            # Supplier CRUD
-├── 📂 categories/           # Category CRUD
-├── 📂 transactions/         # Stock movements
-├── 📂 loans/                # Item lending
-├── 📂 users/                # User management
-│
-├── 📂 alerts/               # Stock alerts + cron jobs
-├── 📂 reports/              # Excel/PDF generation
-├── 📂 transfer-requests/    # Approval workflow
-├── 📂 stock-take/           # Inventory reconciliation
-├── 📂 audit/                # Activity logging
-│
-├── 📂 health/               # Health check endpoint
-├── 📂 seed/                 # Database seeding
-├── 📂 prisma/               # Database service
-├── 📂 logger/               # Winston configuration
-└── 📂 common/               # Shared DTOs, filters
-
-prisma/
-├── schema.prisma            # Database schema
-└── migrations/              # Migration history
-```
-
----
-
-## 📡 API Documentation
-
-### Swagger UI
-
-Access interactive documentation at: **http://localhost:3000/api/docs**
-
-### Endpoint Overview
+## API Overview
 
 | Module | Endpoints | Description |
-|--------|-----------|-------------|
+|--------|:---------:|-------------|
 | Auth | 6 | Login, register, logout, profile, password |
-| Inventory | 12 | CRUD + bulk + stats |
-| Warehouses | 5 | CRUD operations |
-| Suppliers | 5 | CRUD operations |
-| Categories | 5 | CRUD operations |
+| Inventory | 12 | CRUD, bulk operations, stats |
+| Warehouses | 5 | CRUD |
+| Suppliers | 5 | CRUD |
+| Categories | 5 | CRUD |
 | Transactions | 6 | Stock movements |
-| Loans | 11 | Item lending |
+| Loans | 11 | Lending workflow |
 | Alerts | 9 | Stock alerts |
 | Reports | 5 | Excel/PDF export |
-| Transfer Requests | 9 | Approval workflow |
+| Transfers | 9 | Approval workflow |
 | Stock Take | 8 | Reconciliation |
 | Audit | 3 | Activity logs |
 | Health | 1 | Health check |
 
-### Example Requests
-
 <details>
-<summary><b>Authentication</b></summary>
+<summary><b>Example requests</b></summary>
 
 ```bash
 # Login
 curl -X POST http://localhost:3000/api/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"email": "admin@inventory.com", "password": "Admin123!"}'
+  -d '{"email": "user@example.com", "password": "YourPassword123!"}'
 
-# Response
-{
-  "access_token": "eyJhbG...",
-  "user": {
-    "id": "...",
-    "email": "admin@inventory.com",
-    "role": "SYSTEM_ADMIN"
-  }
-}
-```
-
-</details>
-
-<details>
-<summary><b>Inventory CRUD</b></summary>
-
-```bash
-# List items (paginated)
+# List inventory (paginated)
 curl http://localhost:3000/api/inventory?page=1&limit=10 \
   -H "Authorization: Bearer <token>"
 
-# Create item
-curl -X POST http://localhost:3000/api/inventory \
-  -H "Authorization: Bearer <token>" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "Dell Latitude 5430",
-    "category": "Laptops",
-    "quantity": 10,
-    "warehouseId": "..."
-  }'
-
-# Bulk import
-curl -X POST http://localhost:3000/api/inventory/bulk-import/excel \
-  -H "Authorization: Bearer <token>" \
-  -F "file=@inventory.xlsx"
+# Export to Excel
+curl http://localhost:3000/api/reports/inventory/excel \
+  -H "Authorization: Bearer <token>" -o inventory.xlsx
 ```
+
+</details>
+
+## Testing
+
+```bash
+npm test              # Run all tests
+npm run test:cov      # Coverage report
+npm run test:e2e      # E2E tests
+```
+
+## Deploy
+
+<details>
+<summary><b>Railway</b></summary>
+
+```bash
+npm i -g @railway/cli
+railway login && railway link && railway up
+```
+
+See [Railway Deploy](./context/RAILWAY-DEPLOY.md) for detailed setup.
 
 </details>
 
 <details>
-<summary><b>Reports</b></summary>
-
-```bash
-# Export to Excel
-curl http://localhost:3000/api/reports/inventory/excel \
-  -H "Authorization: Bearer <token>" \
-  -o inventory.xlsx
-
-# Export to PDF
-curl http://localhost:3000/api/reports/inventory/pdf \
-  -H "Authorization: Bearer <token>" \
-  -o inventory.pdf
-```
-
-</details>
-
----
-
-## 🧪 Testing
-
-```bash
-# Run all tests
-npm test
-
-# Watch mode
-npm run test:watch
-
-# Coverage report
-npm run test:cov
-
-# E2E tests
-npm run test:e2e
-```
-
-### Test Summary
-
-| Suite | Tests | Coverage |
-|-------|-------|----------|
-| Auth | 22 | Services & Guards |
-| Inventory | 28 | CRUD + Bulk |
-| Warehouses | 14 | CRUD |
-| Suppliers | 14 | CRUD |
-| Categories | 14 | CRUD |
-| Transactions | 14 | Stock movements |
-| Loans | 21 | Lending workflow |
-| Users | 14 | User management |
-| **Total** | **141** | **~32%** |
-
----
-
-## 🔐 Security
-
-### Rate Limiting
-
-```typescript
-// Tiered rate limiting
-ThrottlerModule.forRoot([
-  { name: 'short', ttl: 1000, limit: 10 },    // 10/sec
-  { name: 'medium', ttl: 60000, limit: 100 }, // 100/min
-  { name: 'long', ttl: 3600000, limit: 1000 } // 1000/hr
-])
-```
-
-### Role-Based Access
-
-```typescript
-// Decorator usage
-@Roles('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER')
-@UseGuards(JwtAuthGuard, RolesGuard)
-async create(@Body() dto: CreateItemDto) { ... }
-
-// Available roles
-enum Role {
-  SYSTEM_ADMIN,      // Full access
-  WAREHOUSE_MANAGER, // Manage assigned warehouse
-  USER,              // Basic operations
-  VIEWER             // Read-only
-}
-```
-
-### Password Policy
-
-- Minimum 12 characters
-- At least 1 uppercase, 1 lowercase
-- At least 1 number, 1 special character
-- bcrypt hashing with salt rounds
-
----
-
-## 📦 Database
-
-### Schema Overview
-
-```prisma
-model User {
-  id       String @id @default(cuid())
-  email    String @unique
-  password String
-  role     Role   @default(USER)
-  // ... relations
-}
-
-model InventoryItem {
-  id          String @id @default(cuid())
-  name        String
-  quantity    Int
-  status      InventoryStatus
-  itemType    ItemType
-  warehouseId String
-  // ... relations, soft delete
-}
-
-// Additional models:
-// Warehouse, Supplier, Category, Transaction,
-// Loan, AuditLog, StockAlert, TransferRequest, StockTake
-```
-
-### Migrations
-
-```bash
-# Create migration
-npx prisma migrate dev --name add_feature
-
-# Apply migrations
-npx prisma migrate deploy
-
-# Reset database
-npx prisma migrate reset
-```
-
----
-
-## 🚢 Deployment
-
-### Railway
-
-```bash
-# Install CLI
-npm i -g @railway/cli
-
-# Login and deploy
-railway login
-railway link
-railway up
-```
-
-See [RAILWAY-DEPLOY.md](../context/RAILWAY-DEPLOY.md) for details.
-
-### Docker
+<summary><b>Docker</b></summary>
 
 ```dockerfile
-FROM node:18-alpine
+FROM node:20-alpine
 WORKDIR /app
 COPY package*.json ./
 RUN npm ci --only=production
@@ -388,24 +129,21 @@ EXPOSE 3000
 CMD ["node", "dist/main"]
 ```
 
----
+</details>
 
-## 📚 Related Documentation
+See [Deployment Guide](./context/DEPLOYMENT-GUIDE.md) and [Production Checklist](./context/PRODUCTION-CHECKLIST.md) for full instructions.
 
-| Document | Description |
-|----------|-------------|
-| [Plan de Mejoras](./context/PLAN_DE_MEJORAS.md) | Improvement roadmap |
-| [Optimizations](./context/OPTIMIZATIONS.md) | Full-stack analysis |
-| [Permissions Guide](./context/PERMISSIONS_GUIDE.md) | RBAC configuration |
+## Documentation
+
+| | |
+|---|---|
+| [Changelog](./CHANGELOG.md) | Version history |
 | [Deployment Guide](./context/DEPLOYMENT-GUIDE.md) | Production setup |
 | [Railway Deploy](./context/RAILWAY-DEPLOY.md) | Railway hosting |
-| [Build Optimization](./context/BUILD-OPTIMIZATION.md) | Performance |
-| [Production Checklist](./context/PRODUCTION-CHECKLIST.md) | Pre-launch |
+| [Production Checklist](./context/PRODUCTION-CHECKLIST.md) | Pre-launch checklist |
+| [Build Optimization](./context/BUILD-OPTIMIZATION.md) | Build performance |
+| [Optimizations](./context/OPTIMIZATIONS.md) | Full-stack analysis |
 
----
+## License
 
-<div align="center">
-
-**Inventory Management System - Backend**
-
-</div>
+[MIT](./LICENSE) — Mario Herrera

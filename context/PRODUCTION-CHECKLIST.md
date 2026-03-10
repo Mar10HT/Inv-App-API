@@ -289,7 +289,7 @@ DATABASE_URL="postgresql://..." npm run seed
 # Login
 curl -X POST https://your-app.up.railway.app/api/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"email":"admin@example.com","password":"password123"}'
+  -d '{"email":"your@email.com","password":"YourPassword123!"}'
 
 # Get inventory stats
 curl https://your-app.up.railway.app/api/inventory/stats

@@ -1,14 +1,14 @@
 # Build Optimization Guide
 
-## Optimizaciones Implementadas
+## Implemented Optimizations
 
-### 1. **SWC Compiler** ⚡ (Hasta 20x más rápido)
-- Reemplazó TypeScript compiler con SWC
-- **Antes**: ~3-5 segundos
-- **Después**: ~260ms
-- **Mejora**: ~95% más rápido
+### 1. SWC Compiler (Up to 20x faster)
+- Replaced TypeScript compiler with SWC
+- **Before**: ~3-5 seconds
+- **After**: ~260ms
+- **Improvement**: ~95% faster
 
-**Configuración**: `nest-cli.json:7-8`
+**Configuration**: `nest-cli.json`
 ```json
 {
   "builder": "swc",
@@ -16,78 +16,75 @@
 }
 ```
 
-### 2. **TypeScript Config Optimizado** 📝
-- Deshabilitó generación de sourcemaps en producción
-- Deshabilitó generación de archivos `.d.ts`
-- **Mejora**: ~30-40% menos archivos generados
+### 2. Optimized TypeScript Config
+- Disabled sourcemap generation in production
+- Disabled `.d.ts` file generation
+- **Improvement**: ~30-40% fewer generated files
 
-**Cambios en `tsconfig.json`**:
-- `declaration: false` (antes `true`)
-- `sourceMap: false` (antes `true`)
+**Changes in `tsconfig.json`**:
+- `declaration: false`
+- `sourceMap: false`
 
-### 3. **Railway Build Cache** 📦
-- Configuró caché de `node_modules`
-- Configuró caché de `.swc` y `dist`
-- Configuró caché de Bun
-- **Mejora**: Builds subsecuentes ~60-70% más rápidos
+### 3. Railway Build Cache
+- Configured `node_modules` cache
+- Configured `.swc` and `dist` cache
+- Configured Bun cache
+- **Improvement**: Subsequent builds ~60-70% faster
 
-**Archivo**: `nixpacks.toml`
-- Caché de `/root/.bun/install/cache`
-- Caché de `node_modules/.cache`
-- Caché de `.swc` y `dist`
+**File**: `nixpacks.toml`
+- Cache: `/root/.bun/install/cache`
+- Cache: `node_modules/.cache`
+- Cache: `.swc` and `dist`
 
-### 4. **Watch Patterns Optimizado** 👁️
-- Railway solo reconstruye cuando cambian archivos en `src/`
-- No reconstruye por cambios en docs, tests, etc.
+### 4. Optimized Watch Patterns
+- Railway only rebuilds when files in `src/` change
+- Does not rebuild for docs, tests, etc.
 
-**Configuración**: `railway.json:6`
+**Configuration**: `railway.json`
 ```json
 "watchPatterns": ["src/**"]
 ```
 
-## Tiempos de Build Esperados
+## Expected Build Times
 
-### Build Inicial (Primera vez)
-- **Antes**: 2-4 minutos
-- **Después**: 1-2 minutos
-- **Mejora**: ~50% más rápido
+### Initial Build (First time)
+- **Before**: 2-4 minutes
+- **After**: 1-2 minutes
+- **Improvement**: ~50% faster
 
-### Builds Subsecuentes (Con caché)
-- **Antes**: 1-2 minutos
-- **Después**: 20-40 segundos
-- **Mejora**: ~70% más rápido
+### Subsequent Builds (Cached)
+- **Before**: 1-2 minutes
+- **After**: 20-40 seconds
+- **Improvement**: ~70% faster
 
-### Build Local
-- **Antes**: 3-5 segundos
-- **Después**: 260ms
-- **Mejora**: ~95% más rápido
+### Local Build
+- **Before**: 3-5 seconds
+- **After**: 260ms
+- **Improvement**: ~95% faster
 
-## Optimizaciones Adicionales Disponibles
+## Additional Available Optimizations
 
-### 5. **Usar PNPM en vez de Bun** (Opcional)
-Si Bun sigue siendo lento, considera cambiar a pnpm:
+### 5. Use PNPM Instead of Bun (Optional)
+If Bun is slow, consider switching to pnpm:
 
 ```bash
-# Instalar pnpm
 npm install -g pnpm
-
-# Convertir proyecto
 pnpm import
 rm -rf node_modules bun.lock
 pnpm install
 ```
 
-**En `railway.json`**:
+**In `railway.json`**:
 ```json
 "buildCommand": "pnpm install --frozen-lockfile && npx prisma generate && pnpm build"
 ```
 
-**Mejora esperada**: ~20-30% más rápido en instalar dependencias
+**Expected improvement**: ~20-30% faster dependency installation
 
-### 6. **Prisma Binary Optimization**
-Generar solo el binario necesario:
+### 6. Prisma Binary Optimization
+Generate only the required binary:
 
-**En `package.json`**:
+**In `package.json`**:
 ```json
 {
   "prisma": {
@@ -97,10 +94,9 @@ Generar solo el binario necesario:
 }
 ```
 
-**Mejora**: ~30% más rápido en generar Prisma client
+**Improvement**: ~30% faster Prisma client generation
 
-### 7. **Reducir DevDependencies en Producción**
-Crear `.npmrc` o `.bunfig.toml`:
+### 7. Reduce DevDependencies in Production
 
 ```toml
 # .bunfig.toml
@@ -108,95 +104,91 @@ Crear `.npmrc` o `.bunfig.toml`:
 production = true
 ```
 
-**Mejora**: ~40% menos paquetes instalados
+**Improvement**: ~40% fewer packages installed
 
-### 8. **Paralelizar Build Steps** (Avanzado)
-En `railway.json`:
+### 8. Parallelize Build Steps (Advanced)
+In `railway.json`:
 ```json
 "buildCommand": "bun install --frozen-lockfile && (npx prisma generate --schema=./prisma/schema.prod.prisma & npm run build) && wait"
 ```
 
-**Mejora**: ~10-20% más rápido
+**Improvement**: ~10-20% faster
 
-## Monitoreo de Performance
+## Performance Monitoring
 
-### Ver Tiempo de Build en Railway
-1. Railway Dashboard → Tu servicio
-2. Deployments → Ver deployment
-3. View Logs → Buscar "Build time"
+### View Build Time in Railway
+1. Railway Dashboard > Your service
+2. Deployments > View deployment
+3. View Logs > Search for "Build time"
 
-### Comparar Builds
+### Compare Builds
 ```bash
-# Antes de optimizaciones
+# Before optimizations
 Build time: 2m 34s
 
-# Después de optimizaciones
+# After optimizations
 Build time: 48s
 
-# Mejora: 68% más rápido
+# Improvement: 68% faster
 ```
 
 ## Troubleshooting
 
-### Si SWC falla
-1. Verifica que `@swc/core` y `@swc/cli` estén instalados
-2. Revisa `nest-cli.json` tenga `"builder": "swc"`
-3. Prueba localmente: `npm run build`
+### If SWC Fails
+1. Verify that `@swc/core` and `@swc/cli` are installed
+2. Check that `nest-cli.json` has `"builder": "swc"`
+3. Test locally: `npm run build`
 
-### Si el caché no funciona
-1. Verifica que `nixpacks.toml` exista en la raíz
-2. Railway puede tomar 2-3 builds para optimizar el caché
-3. Borra el caché en Railway: Settings → Delete Cache
+### If Cache Is Not Working
+1. Verify that `nixpacks.toml` exists in the root
+2. Railway may take 2-3 builds to optimize the cache
+3. Clear cache in Railway: Settings > Delete Cache
 
-### Si Prisma genera lento
-1. Usa solo un binario target en `schema.prisma`
-2. Considera pre-generar Prisma client
+### If Prisma Generates Slowly
+1. Use only one binary target in `schema.prisma`
+2. Consider pre-generating Prisma client
 
-## Mejores Prácticas
+## Best Practices
 
-✅ **DO**:
-- Hacer build local antes de push
-- Usar `--frozen-lockfile` en producción
-- Mantener dependencias actualizadas
-- Monitorear tiempos de build
+**DO:**
+- Run local build before pushing
+- Use `--frozen-lockfile` in production
+- Keep dependencies updated
+- Monitor build times
 
-❌ **DON'T**:
-- Cambiar `package.json` sin actualizar lockfile
-- Instalar dependencias innecesarias
-- Generar sourcemaps en producción
-- Skipear tests en CI/CD
+**DON'T:**
+- Change `package.json` without updating lockfile
+- Install unnecessary dependencies
+- Generate sourcemaps in production
+- Skip tests in CI/CD
 
-## Resultados
+## Results
 
-### Antes de Optimizaciones
+### Before Optimizations
 ```
-┌─────────────────┬──────────┐
-│ Etapa           │ Tiempo   │
-├─────────────────┼──────────┤
-│ Install         │ 45s      │
-│ Prisma Generate │ 18s      │
-│ TypeScript      │ 32s      │
-│ Total           │ 1m 35s   │
-└─────────────────┴──────────┘
+| Stage           | Time   |
+|-----------------|--------|
+| Install         | 45s    |
+| Prisma Generate | 18s    |
+| TypeScript      | 32s    |
+| Total           | 1m 35s |
 ```
 
-### Después de Optimizaciones
+### After Optimizations
 ```
-┌─────────────────┬──────────┐
-│ Etapa           │ Tiempo   │
-├─────────────────┼──────────┤
-│ Install (cache) │ 8s       │
-│ Prisma Generate │ 12s      │
-│ SWC Build       │ 0.26s    │
-│ Total           │ 20s      │
-└─────────────────┴──────────┘
+| Stage           | Time   |
+|-----------------|--------|
+| Install (cache) | 8s     |
+| Prisma Generate | 12s    |
+| SWC Build       | 0.26s  |
+| Total           | 20s    |
 ```
 
-**Mejora total: ~78% más rápido** 🚀
+**Total improvement: ~78% faster**
 
 ---
 
-## Referencias
+## References
 - [NestJS SWC](https://docs.nestjs.com/recipes/swc)
 - [Railway Build Config](https://docs.railway.app/reference/config-as-code)
 - [Nixpacks Cache](https://nixpacks.com/docs/caching)
