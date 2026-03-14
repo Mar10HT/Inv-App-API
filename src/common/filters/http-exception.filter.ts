@@ -75,7 +75,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       case 'P2003':
         return {
           status: HttpStatus.BAD_REQUEST,
-          message: 'Foreign key constraint failed',
+          message: 'Foreign key constraint failed — related record does not exist',
           error: 'Bad Request',
         };
       case 'P2014':
@@ -83,6 +83,30 @@ export class GlobalExceptionFilter implements ExceptionFilter {
           status: HttpStatus.BAD_REQUEST,
           message: 'The change you are trying to make would violate a required relation',
           error: 'Bad Request',
+        };
+      case 'P2000':
+        return {
+          status: HttpStatus.BAD_REQUEST,
+          message: 'Input value is too long for the field',
+          error: 'Bad Request',
+        };
+      case 'P2006':
+        return {
+          status: HttpStatus.BAD_REQUEST,
+          message: 'Invalid value provided for a field',
+          error: 'Bad Request',
+        };
+      case 'P2011':
+        return {
+          status: HttpStatus.BAD_REQUEST,
+          message: 'A required field is missing a value',
+          error: 'Bad Request',
+        };
+      case 'P2028':
+        return {
+          status: HttpStatus.REQUEST_TIMEOUT,
+          message: 'Database query timed out',
+          error: 'Request Timeout',
         };
       default:
         return {
