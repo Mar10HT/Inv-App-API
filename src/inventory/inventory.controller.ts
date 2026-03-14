@@ -65,13 +65,13 @@ export class InventoryController {
   }
 
   @Get('categories')
-  getCategories() {
-    return this.inventoryService.getCategories();
+  getCategories(@CurrentUser() user: AuthenticatedUser) {
+    return this.inventoryService.getCategories(user.warehouseIds);
   }
 
   @Get('locations')
-  getLocations() {
-    return this.inventoryService.getLocations();
+  getLocations(@CurrentUser() user: AuthenticatedUser) {
+    return this.inventoryService.getLocations(user.warehouseIds);
   }
 
   @Get(':id')
