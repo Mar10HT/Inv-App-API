@@ -4,6 +4,7 @@ import {
   ConflictException,
   BadRequestException,
   ForbiddenException,
+  Logger,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { UsersService } from '../users/users.service';
@@ -20,6 +21,8 @@ import { WarehouseAccessService } from '../common/warehouse-access/warehouse-acc
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   // Account lockout settings
   private readonly MAX_LOGIN_ATTEMPTS = 5;
   private readonly LOCKOUT_DURATION_MS = 15 * 60 * 1000; // 15 minutes
@@ -223,7 +226,7 @@ export class AuthService {
     if (user) {
       this.emailService
         .sendPasswordResetEmail(user.email, token, user.name || undefined)
-        .catch((err) => console.error('Failed to send password reset email:', err));
+        .catch((err) => this.logger.error('Failed to send password reset email', err?.message));
     }
 
     return token;
@@ -300,7 +303,7 @@ export class AuthService {
         resetToken.user.email,
         resetToken.user.name || undefined,
       )
-      .catch((err) => console.error('Failed to send password changed email:', err));
+      .catch((err) => this.logger.error('Failed to send password changed email', err?.message));
   }
 
   // ============================================
@@ -455,7 +458,7 @@ export class AuthService {
     // Send confirmation email
     this.emailService
       .sendPasswordChangedEmail(user.email, user.name || undefined)
-      .catch((err) => console.error('Failed to send password changed email:', err));
+      .catch((err) => this.logger.error('Failed to send password changed email', err?.message));
 
     return { message: 'Password changed successfully' };
   }

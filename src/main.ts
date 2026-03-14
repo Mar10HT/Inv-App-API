@@ -1,5 +1,5 @@
-import { NestFactory } from '@nestjs/core';
-import { ValidationPipe } from '@nestjs/common';
+import { NestFactory, HttpAdapterHost } from '@nestjs/core';
+import { ValidationPipe, Logger } from '@nestjs/common';
 import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
 import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
@@ -14,10 +14,15 @@ import { PrismaService } from './prisma/prisma.service';
 import { UserRole } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 
+const logger = new Logger('Bootstrap');
+
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
     bufferLogs: true, // Buffer logs until Winston is ready
   });
+
+  // Enable graceful shutdown hooks (handles SIGTERM from Railway/K8s)
+  app.enableShutdownHooks();
 
   // Use Winston for NestJS logging
   app.useLogger(app.get(WINSTON_MODULE_NEST_PROVIDER));
@@ -59,7 +64,7 @@ async function bootstrap() {
         return callback(null, true);
       }
 
-      console.log(`CORS blocked origin: ${origin}, allowed: ${corsOrigins.join(', ')}`);
+      logger.warn(`CORS blocked origin: ${origin}, allowed: ${corsOrigins.join(', ')}`);
       return callback(null, false);
     },
     credentials: true,
@@ -132,22 +137,22 @@ async function bootstrap() {
             role: UserRole.SYSTEM_ADMIN,
           },
         });
-        console.log(`[Bootstrap] Initial admin created (${adminEmail})`);
+        logger.log(`Initial admin created (${adminEmail})`);
       } else {
-        console.warn('[Bootstrap] No users exist. Set ADMIN_EMAIL and ADMIN_PASSWORD env vars to create initial admin.');
+        logger.warn('No users exist. Set ADMIN_EMAIL and ADMIN_PASSWORD env vars to create initial admin.');
       }
     }
   } catch (e) {
-    console.error('[Bootstrap] Auto-seed failed:', e.message);
+    logger.error(`Auto-seed failed: ${e.message}`);
   }
 
   const port = process.env.PORT ?? 3000;
   await app.listen(port);
 
-  console.log(`🚀 Server running on http://localhost:${port}`);
-  console.log(`📚 API available at http://localhost:${port}/api`);
+  logger.log(`Server running on http://localhost:${port}`);
+  logger.log(`API available at http://localhost:${port}/api`);
   if (process.env.NODE_ENV !== 'production') {
-    console.log(`📖 API Documentation at http://localhost:${port}/api/docs`);
+    logger.log(`API Documentation at http://localhost:${port}/api/docs`);
   }
 }
 bootstrap();
