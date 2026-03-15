@@ -1,4 +1,4 @@
-import { IsArray, IsString, IsOptional, IsNumber, ValidateNested, IsEnum, ArrayMinSize } from 'class-validator';
+import { IsArray, IsString, IsOptional, IsNumber, ValidateNested, IsEnum, ArrayMinSize, ArrayMaxSize } from 'class-validator';
 import { Type } from 'class-transformer';
 import { InventoryStatus, Currency, ItemType } from '@prisma/client';
 
@@ -53,6 +53,7 @@ export class BulkUpdateDto {
   @ValidateNested({ each: true })
   @Type(() => BulkUpdateItemDto)
   @ArrayMinSize(1)
+  @ArrayMaxSize(500, { message: 'Cannot update more than 500 items at once' })
   items: BulkUpdateItemDto[];
 }
 
@@ -61,6 +62,7 @@ export class BulkDeleteDto {
   @IsArray()
   @IsString({ each: true })
   @ArrayMinSize(1)
+  @ArrayMaxSize(500, { message: 'Cannot delete more than 500 items at once' })
   ids: string[];
 
   @IsOptional()
@@ -128,6 +130,7 @@ export class BulkImportDto {
   @ValidateNested({ each: true })
   @Type(() => BulkImportItemDto)
   @ArrayMinSize(1)
+  @ArrayMaxSize(500, { message: 'Cannot import more than 500 items at once' })
   items: BulkImportItemDto[];
 
   @IsOptional()

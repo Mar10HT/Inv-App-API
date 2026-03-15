@@ -556,42 +556,52 @@ export class InventoryService {
     });
   }
 
-  async getCategories(): Promise<string[]> {
-    // Check cache first
-    const cachedCategories = await this.cacheManager.get<string[]>(this.CACHE_KEYS.CATEGORIES);
-    if (cachedCategories) {
-      return cachedCategories;
+  async getCategories(warehouseIds?: string[] | null): Promise<string[]> {
+    // Scope cache key to warehouse context so users only see their warehouses' categories
+    const cacheKey = warehouseIds?.length
+      ? `${this.CACHE_KEYS.CATEGORIES}:${[...warehouseIds].sort().join(',')}`
+      : this.CACHE_KEYS.CATEGORIES;
+
+    const cached = await this.cacheManager.get<string[]>(cacheKey);
+    if (cached) {
+      return cached;
     }
 
     const categories = await this.prisma.inventoryItem.findMany({
       distinct: ['category'],
-      where: { deletedAt: null },
+      where: { deletedAt: null, ...warehouseFilter(warehouseIds) },
       select: { category: true },
       orderBy: { category: 'asc' },
     });
     const result = categories.map(c => c.category);
 
     // Cache for 5 minutes
-    await this.cacheManager.set(this.CACHE_KEYS.CATEGORIES, result, 300000);
+    await this.cacheManager.set(cacheKey, result, 300000);
 
     return result;
   }
 
-  async getLocations(): Promise<string[]> {
-    // Check cache first
-    const cachedLocations = await this.cacheManager.get<string[]>(this.CACHE_KEYS.LOCATIONS);
-    if (cachedLocations) {
-      return cachedLocations;
+  async getLocations(warehouseIds?: string[] | null): Promise<string[]> {
+    // Scope cache key to warehouse context
+    const cacheKey = warehouseIds?.length
+      ? `${this.CACHE_KEYS.LOCATIONS}:${[...warehouseIds].sort().join(',')}`
+      : this.CACHE_KEYS.LOCATIONS;
+
+    const cached = await this.cacheManager.get<string[]>(cacheKey);
+    if (cached) {
+      return cached;
     }
 
+    const where = warehouseIds?.length ? { id: { in: warehouseIds }, deletedAt: null } : {};
     const warehouses = await this.prisma.warehouse.findMany({
+      where,
       orderBy: { name: 'asc' },
       select: { name: true },
     });
     const result = warehouses.map(w => w.name);
 
     // Cache for 5 minutes
-    await this.cacheManager.set(this.CACHE_KEYS.LOCATIONS, result, 300000);
+    await this.cacheManager.set(cacheKey, result, 300000);
 
     return result;
   }

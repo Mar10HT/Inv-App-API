@@ -1,15 +1,11 @@
-import { IsString, MinLength, IsNotEmpty, Matches } from 'class-validator';
+import { IsString, IsNotEmpty } from 'class-validator';
+import { IsStrongPassword } from '../decorators/strong-password.decorator';
 
 export class ChangePasswordDto {
   @IsString()
   @IsNotEmpty()
   currentPassword: string;
 
-  @IsString()
-  @MinLength(12, { message: 'New password must be at least 12 characters long' })
-  @Matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]/, {
-    message:
-      'Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character (@$!%*?&)',
-  })
+  @IsStrongPassword()
   newPassword: string;
 }

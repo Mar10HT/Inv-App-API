@@ -1,11 +1,5 @@
-import {
-  IsString,
-  IsNotEmpty,
-  IsOptional,
-  IsDateString,
-  IsNumber,
-  Min,
-} from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional, IsDateString, IsNumber, Min } from 'class-validator';
+import { IsFutureDate } from '../../common/decorators';
 
 export class CreateLoanDto {
   @IsString()
@@ -26,6 +20,7 @@ export class CreateLoanDto {
 
   @IsDateString()
   @IsNotEmpty()
+  @IsFutureDate({ message: 'Due date must be a date in the future' })
   dueDate: string;
 
   @IsString()

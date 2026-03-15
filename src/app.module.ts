@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import * as Joi from 'joi';
 import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { ScheduleModule } from '@nestjs/schedule';
@@ -37,6 +38,27 @@ import { WarehouseAccessInterceptor } from './common/warehouse-access/warehouse-
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: '.env',
+      validationSchema: Joi.object({
+        NODE_ENV: Joi.string().valid('development', 'production', 'test').default('development'),
+        PORT: Joi.number().default(3000),
+        DATABASE_URL: Joi.string().required(),
+        JWT_SECRET: Joi.string().min(32).required(),
+        JWT_EXPIRES_IN: Joi.string().default('15m'),
+        CORS_ORIGIN: Joi.string().default('http://localhost:4200'),
+        FRONTEND_URL: Joi.string().default('http://localhost:4200'),
+        // SMTP — required only when email is configured
+        SMTP_HOST: Joi.string().optional(),
+        SMTP_PORT: Joi.number().default(587),
+        SMTP_USER: Joi.string().optional(),
+        SMTP_PASS: Joi.string().optional(),
+        SMTP_FROM: Joi.string().optional(),
+        // Admin seed — required in production if DB is empty
+        ADMIN_EMAIL: Joi.string().email().optional(),
+        ADMIN_PASSWORD: Joi.string().min(12).optional(),
+      }),
+      validationOptions: {
+        abortEarly: false, // Report all missing vars at once
+      },
     }),
     LoggerModule,
     // Rate limiting: 100 requests per minute per IP
