@@ -592,7 +592,7 @@ export class InventoryService {
       return cached;
     }
 
-    const where = warehouseIds?.length ? { id: { in: warehouseIds } } : {};
+    const where = warehouseIds?.length ? { id: { in: warehouseIds }, deletedAt: null } : {};
     const warehouses = await this.prisma.warehouse.findMany({
       where,
       orderBy: { name: 'asc' },

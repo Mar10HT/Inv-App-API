@@ -54,7 +54,7 @@ import { WarehouseAccessInterceptor } from './common/warehouse-access/warehouse-
         SMTP_FROM: Joi.string().optional(),
         // Admin seed — required in production if DB is empty
         ADMIN_EMAIL: Joi.string().email().optional(),
-        ADMIN_PASSWORD: Joi.string().optional(),
+        ADMIN_PASSWORD: Joi.string().min(12).optional(),
       }),
       validationOptions: {
         abortEarly: false, // Report all missing vars at once

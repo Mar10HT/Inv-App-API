@@ -34,8 +34,13 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     } else if (exception instanceof Error) {
       message = exception.message;
 
+      // Handle CSRF errors from csrf-csrf library
+      if (exception.constructor.name === 'ForbiddenError') {
+        status = HttpStatus.FORBIDDEN;
+        message = 'Invalid or missing CSRF token';
+        error = 'Forbidden';
       // Handle Prisma errors
-      if ((exception as any).code) {
+      } else if ((exception as any).code) {
         const prismaError = this.handlePrismaError(exception as any);
         status = prismaError.status;
         message = prismaError.message;
