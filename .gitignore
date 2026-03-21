@@ -20,3 +20,6 @@ coverage/
 # Logs
 logs/
 *.log
+
+# Fake data seeder (local dev only, not for version control)
+scripts/seed-fake.ts

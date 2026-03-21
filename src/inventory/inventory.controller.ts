@@ -43,6 +43,7 @@ export class InventoryController {
     if (user.warehouseIds !== null && !user.warehouseIds.includes(createInventoryDto.warehouseId)) {
       throw new ForbiddenException('You do not have access to this warehouse');
     }
+    createInventoryDto.createdById = user.userId;
     return this.inventoryService.create(createInventoryDto);
   }
 

@@ -2,61 +2,98 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { FilterInventoryDto } from '../inventory/dto/filter-inventory.dto';
 import { warehouseFilter, warehouseFilterMultiField } from '../common/warehouse-access/warehouse-filter.util';
+import type ExcelJSType from 'exceljs';
 
 type Locale = 'en' | 'es';
 
 // Translation map for Excel/PDF headers
 const translations: Record<string, Record<Locale, string>> = {
   // Inventory headers
-  'sku': { en: 'SKU', es: 'SKU' },
-  'name': { en: 'Name', es: 'Nombre' },
-  'description': { en: 'Description', es: 'Descripcion' },
-  'category': { en: 'Category', es: 'Categoria' },
-  'quantity': { en: 'Quantity', es: 'Cantidad' },
-  'minQuantity': { en: 'Min Quantity', es: 'Cantidad Minima' },
-  'status': { en: 'Status', es: 'Estado' },
-  'price': { en: 'Price', es: 'Precio' },
-  'currency': { en: 'Currency', es: 'Moneda' },
-  'warehouse': { en: 'Warehouse', es: 'Almacen' },
-  'supplier': { en: 'Supplier', es: 'Proveedor' },
-  'itemType': { en: 'Type', es: 'Tipo' },
-  'serviceTag': { en: 'Service Tag', es: 'Service Tag' },
-  'serialNumber': { en: 'Serial Number', es: 'Numero Serie' },
+  'sku':              { en: 'SKU',              es: 'SKU'               },
+  'name':             { en: 'Name',             es: 'Nombre'            },
+  'description':      { en: 'Description',      es: 'Descripcion'       },
+  'category':         { en: 'Category',         es: 'Categoria'         },
+  'quantity':         { en: 'Quantity',          es: 'Cantidad'          },
+  'minQuantity':      { en: 'Min Quantity',      es: 'Cantidad Minima'   },
+  'status':           { en: 'Status',            es: 'Estado'            },
+  'price':            { en: 'Price',             es: 'Precio'            },
+  'currency':         { en: 'Currency',          es: 'Moneda'            },
+  'warehouse':        { en: 'Warehouse',         es: 'Almacen'           },
+  'supplier':         { en: 'Supplier',          es: 'Proveedor'         },
+  'itemType':         { en: 'Type',              es: 'Tipo'              },
+  'serviceTag':       { en: 'Service Tag',       es: 'Service Tag'       },
+  'serialNumber':     { en: 'Serial Number',     es: 'Numero Serie'      },
   // Low stock
-  'currentQuantity': { en: 'Current Quantity', es: 'Cantidad Actual' },
-  'difference': { en: 'Difference', es: 'Diferencia' },
+  'currentQuantity':  { en: 'Current Quantity',  es: 'Cantidad Actual'   },
+  'difference':       { en: 'Difference',        es: 'Diferencia'        },
   // Transactions
-  'id': { en: 'ID', es: 'ID' },
-  'type': { en: 'Type', es: 'Tipo' },
-  'date': { en: 'Date', es: 'Fecha' },
-  'sourceWarehouse': { en: 'Source Warehouse', es: 'Almacen Origen' },
-  'destWarehouse': { en: 'Destination Warehouse', es: 'Almacen Destino' },
-  'items': { en: 'Items', es: 'Items' },
-  'user': { en: 'User', es: 'Usuario' },
-  'notes': { en: 'Notes', es: 'Notas' },
+  'id':               { en: 'ID',                es: 'ID'                },
+  'type':             { en: 'Type',              es: 'Tipo'              },
+  'date':             { en: 'Date',              es: 'Fecha'             },
+  'sourceWarehouse':  { en: 'Source Warehouse',  es: 'Almacen Origen'    },
+  'destWarehouse':    { en: 'Destination Warehouse', es: 'Almacen Destino' },
+  'items':            { en: 'Items',             es: 'Items'             },
+  'user':             { en: 'User',              es: 'Usuario'           },
+  'notes':            { en: 'Notes',             es: 'Notas'             },
   // Loans
-  'item': { en: 'Item', es: 'Item' },
-  'source': { en: 'Source', es: 'Origen' },
-  'destination': { en: 'Destination', es: 'Destino' },
-  'loanDate': { en: 'Loan Date', es: 'Fecha Prestamo' },
-  'dueDate': { en: 'Due Date', es: 'Fecha Vencimiento' },
-  'returnDate': { en: 'Return Date', es: 'Fecha Devolucion' },
-  'createdBy': { en: 'Created By', es: 'Creado Por' },
+  'item':             { en: 'Item',              es: 'Item'              },
+  'source':           { en: 'Source',            es: 'Origen'            },
+  'destination':      { en: 'Destination',       es: 'Destino'           },
+  'loanDate':         { en: 'Loan Date',         es: 'Fecha Prestamo'    },
+  'dueDate':          { en: 'Due Date',          es: 'Fecha Vencimiento' },
+  'returnDate':       { en: 'Return Date',       es: 'Fecha Devolucion'  },
+  'createdBy':        { en: 'Created By',        es: 'Creado Por'        },
   // Summary
-  'totalItems': { en: 'Total Items:', es: 'Total de Items:' },
-  'totalValue': { en: 'Total Value:', es: 'Valor Total:' },
-  'inventoryReport': { en: 'Inventory Report', es: 'Reporte de Inventario' },
-  'summary': { en: 'Summary:', es: 'Resumen:' },
-  'inStock': { en: 'In Stock', es: 'En Stock' },
-  'lowStock': { en: 'Low Stock', es: 'Stock Bajo' },
-  'outOfStock': { en: 'Out of Stock', es: 'Sin Stock' },
-  'itemDetail': { en: 'Item Detail:', es: 'Detalle de Items:' },
-  'autoGenerated': { en: 'Automatically generated by the Inventory System', es: 'Generado automaticamente por el Sistema de Inventario' },
+  'totalItems':       { en: 'Total Items:',      es: 'Total de Items:'   },
+  'totalValue':       { en: 'Total Value:',      es: 'Valor Total:'      },
+  'inventoryReport':  { en: 'Inventory Report',  es: 'Reporte de Inventario' },
+  'summary':          { en: 'Summary:',          es: 'Resumen:'          },
+  'inStock':          { en: 'In Stock',          es: 'En Stock'          },
+  'lowStock':         { en: 'Low Stock',         es: 'Stock Bajo'        },
+  'outOfStock':       { en: 'Out of Stock',      es: 'Sin Stock'         },
+  'itemDetail':       { en: 'Item Detail:',      es: 'Detalle de Items:' },
+  'autoGenerated':    { en: 'Automatically generated by Obsid', es: 'Generado automaticamente por Obsid' },
   // Worksheet names
-  'wsInventory': { en: 'Inventory', es: 'Inventario' },
-  'wsLowStock': { en: 'Low Stock', es: 'Stock Bajo' },
-  'wsTransactions': { en: 'Transactions', es: 'Transacciones' },
-  'wsLoans': { en: 'Loans', es: 'Prestamos' },
+  'wsInventory':      { en: 'Inventory',         es: 'Inventario'        },
+  'wsLowStock':       { en: 'Low Stock',         es: 'Stock Bajo'        },
+  'wsTransactions':   { en: 'Transactions',      es: 'Transacciones'     },
+  'wsLoans':          { en: 'Loans',             es: 'Prestamos'         },
+};
+
+// Brand colors (ARGB format for ExcelJS = FF + hex without #)
+const COLORS = {
+  // Header backgrounds per report type
+  inventory:    'FF4D7C6F', // primary teal
+  lowStock:     'FFF59E0B', // warning amber
+  transactions: 'FF60A5FA', // blue
+  loans:        'FF6B7BB5', // indigo
+
+  // Status cell backgrounds (light) and text (dark)
+  inStock:     { bg: 'FFD1FAE5', text: 'FF065F46' },
+  lowStockRow: { bg: 'FFFEF3C7', text: 'FF92400E' },
+  outOfStock:  { bg: 'FFFEE2E2', text: 'FF991B1B' },
+  overdue:     { bg: 'FFFEE2E2', text: 'FF991B1B' },
+  active:      { bg: 'FFE0E7FF', text: 'FF3730A3' },
+  returned:    { bg: 'FFD1FAE5', text: 'FF065F46' },
+
+  // Alternating row tint
+  altRow:      'FFF9FAFB',
+
+  white:       'FFFFFFFF',
+  headerText:  'FFFFFFFF',
+} as const;
+
+// Status label translation
+const STATUS_LABELS: Record<string, Record<Locale, string>> = {
+  IN_STOCK:     { en: 'In Stock',     es: 'En Stock'    },
+  LOW_STOCK:    { en: 'Low Stock',    es: 'Stock Bajo'  },
+  OUT_OF_STOCK: { en: 'Out of Stock', es: 'Sin Stock'   },
+  ACTIVE:       { en: 'Active',       es: 'Activo'      },
+  RETURNED:     { en: 'Returned',     es: 'Devuelto'    },
+  OVERDUE:      { en: 'Overdue',      es: 'Vencido'     },
+  TRANSFER:     { en: 'Transfer',     es: 'Transferencia' },
+  ADJUSTMENT:   { en: 'Adjustment',   es: 'Ajuste'      },
+  DISCHARGE:    { en: 'Discharge',    es: 'Baja'        },
 };
 
 @Injectable()
@@ -67,100 +104,164 @@ export class ReportsService {
     return translations[key]?.[locale] || key;
   }
 
-  async generateInventoryExcel(filters?: FilterInventoryDto, warehouseIds?: string[] | null, locale: Locale = 'es'): Promise<Buffer> {
+  private tStatus(status: string, locale: Locale): string {
+    return STATUS_LABELS[status]?.[locale] || status;
+  }
+
+  // Apply branded header row to a worksheet
+  private applyHeader(
+    worksheet: ExcelJSType.Worksheet,
+    headerArgb: string,
+  ): void {
+    const headerRow = worksheet.getRow(1);
+    headerRow.height = 28;
+    headerRow.font = { bold: true, color: { argb: COLORS.headerText }, size: 11, name: 'Calibri' };
+    headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: headerArgb } };
+    headerRow.alignment = { vertical: 'middle', horizontal: 'left' };
+    headerRow.border = {
+      bottom: { style: 'thin', color: { argb: headerArgb } },
+    };
+  }
+
+  // Apply workbook metadata
+  private async applyWorkbookMeta(
+    workbook: ExcelJSType.Workbook,
+    title: string,
+  ): Promise<void> {
+    workbook.creator = 'Obsid';
+    workbook.lastModifiedBy = 'Obsid';
+    workbook.created = new Date();
+    workbook.modified = new Date();
+    workbook.title = title;
+    workbook.subject = title;
+    workbook.keywords = 'Obsid inventory';
+  }
+
+  // Style a single status cell
+  private styleStatusCell(cell: ExcelJSType.Cell, status: string, locale: Locale): void {
+    let colors = COLORS.active;
+    if (status === 'IN_STOCK' || status === 'RETURNED')    colors = COLORS.inStock;
+    else if (status === 'LOW_STOCK')                        colors = COLORS.lowStockRow;
+    else if (status === 'OUT_OF_STOCK' || status === 'OVERDUE') colors = COLORS.outOfStock;
+
+    cell.value = this.tStatus(status, locale);
+    cell.fill  = { type: 'pattern', pattern: 'solid', fgColor: { argb: colors.bg } };
+    cell.font  = { bold: true, color: { argb: colors.text }, size: 10 };
+    cell.alignment = { horizontal: 'center', vertical: 'middle' };
+  }
+
+  // Apply alternating row fill (skip header row 1)
+  private applyAltRows(worksheet: ExcelJSType.Worksheet, dataRowCount: number): void {
+    for (let i = 2; i <= dataRowCount + 1; i++) {
+      if (i % 2 === 0) {
+        worksheet.getRow(i).fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: COLORS.altRow },
+        };
+      }
+    }
+  }
+
+  async generateInventoryExcel(
+    filters?: FilterInventoryDto,
+    warehouseIds?: string[] | null,
+    locale: Locale = 'es',
+  ): Promise<Buffer> {
     const ExcelJS = await import('exceljs');
     const workbook = new ExcelJS.Workbook();
+    await this.applyWorkbookMeta(workbook, this.t('inventoryReport', locale));
     const worksheet = workbook.addWorksheet(this.t('wsInventory', locale));
 
-    // Build where clause
     const where: any = { deletedAt: null, ...warehouseFilter(warehouseIds) };
-    if (filters?.category) where.category = filters.category;
-    if (filters?.status) where.status = filters.status;
+    if (filters?.category)   where.category    = filters.category;
+    if (filters?.status)     where.status      = filters.status;
     if (filters?.warehouseId) where.warehouseId = filters.warehouseId;
 
     const items = await this.prisma.inventoryItem.findMany({
       where,
-      include: {
-        warehouse: true,
-        supplier: true,
-      },
+      include: { warehouse: true, supplier: true },
       orderBy: { name: 'asc' },
     });
 
-    // Define columns
     worksheet.columns = [
-      { header: this.t('sku', locale), key: 'sku', width: 15 },
-      { header: this.t('name', locale), key: 'name', width: 30 },
-      { header: this.t('description', locale), key: 'description', width: 40 },
-      { header: this.t('category', locale), key: 'category', width: 20 },
-      { header: this.t('quantity', locale), key: 'quantity', width: 12 },
-      { header: this.t('minQuantity', locale), key: 'minQuantity', width: 15 },
-      { header: this.t('status', locale), key: 'status', width: 15 },
-      { header: this.t('price', locale), key: 'price', width: 12 },
-      { header: this.t('currency', locale), key: 'currency', width: 10 },
-      { header: this.t('warehouse', locale), key: 'warehouse', width: 20 },
-      { header: this.t('supplier', locale), key: 'supplier', width: 20 },
-      { header: this.t('itemType', locale), key: 'itemType', width: 10 },
-      { header: this.t('serviceTag', locale), key: 'serviceTag', width: 20 },
+      { header: this.t('sku', locale),          key: 'sku',          width: 16 },
+      { header: this.t('name', locale),         key: 'name',         width: 32 },
+      { header: this.t('description', locale),  key: 'description',  width: 40 },
+      { header: this.t('category', locale),     key: 'category',     width: 20 },
+      { header: this.t('quantity', locale),     key: 'quantity',     width: 12 },
+      { header: this.t('minQuantity', locale),  key: 'minQuantity',  width: 15 },
+      { header: this.t('status', locale),       key: 'status',       width: 16 },
+      { header: this.t('price', locale),        key: 'price',        width: 12 },
+      { header: this.t('currency', locale),     key: 'currency',     width: 10 },
+      { header: this.t('warehouse', locale),    key: 'warehouse',    width: 22 },
+      { header: this.t('supplier', locale),     key: 'supplier',     width: 22 },
+      { header: this.t('itemType', locale),     key: 'itemType',     width: 10 },
+      { header: this.t('serviceTag', locale),   key: 'serviceTag',   width: 20 },
       { header: this.t('serialNumber', locale), key: 'serialNumber', width: 20 },
     ];
 
-    // Style header row
-    worksheet.getRow(1).font = { bold: true };
-    worksheet.getRow(1).fill = {
-      type: 'pattern',
-      pattern: 'solid',
-      fgColor: { argb: 'FF4472C4' },
-    };
-    worksheet.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
+    this.applyHeader(worksheet, COLORS.inventory);
+    worksheet.views = [{ state: 'frozen', ySplit: 1 }];
+    worksheet.autoFilter = { from: 'A1', to: 'N1' };
 
-    // Add data rows
-    items.forEach(item => {
-      worksheet.addRow({
-        sku: item.sku || '',
-        name: item.name,
-        description: item.description || '',
-        category: item.category,
-        quantity: item.quantity,
-        minQuantity: item.minQuantity,
-        status: item.status,
-        price: item.price || 0,
-        currency: item.currency,
-        warehouse: item.warehouse?.name || '',
-        supplier: item.supplier?.name || '',
-        itemType: item.itemType,
-        serviceTag: item.serviceTag || '',
+    items.forEach((item, idx) => {
+      const row = worksheet.addRow({
+        sku:          item.sku || '',
+        name:         item.name,
+        description:  item.description || '',
+        category:     item.category,
+        quantity:     item.quantity,
+        minQuantity:  item.minQuantity,
+        status:       item.status,
+        price:        item.price || 0,
+        currency:     item.currency,
+        warehouse:    item.warehouse?.name || '',
+        supplier:     item.supplier?.name || '',
+        itemType:     item.itemType,
+        serviceTag:   item.serviceTag || '',
         serialNumber: item.serialNumber || '',
       });
+      row.height = 20;
+      // Style status cell (col 7)
+      this.styleStatusCell(row.getCell(7), item.status, locale);
+      // Alternating rows
+      if (idx % 2 === 0) {
+        row.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLORS.altRow } };
+        // Re-apply status cell on top of altRow fill
+        this.styleStatusCell(row.getCell(7), item.status, locale);
+      }
     });
 
-    // Add summary at the end
+    // Summary
     worksheet.addRow({});
-    worksheet.addRow({ name: this.t('totalItems', locale), quantity: items.length });
-    worksheet.addRow({
-      name: this.t('totalValue', locale),
+    const totalRow = worksheet.addRow({ name: this.t('totalItems', locale), quantity: items.length });
+    totalRow.font = { bold: true };
+    const valueRow = worksheet.addRow({
+      name:  this.t('totalValue', locale),
       price: items.reduce((sum, item) => sum + (item.price || 0) * item.quantity, 0),
     });
+    valueRow.font = { bold: true };
 
     const buffer = await workbook.xlsx.writeBuffer();
     return Buffer.from(buffer);
   }
 
-  async generateInventoryPdf(filters?: FilterInventoryDto, warehouseIds?: string[] | null, locale: Locale = 'es'): Promise<Buffer> {
+  async generateInventoryPdf(
+    filters?: FilterInventoryDto,
+    warehouseIds?: string[] | null,
+    locale: Locale = 'es',
+  ): Promise<Buffer> {
     const PDFDocument = (await import('pdfkit')).default;
 
-    // Build where clause
     const where: any = { deletedAt: null, ...warehouseFilter(warehouseIds) };
-    if (filters?.category) where.category = filters.category;
-    if (filters?.status) where.status = filters.status;
+    if (filters?.category)    where.category    = filters.category;
+    if (filters?.status)      where.status      = filters.status;
     if (filters?.warehouseId) where.warehouseId = filters.warehouseId;
 
     const items = await this.prisma.inventoryItem.findMany({
       where,
-      include: {
-        warehouse: true,
-        supplier: true,
-      },
+      include: { warehouse: true, supplier: true },
       orderBy: { name: 'asc' },
     });
 
@@ -172,17 +273,15 @@ export class ReportsService {
       doc.on('end', () => resolve(Buffer.concat(chunks)));
       doc.on('error', reject);
 
-      // Title
       const dateLocale = locale === 'en' ? 'en-US' : 'es-HN';
       doc.fontSize(20).text(this.t('inventoryReport', locale), { align: 'center' });
       doc.moveDown();
       doc.fontSize(10).text(`${this.t('date', locale)}: ${new Date().toLocaleDateString(dateLocale)}`, { align: 'right' });
       doc.moveDown(2);
 
-      // Summary
       const totalValue = items.reduce((sum, item) => sum + (item.price || 0) * item.quantity, 0);
-      const inStock = items.filter(i => i.status === 'IN_STOCK').length;
-      const lowStock = items.filter(i => i.status === 'LOW_STOCK').length;
+      const inStock    = items.filter(i => i.status === 'IN_STOCK').length;
+      const lowStock   = items.filter(i => i.status === 'LOW_STOCK').length;
       const outOfStock = items.filter(i => i.status === 'OUT_OF_STOCK').length;
 
       doc.fontSize(12).text(this.t('summary', locale), { underline: true });
@@ -194,111 +293,90 @@ export class ReportsService {
       doc.text(`${this.t('totalValue', locale)} $${totalValue.toFixed(2)}`);
       doc.moveDown(2);
 
-      // Table header
       doc.fontSize(12).text(this.t('itemDetail', locale), { underline: true });
       doc.moveDown();
 
-      // Items table
-      const tableTop = doc.y;
       const itemsPerPage = 20;
-      let currentPage = 0;
 
       items.forEach((item, index) => {
-        if (index > 0 && index % itemsPerPage === 0) {
-          doc.addPage();
-          currentPage++;
-        }
+        if (index > 0 && index % itemsPerPage === 0) doc.addPage();
 
         const y = doc.y;
-
         doc.fontSize(9);
         doc.text(`${index + 1}. ${item.name}`, 50, y, { width: 200 });
         doc.text(item.category, 260, y, { width: 80 });
         doc.text(`${item.quantity}`, 350, y, { width: 40 });
         doc.text(item.status, 400, y, { width: 80 });
         doc.text(`$${(item.price || 0).toFixed(2)}`, 490, y, { width: 60 });
-
         doc.moveDown(0.5);
-
-        if (y > 700) {
-          doc.addPage();
-        }
+        if (doc.y > 700) doc.addPage();
       });
 
-      // Footer
-      doc.fontSize(8);
-      doc.text(
+      doc.fontSize(8).text(
         this.t('autoGenerated', locale),
         50,
         doc.page.height - 50,
-        { align: 'center' }
+        { align: 'center' },
       );
 
       doc.end();
     });
   }
 
-  async generateLowStockReport(warehouseIds?: string[] | null, locale: Locale = 'es'): Promise<Buffer> {
+  async generateLowStockReport(
+    warehouseIds?: string[] | null,
+    locale: Locale = 'es',
+  ): Promise<Buffer> {
     const ExcelJS = await import('exceljs');
     const workbook = new ExcelJS.Workbook();
+    await this.applyWorkbookMeta(workbook, this.t('wsLowStock', locale));
     const worksheet = workbook.addWorksheet(this.t('wsLowStock', locale));
 
     const items = await this.prisma.inventoryItem.findMany({
       where: {
         deletedAt: null,
         ...warehouseFilter(warehouseIds),
-        OR: [
-          { status: 'LOW_STOCK' },
-          { status: 'OUT_OF_STOCK' },
-        ],
+        OR: [{ status: 'LOW_STOCK' }, { status: 'OUT_OF_STOCK' }],
       },
-      include: {
-        warehouse: true,
-        supplier: true,
-      },
+      include: { warehouse: true, supplier: true },
       orderBy: { quantity: 'asc' },
     });
 
     worksheet.columns = [
-      { header: this.t('sku', locale), key: 'sku', width: 15 },
-      { header: this.t('name', locale), key: 'name', width: 30 },
-      { header: this.t('category', locale), key: 'category', width: 20 },
-      { header: this.t('currentQuantity', locale), key: 'quantity', width: 15 },
-      { header: this.t('minQuantity', locale), key: 'minQuantity', width: 15 },
-      { header: this.t('difference', locale), key: 'difference', width: 12 },
-      { header: this.t('status', locale), key: 'status', width: 15 },
-      { header: this.t('warehouse', locale), key: 'warehouse', width: 20 },
-      { header: this.t('supplier', locale), key: 'supplier', width: 20 },
+      { header: this.t('sku', locale),             key: 'sku',         width: 16 },
+      { header: this.t('name', locale),            key: 'name',        width: 32 },
+      { header: this.t('category', locale),        key: 'category',    width: 20 },
+      { header: this.t('currentQuantity', locale), key: 'quantity',    width: 16 },
+      { header: this.t('minQuantity', locale),     key: 'minQuantity', width: 15 },
+      { header: this.t('difference', locale),      key: 'difference',  width: 14 },
+      { header: this.t('status', locale),          key: 'status',      width: 16 },
+      { header: this.t('warehouse', locale),       key: 'warehouse',   width: 22 },
+      { header: this.t('supplier', locale),        key: 'supplier',    width: 22 },
     ];
 
-    worksheet.getRow(1).font = { bold: true };
-    worksheet.getRow(1).fill = {
-      type: 'pattern',
-      pattern: 'solid',
-      fgColor: { argb: 'FFFF0000' },
-    };
-    worksheet.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
+    this.applyHeader(worksheet, COLORS.lowStock);
+    // Override header text to dark since amber bg is light
+    worksheet.getRow(1).font = { bold: true, color: { argb: 'FF451A03' }, size: 11, name: 'Calibri' };
+    worksheet.views = [{ state: 'frozen', ySplit: 1 }];
+    worksheet.autoFilter = { from: 'A1', to: 'I1' };
 
-    items.forEach(item => {
+    items.forEach((item, idx) => {
       const row = worksheet.addRow({
-        sku: item.sku || '',
-        name: item.name,
-        category: item.category,
-        quantity: item.quantity,
+        sku:         item.sku || '',
+        name:        item.name,
+        category:    item.category,
+        quantity:    item.quantity,
         minQuantity: item.minQuantity,
-        difference: item.quantity - item.minQuantity,
-        status: item.status,
-        warehouse: item.warehouse?.name || '',
-        supplier: item.supplier?.name || '',
+        difference:  item.quantity - item.minQuantity,
+        status:      item.status,
+        warehouse:   item.warehouse?.name || '',
+        supplier:    item.supplier?.name || '',
       });
-
-      // Highlight out of stock rows
-      if (item.status === 'OUT_OF_STOCK') {
-        row.fill = {
-          type: 'pattern',
-          pattern: 'solid',
-          fgColor: { argb: 'FFFFCCCC' },
-        };
+      row.height = 20;
+      this.styleStatusCell(row.getCell(7), item.status, locale);
+      if (idx % 2 === 0) {
+        row.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLORS.altRow } };
+        this.styleStatusCell(row.getCell(7), item.status, locale);
       }
     });
 
@@ -306,9 +384,15 @@ export class ReportsService {
     return Buffer.from(buffer);
   }
 
-  async generateTransactionsReport(startDate?: Date, endDate?: Date, warehouseIds?: string[] | null, locale: Locale = 'es'): Promise<Buffer> {
+  async generateTransactionsReport(
+    startDate?: Date,
+    endDate?: Date,
+    warehouseIds?: string[] | null,
+    locale: Locale = 'es',
+  ): Promise<Buffer> {
     const ExcelJS = await import('exceljs');
     const workbook = new ExcelJS.Workbook();
+    await this.applyWorkbookMeta(workbook, this.t('wsTransactions', locale));
     const worksheet = workbook.addWorksheet(this.t('wsTransactions', locale));
 
     const where: any = {
@@ -317,65 +401,65 @@ export class ReportsService {
     if (startDate || endDate) {
       where.date = {};
       if (startDate) where.date.gte = startDate;
-      if (endDate) where.date.lte = endDate;
+      if (endDate)   where.date.lte = endDate;
     }
 
     const transactions = await this.prisma.transaction.findMany({
       where,
       include: {
-        sourceWarehouse: true,
+        sourceWarehouse:      true,
         destinationWarehouse: true,
-        user: { select: { name: true, email: true } },
-        items: {
-          include: {
-            inventoryItem: true,
-          },
-        },
+        user:  { select: { name: true, email: true } },
+        items: { include: { inventoryItem: true } },
       },
       orderBy: { date: 'desc' },
     });
 
     worksheet.columns = [
-      { header: this.t('id', locale), key: 'id', width: 25 },
-      { header: this.t('type', locale), key: 'type', width: 12 },
-      { header: this.t('date', locale), key: 'date', width: 15 },
-      { header: this.t('sourceWarehouse', locale), key: 'source', width: 20 },
-      { header: this.t('destWarehouse', locale), key: 'destination', width: 20 },
-      { header: this.t('items', locale), key: 'itemCount', width: 10 },
-      { header: this.t('user', locale), key: 'user', width: 20 },
-      { header: this.t('notes', locale), key: 'notes', width: 30 },
+      { header: this.t('id', locale),             key: 'id',          width: 25 },
+      { header: this.t('type', locale),           key: 'type',        width: 14 },
+      { header: this.t('date', locale),           key: 'date',        width: 16 },
+      { header: this.t('sourceWarehouse', locale), key: 'source',     width: 22 },
+      { header: this.t('destWarehouse', locale),  key: 'destination', width: 22 },
+      { header: this.t('items', locale),          key: 'itemCount',   width: 10 },
+      { header: this.t('user', locale),           key: 'user',        width: 22 },
+      { header: this.t('notes', locale),          key: 'notes',       width: 32 },
     ];
 
-    worksheet.getRow(1).font = { bold: true };
-    worksheet.getRow(1).fill = {
-      type: 'pattern',
-      pattern: 'solid',
-      fgColor: { argb: 'FF70AD47' },
-    };
-    worksheet.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
+    this.applyHeader(worksheet, COLORS.transactions);
+    worksheet.views = [{ state: 'frozen', ySplit: 1 }];
+    worksheet.autoFilter = { from: 'A1', to: 'H1' };
 
     const dateLocale = locale === 'en' ? 'en-US' : 'es-HN';
 
-    transactions.forEach(tx => {
-      worksheet.addRow({
-        id: tx.id,
-        type: tx.type,
-        date: tx.date.toLocaleDateString(dateLocale),
-        source: tx.sourceWarehouse?.name || '-',
+    transactions.forEach((tx, idx) => {
+      const row = worksheet.addRow({
+        id:          tx.id,
+        type:        this.tStatus(tx.type, locale),
+        date:        tx.date.toLocaleDateString(dateLocale),
+        source:      tx.sourceWarehouse?.name || '-',
         destination: tx.destinationWarehouse?.name || '-',
-        itemCount: tx.items.length,
-        user: tx.user?.name || tx.user?.email || '',
-        notes: tx.notes || '',
+        itemCount:   tx.items.length,
+        user:        tx.user?.name || tx.user?.email || '',
+        notes:       tx.notes || '',
       });
+      row.height = 20;
+      if (idx % 2 === 0) {
+        row.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLORS.altRow } };
+      }
     });
 
     const buffer = await workbook.xlsx.writeBuffer();
     return Buffer.from(buffer);
   }
 
-  async generateLoansReport(warehouseIds?: string[] | null, locale: Locale = 'es'): Promise<Buffer> {
+  async generateLoansReport(
+    warehouseIds?: string[] | null,
+    locale: Locale = 'es',
+  ): Promise<Buffer> {
     const ExcelJS = await import('exceljs');
     const workbook = new ExcelJS.Workbook();
+    await this.applyWorkbookMeta(workbook, this.t('wsLoans', locale));
     const worksheet = workbook.addWorksheet(this.t('wsLoans', locale));
 
     const where = warehouseFilterMultiField(warehouseIds, ['sourceWarehouseId', 'destinationWarehouseId']);
@@ -383,8 +467,8 @@ export class ReportsService {
     const loans = await this.prisma.loan.findMany({
       where,
       include: {
-        inventoryItem: true,
-        sourceWarehouse: true,
+        inventoryItem:        true,
+        sourceWarehouse:      true,
         destinationWarehouse: true,
         createdBy: { select: { name: true, email: true } },
       },
@@ -392,48 +476,42 @@ export class ReportsService {
     });
 
     worksheet.columns = [
-      { header: this.t('id', locale), key: 'id', width: 25 },
-      { header: this.t('item', locale), key: 'item', width: 30 },
-      { header: this.t('quantity', locale), key: 'quantity', width: 10 },
-      { header: this.t('source', locale), key: 'source', width: 20 },
-      { header: this.t('destination', locale), key: 'destination', width: 20 },
-      { header: this.t('loanDate', locale), key: 'loanDate', width: 15 },
-      { header: this.t('dueDate', locale), key: 'dueDate', width: 15 },
-      { header: this.t('returnDate', locale), key: 'returnDate', width: 15 },
-      { header: this.t('status', locale), key: 'status', width: 12 },
-      { header: this.t('createdBy', locale), key: 'createdBy', width: 20 },
+      { header: this.t('id', locale),          key: 'id',          width: 25 },
+      { header: this.t('item', locale),        key: 'item',        width: 32 },
+      { header: this.t('quantity', locale),    key: 'quantity',    width: 10 },
+      { header: this.t('source', locale),      key: 'source',      width: 22 },
+      { header: this.t('destination', locale), key: 'destination', width: 22 },
+      { header: this.t('loanDate', locale),    key: 'loanDate',    width: 16 },
+      { header: this.t('dueDate', locale),     key: 'dueDate',     width: 16 },
+      { header: this.t('returnDate', locale),  key: 'returnDate',  width: 16 },
+      { header: this.t('status', locale),      key: 'status',      width: 14 },
+      { header: this.t('createdBy', locale),   key: 'createdBy',   width: 22 },
     ];
 
-    worksheet.getRow(1).font = { bold: true };
-    worksheet.getRow(1).fill = {
-      type: 'pattern',
-      pattern: 'solid',
-      fgColor: { argb: 'FF5B9BD5' },
-    };
-    worksheet.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
+    this.applyHeader(worksheet, COLORS.loans);
+    worksheet.views = [{ state: 'frozen', ySplit: 1 }];
+    worksheet.autoFilter = { from: 'A1', to: 'J1' };
 
     const dateLocale = locale === 'en' ? 'en-US' : 'es-HN';
 
-    loans.forEach(loan => {
+    loans.forEach((loan, idx) => {
       const row = worksheet.addRow({
-        id: loan.id,
-        item: loan.inventoryItem?.name || '',
-        quantity: loan.quantity,
-        source: loan.sourceWarehouse?.name || '',
+        id:          loan.id,
+        item:        loan.inventoryItem?.name || '',
+        quantity:    loan.quantity,
+        source:      loan.sourceWarehouse?.name || '',
         destination: loan.destinationWarehouse?.name || '',
-        loanDate: loan.loanDate.toLocaleDateString(dateLocale),
-        dueDate: loan.dueDate.toLocaleDateString(dateLocale),
-        returnDate: loan.returnDate?.toLocaleDateString(dateLocale) || '-',
-        status: loan.status,
-        createdBy: loan.createdBy?.name || loan.createdBy?.email || '',
+        loanDate:    loan.loanDate.toLocaleDateString(dateLocale),
+        dueDate:     loan.dueDate.toLocaleDateString(dateLocale),
+        returnDate:  loan.returnDate?.toLocaleDateString(dateLocale) || '-',
+        status:      loan.status,
+        createdBy:   loan.createdBy?.name || loan.createdBy?.email || '',
       });
-
-      if (loan.status === 'OVERDUE') {
-        row.fill = {
-          type: 'pattern',
-          pattern: 'solid',
-          fgColor: { argb: 'FFFFCCCC' },
-        };
+      row.height = 20;
+      this.styleStatusCell(row.getCell(9), loan.status, locale);
+      if (idx % 2 === 0) {
+        row.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLORS.altRow } };
+        this.styleStatusCell(row.getCell(9), loan.status, locale);
       }
     });
 
