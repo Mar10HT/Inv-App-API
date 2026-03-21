@@ -210,7 +210,12 @@ function randomPrice(basePrice: number, variation: number): number {
   return Number((basePrice + (Math.random() * variation * 2 - variation)).toFixed(2));
 }
 
-function getStatus(quantity: number, minQuantity: number): InventoryStatus {
+function getStatus(quantity: number, minQuantity: number, itemType: ItemType): InventoryStatus {
+  // UNIQUE items: only IN_STOCK (1) or OUT_OF_STOCK (0)
+  if (itemType === ItemType.UNIQUE) {
+    return quantity === 1 ? InventoryStatus.IN_STOCK : InventoryStatus.OUT_OF_STOCK;
+  }
+  // BULK items: standard logic
   if (quantity === 0) return InventoryStatus.OUT_OF_STOCK;
   if (quantity <= minQuantity) return InventoryStatus.LOW_STOCK;
   return InventoryStatus.IN_STOCK;
@@ -248,6 +253,36 @@ function getWarehouseForCategory(categoryName: string, warehouses: any[]): any {
   }
 
   return warehouses[0];
+}
+
+function generateModel(productName: string, category: string): string | null {
+  // 60% chance of having a model
+  if (Math.random() > 0.6) return null;
+
+  const models: Record<string, string[]> = {
+    'Monitor': ['Dell P2422H', 'LG 27UL850', 'Samsung 27" Curved', 'ASUS ProArt PA278QV', 'BenQ PD2700U'],
+    'Laptop': ['Dell Latitude 5430', 'HP EliteBook 840 G9', 'Lenovo ThinkPad X1 Carbon', 'ASUS ZenBook 14', 'MacBook Pro 14"'],
+    'Desktop': ['Dell OptiPlex 7090', 'HP EliteDesk 800 G8', 'Lenovo ThinkCentre M90t', 'ASUS ExpertCenter D7'],
+    'Printer': ['HP LaserJet Pro M404dn', 'Brother HL-L2395DW', 'Canon imageCLASS MF445dw', 'Epson WorkForce Pro WF-4830'],
+    'Mouse': ['Logitech MX Master 3S', 'Razer DeathAdder V3', 'Microsoft Sculpt Ergonomic', 'Logitech G502 HERO'],
+    'Keyboard': ['Logitech MX Keys', 'Keychron K8 Pro', 'Corsair K70 RGB', 'Das Keyboard 4 Professional'],
+    'Webcam': ['Logitech C920', 'Logitech C930e', 'Razer Kiyo Pro', 'Microsoft LifeCam Studio'],
+    'RAM': ['Corsair Vengeance LPX', 'G.Skill Ripjaws V', 'Kingston Fury Beast', 'Crucial Ballistix'],
+    'SSD': ['Samsung 980 PRO', 'WD Black SN850X', 'Crucial P5 Plus', 'Kingston KC3000'],
+    'Graphics Card': ['NVIDIA RTX 3060', 'AMD RX 6700 XT', 'NVIDIA RTX 4070', 'AMD RX 7800 XT'],
+    'Processor': ['Intel Core i7-13700K', 'AMD Ryzen 7 7700X', 'Intel Core i5-13600K', 'AMD Ryzen 5 7600X'],
+    'Chair': ['Herman Miller Aeron', 'Steelcase Leap V2', 'Autonomous ErgoChair Pro', 'IKEA Markus'],
+    'Desk': ['IKEA Bekant', 'Uplift V2', 'FlexiSpot E7', 'Autonomous SmartDesk Core'],
+    'default': ['Model A', 'Model B', 'Model C', 'Professional Series', 'Business Edition'],
+  };
+
+  for (const [key, modelList] of Object.entries(models)) {
+    if (productName.includes(key)) {
+      return random(modelList);
+    }
+  }
+
+  return random(models['default']);
 }
 
 // Get supplier for a category
@@ -404,10 +439,10 @@ async function main() {
     const warehouse = getWarehouseForCategory(categoryName, warehouses);
     const itemType = product.isUnique ? ItemType.UNIQUE : ItemType.BULK;
 
-    // Quantity based on item type
+    // Quantity based on item type (UNIQUE items always have quantity 0 or 1)
     const quantity = itemType === ItemType.UNIQUE ? 1 : randomInt(0, 150);
     const minQuantity = itemType === ItemType.UNIQUE ? 1 : randomInt(5, 20);
-    const status = getStatus(quantity, minQuantity);
+    const status = getStatus(quantity, minQuantity, itemType);
 
     // Get supplier based on category (smart assignment)
     const supplier = getSupplierForCategory(categoryName, suppliers);
@@ -433,6 +468,9 @@ async function main() {
     const categoryPrefix = categoryName.substring(0, 3).toUpperCase();
     const sku = `${categoryPrefix}-${String(++itemIndex).padStart(4, '0')}`;
 
+    // Generate model for some items
+    const model = generateModel(product.name, categoryName);
+
     // Optional barcode
     const barcode = Math.random() > 0.3
       ? `${randomInt(100000000, 999999999)}${randomInt(100, 999)}`
@@ -456,8 +494,9 @@ async function main() {
         description: `${name} - Quality ${categoryName.toLowerCase()} for office use`,
         quantity,
         minQuantity,
-        category: categoryName, // Still storing category name for backwards compatibility
-        categoryId: category.id, // New: linking to Category model
+        category: categoryName,
+        categoryId: category.id,
+        model,
         status,
         price,
         currency,

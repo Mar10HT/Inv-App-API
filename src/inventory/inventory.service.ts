@@ -68,7 +68,7 @@ export class InventoryService {
 
     // Validate UNIQUE item requirements
     if (itemType === ItemType.UNIQUE) {
-      if (createInventoryDto.quantity > 1) {
+      if (createInventoryDto.quantity !== 0 && createInventoryDto.quantity !== 1) {
         throw new BadRequestException('UNIQUE items must have quantity of 0 or 1');
       }
       if (!createInventoryDto.serviceTag && !createInventoryDto.serialNumber) {
@@ -113,15 +113,24 @@ export class InventoryService {
     // Auto-calculate status based on quantity and assignment
     let status = createInventoryDto.status;
     if (!status) {
-      const minQty = createInventoryDto.minQuantity || 10;
-      if (itemType === ItemType.UNIQUE && createInventoryDto.assignedToUserId) {
-        status = InventoryStatus.IN_USE;
-      } else if (createInventoryDto.quantity === 0) {
-        status = InventoryStatus.OUT_OF_STOCK;
-      } else if (createInventoryDto.quantity <= minQty) {
-        status = InventoryStatus.LOW_STOCK;
-      } else {
-        status = InventoryStatus.IN_STOCK;
+      // UNIQUE items: IN_USE if assigned, otherwise IN_STOCK (qty=1) or OUT_OF_STOCK (qty=0)
+      if (itemType === ItemType.UNIQUE) {
+        if (createInventoryDto.assignedToUserId) {
+          status = InventoryStatus.IN_USE;
+        } else {
+          status = createInventoryDto.quantity === 1 ? InventoryStatus.IN_STOCK : InventoryStatus.OUT_OF_STOCK;
+        }
+      }
+      // BULK items: IN_STOCK, LOW_STOCK, or OUT_OF_STOCK based on quantity and minQuantity
+      else {
+        const minQty = createInventoryDto.minQuantity || 10;
+        if (createInventoryDto.quantity === 0) {
+          status = InventoryStatus.OUT_OF_STOCK;
+        } else if (createInventoryDto.quantity <= minQty) {
+          status = InventoryStatus.LOW_STOCK;
+        } else {
+          status = InventoryStatus.IN_STOCK;
+        }
       }
     }
 

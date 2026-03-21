@@ -175,6 +175,7 @@ model InventoryItem {
 
   @@index([category])
   @@index([categoryId])
+  @@index([model])
   @@index([status])
   @@index([currency])
   @@index([warehouseId])
