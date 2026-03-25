@@ -7,6 +7,7 @@ export interface EmailOptions {
   subject: string;
   html: string;
   text?: string;
+  attachments?: { filename: string; content: Buffer }[];
 }
 
 @Injectable()
@@ -65,6 +66,7 @@ export class EmailService {
         subject: options.subject,
         html: options.html,
         text: options.text,
+        attachments: options.attachments,
       });
       this.logger.log(`Email sent: ${options.subject} to ${options.to}`);
       return true;
@@ -72,6 +74,10 @@ export class EmailService {
       this.logger.error(`Failed to send email: ${error.message}`, error.stack);
       return false;
     }
+  }
+
+  async sendEmailWithAttachment(options: EmailOptions): Promise<boolean> {
+    return this.sendEmail(options);
   }
 
   async sendPasswordResetEmail(email: string, token: string, userName?: string): Promise<boolean> {

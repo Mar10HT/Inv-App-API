@@ -51,4 +51,13 @@ export class EventsService {
       data,
     });
   }
+
+  emitAlertChange(action: EventPayload['action'], entityId?: string, data?: any): void {
+    this.broadcast('alert:change', {
+      entity: 'alert',
+      action,
+      entityId,
+      data,
+    });
+  }
 }
