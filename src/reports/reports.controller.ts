@@ -124,4 +124,58 @@ export class ReportsController {
 
     res.send(buffer);
   }
+
+  @Get('transfers/excel')
+  @Roles('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER')
+  async exportTransfersExcel(
+    @Query('locale') locale: 'en' | 'es' = 'es',
+    @CurrentUser() user: AuthenticatedUser,
+    @Res() res: Response,
+  ) {
+    const buffer = await this.reportsService.generateTransferRequestsReport(user.warehouseIds, locale);
+
+    res.set({
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': `attachment; filename=transferencias_${Date.now()}.xlsx`,
+      'Content-Length': buffer.length,
+    });
+
+    res.send(buffer);
+  }
+
+  @Get('stock-takes/excel')
+  @Roles('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER')
+  async exportStockTakesExcel(
+    @Query('locale') locale: 'en' | 'es' = 'es',
+    @CurrentUser() user: AuthenticatedUser,
+    @Res() res: Response,
+  ) {
+    const buffer = await this.reportsService.generateStockTakeReport(user.warehouseIds, locale);
+
+    res.set({
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': `attachment; filename=conteo_fisico_${Date.now()}.xlsx`,
+      'Content-Length': buffer.length,
+    });
+
+    res.send(buffer);
+  }
+
+  @Get('discharges/excel')
+  @Roles('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER')
+  async exportDischargesExcel(
+    @Query('locale') locale: 'en' | 'es' = 'es',
+    @CurrentUser() user: AuthenticatedUser,
+    @Res() res: Response,
+  ) {
+    const buffer = await this.reportsService.generateDischargesReport(user.warehouseIds, locale);
+
+    res.set({
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': `attachment; filename=bajas_${Date.now()}.xlsx`,
+      'Content-Length': buffer.length,
+    });
+
+    res.send(buffer);
+  }
 }
