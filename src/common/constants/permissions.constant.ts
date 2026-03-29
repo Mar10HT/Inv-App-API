@@ -62,6 +62,8 @@ export const PERMISSIONS = [
   // settings
   { key: 'settings:view',           module: 'settings',      action: 'view',          description: 'View system settings' },
   { key: 'settings:edit',           module: 'settings',      action: 'edit',          description: 'Edit system settings' },
+  // dashboard
+  { key: 'dashboard:view',          module: 'dashboard',     action: 'view',          description: 'View the main dashboard' },
 ] as const;
 
 export type PermissionKey = (typeof PERMISSIONS)[number]['key'];
@@ -81,6 +83,7 @@ export const ROLE_PERMISSIONS: Record<string, PermissionKey[]> = {
     'reports:view', 'reports:export',
     'alerts:view', 'alerts:manage',
     'settings:view',
+    'dashboard:view',
   ],
   USER: [
     'inventory:view', 'inventory:create', 'inventory:edit',
@@ -94,6 +97,7 @@ export const ROLE_PERMISSIONS: Record<string, PermissionKey[]> = {
     'discharges:view', 'discharges:create',
     'reports:view',
     'alerts:view',
+    'dashboard:view',
   ],
   VIEWER: [
     'inventory:view', 'inventory:export',
@@ -107,6 +111,7 @@ export const ROLE_PERMISSIONS: Record<string, PermissionKey[]> = {
     'discharges:view',
     'reports:view', 'reports:export',
     'alerts:view',
+    'dashboard:view',
   ],
   EXTERNAL: [
     'inventory:view_assigned',
