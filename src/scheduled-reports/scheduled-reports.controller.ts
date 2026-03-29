@@ -28,13 +28,13 @@ export class ScheduledReportsController {
     @Body(ValidationPipe) dto: CreateScheduledReportDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.service.create(dto, user.id);
+    return this.service.create(dto, user.userId);
   }
 
   @Get()
   @Permissions('reports:view')
   findAll(@CurrentUser() user: AuthenticatedUser) {
-    return this.service.findAllForUser(user.id);
+    return this.service.findAllForUser(user.userId);
   }
 
   @Patch(':id')
@@ -44,13 +44,13 @@ export class ScheduledReportsController {
     @Body(ValidationPipe) dto: UpdateScheduledReportDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.service.update(id, dto, user.id);
+    return this.service.update(id, dto, user.userId);
   }
 
   @Delete(':id')
   @Permissions('reports:export')
   remove(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
-    return this.service.softDelete(id, user.id);
+    return this.service.softDelete(id, user.userId);
   }
 
   @Post(':id/send-now')

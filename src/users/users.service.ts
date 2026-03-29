@@ -121,6 +121,10 @@ export class UsersService {
   }
 
   async update(id: string, updateUserDto: UpdateUserDto) {
+    if (updateUserDto.role === 'SYSTEM_ADMIN') {
+      throw new BadRequestException('Cannot assign SYSTEM_ADMIN role through this endpoint');
+    }
+
     try {
       const user = await this.prisma.user.update({
         where: { id },
