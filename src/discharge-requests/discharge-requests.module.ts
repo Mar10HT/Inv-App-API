@@ -3,9 +3,10 @@ import { DischargeRequestsService } from './discharge-requests.service';
 import { DischargeRequestsController } from './discharge-requests.controller';
 import { PrismaModule } from '../prisma/prisma.module';
 import { AuditModule } from '../audit/audit.module';
+import { PermissionsModule } from '../permissions/permissions.module';
 
 @Module({
-  imports: [PrismaModule, AuditModule],
+  imports: [PrismaModule, AuditModule, PermissionsModule],
   controllers: [DischargeRequestsController],
   providers: [DischargeRequestsService],
   exports: [DischargeRequestsService],
