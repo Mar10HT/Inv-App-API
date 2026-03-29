@@ -186,26 +186,21 @@ export class RolesService {
   }
 
   /**
-   * Returns all permissions grouped by module.
-   * NOTE: reads from the in-memory PERMISSIONS constant, not the database.
-   * If a permission is added to the DB outside the seed, this response will
-   * not reflect it until the constant is updated and the app is restarted.
+   * Returns all permissions grouped by module, including DB-assigned IDs.
+   * Reads from the database so the response is always in sync with seeded data.
    */
-  getAllPermissions() {
-    const grouped: Record<string, { key: string; action: string; description: string }[]> = {};
+  async getAllPermissions() {
+    const permissions = await this.prisma.permission.findMany({
+      orderBy: [{ module: 'asc' }, { action: 'asc' }],
+      select: { id: true, key: true, module: true, action: true, description: true },
+    });
 
-    for (const perm of PERMISSIONS) {
+    const grouped: Record<string, { id: string; key: string; action: string; description: string }[]> = {};
+    for (const perm of permissions) {
       if (!grouped[perm.module]) grouped[perm.module] = [];
-      grouped[perm.module].push({
-        key: perm.key,
-        action: perm.action,
-        description: perm.description,
-      });
+      grouped[perm.module].push({ id: perm.id, key: perm.key, action: perm.action, description: perm.description });
     }
 
-    return Object.entries(grouped).map(([module, permissions]) => ({
-      module,
-      permissions,
-    }));
+    return Object.entries(grouped).map(([module, permissions]) => ({ module, permissions }));
   }
 }

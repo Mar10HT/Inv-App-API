@@ -26,8 +26,8 @@ import { UpdateProfileDto } from './dto/update-profile.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
-import { JwtAuthGuard, RolesGuard, PermissionsGuard } from './guards';
-import { Roles, Permissions } from './decorators';
+import { JwtAuthGuard, PermissionsGuard } from './guards';
+import { Permissions } from './decorators';
 import { PermissionsService } from '../permissions/permissions.service';
 
 @ApiTags('auth')

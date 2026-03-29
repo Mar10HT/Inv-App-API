@@ -18,6 +18,7 @@ export class UsersService {
     email: true,
     name: true,
     role: true,
+    roleId: true,
     createdAt: true,
     updatedAt: true,
     // Exclude password
@@ -105,6 +106,7 @@ export class UsersService {
         email: true,
         name: true,
         role: true,
+        roleId: true,
         createdAt: true,
         updatedAt: true,
         // Exclude password
