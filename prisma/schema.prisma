@@ -21,6 +21,10 @@ model User {
   updatedAt DateTime  @updatedAt
   deletedAt DateTime? // Soft delete
 
+  // RBAC: replaces role enum (enum removed in Phase 7)
+  roleId             String?
+  permissionsVersion Int     @default(0)
+
   // Notification preferences
   emailNotifications Boolean @default(true)
   lowStockAlerts     Boolean @default(true)
@@ -55,8 +59,10 @@ model User {
   warehouseAccess     UserWarehouse[]
 
   scheduledReports    ScheduledReport[]
+  roleRef             Role?            @relation(fields: [roleId], references: [id])
 
   @@index([deletedAt])
+  @@index([roleId])
   @@map("users")
 }
 
@@ -110,8 +116,12 @@ model UserWarehouse {
   warehouseId String
   createdAt   DateTime @default(now())
 
-  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  warehouse   Warehouse @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+  // RBAC: anticipates per-warehouse role (future multi-role support)
+  roleId    String?
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  warehouse Warehouse @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+  roleRef   Role?     @relation(fields: [roleId], references: [id])
 
   @@unique([userId, warehouseId])
   @@index([userId])
@@ -622,6 +632,52 @@ model ScheduledReport {
 
   @@index([isActive, nextSendAt])
   @@map("scheduled_reports")
+}
+
+// ============================================
+// RBAC: Roles & Permissions
+// ============================================
+
+model Role {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  displayName String
+  description String?
+  isSystem    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  permissions    RolePermission[]
+  users          User[]
+  userWarehouses UserWarehouse[]
+
+  @@map("roles")
+}
+
+model Permission {
+  id          String @id @default(cuid())
+  key         String @unique
+  module      String
+  action      String
+  description String?
+
+  roles RolePermission[]
+
+  @@map("permissions")
+}
+
+model RolePermission {
+  id           String @id @default(cuid())
+  roleId       String
+  permissionId String
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, permissionId])
+  @@index([roleId])
+  @@index([permissionId])
+  @@map("role_permissions")
 }
 
 // Password reset tokens

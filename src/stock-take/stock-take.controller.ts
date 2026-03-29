@@ -14,20 +14,20 @@ import {
 import { ApiTags, ApiQuery } from '@nestjs/swagger';
 import { StockTakeService } from './stock-take.service';
 import { CreateStockTakeDto, UpdateStockTakeItemDto } from './dto/create-stock-take.dto';
-import { JwtAuthGuard, RolesGuard } from '../auth/guards';
-import { Roles, CurrentUser } from '../auth/decorators';
+import { JwtAuthGuard, PermissionsGuard } from '../auth/guards';
+import { Permissions, CurrentUser } from '../auth/decorators';
 import { PaginationDto } from '../common/dto/pagination.dto';
 import { StockTakeStatus } from '@prisma/client';
 
 @ApiTags('stock-take')
 @Controller('stock-take')
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 export class StockTakeController {
   constructor(private readonly stockTakeService: StockTakeService) {}
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
-  @Roles('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER')
+  @Permissions('stocktake:create')
   create(
     @Body(ValidationPipe) dto: CreateStockTakeDto,
     @CurrentUser() user: any,
@@ -36,6 +36,7 @@ export class StockTakeController {
   }
 
   @Get()
+  @Permissions('stocktake:view')
   @ApiQuery({ name: 'status', enum: ['IN_PROGRESS', 'COMPLETED', 'CANCELLED'], required: false })
   findAll(
     @Query(ValidationPipe) pagination: PaginationDto,
@@ -45,23 +46,25 @@ export class StockTakeController {
   }
 
   @Get('stats')
+  @Permissions('stocktake:view')
   getStats() {
     return this.stockTakeService.getStats();
   }
 
   @Get(':id')
+  @Permissions('stocktake:view')
   findOne(@Param('id') id: string) {
     return this.stockTakeService.findOne(id);
   }
 
   @Get(':id/variance-report')
-  @Roles('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER')
+  @Permissions('stocktake:view')
   getVarianceReport(@Param('id') id: string) {
     return this.stockTakeService.getVarianceReport(id);
   }
 
   @Patch(':id/items')
-  @Roles('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER', 'USER')
+  @Permissions('stocktake:create')
   updateItem(
     @Param('id') id: string,
     @Body(ValidationPipe) dto: UpdateStockTakeItemDto,
@@ -71,7 +74,7 @@ export class StockTakeController {
   }
 
   @Patch(':id/complete')
-  @Roles('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER')
+  @Permissions('stocktake:manage')
   complete(
     @Param('id') id: string,
     @Query('applyChanges') applyChanges: string,
@@ -82,7 +85,7 @@ export class StockTakeController {
   }
 
   @Patch(':id/cancel')
-  @Roles('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER')
+  @Permissions('stocktake:manage')
   cancel(
     @Param('id') id: string,
     @CurrentUser() user: any,

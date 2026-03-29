@@ -16,19 +16,19 @@ import {
 import { TransactionsService } from './transactions.service';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
 import { UpdateTransactionDto } from './dto/update-transaction.dto';
-import { JwtAuthGuard, RolesGuard } from '../auth/guards';
-import { Roles, CurrentUser } from '../auth/decorators';
+import { JwtAuthGuard, PermissionsGuard } from '../auth/guards';
+import { Permissions, CurrentUser } from '../auth/decorators';
 import { PaginationDto } from '../common/dto';
 import { AuthenticatedUser } from '../auth/interfaces/auth-user.interface';
 
 @Controller('transactions')
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 export class TransactionsController {
   constructor(private readonly transactionsService: TransactionsService) {}
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
-  @Roles('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER', 'USER')
+  @Permissions('transactions:create')
   create(
     @Body(ValidationPipe) createTransactionDto: CreateTransactionDto,
     @CurrentUser() user: AuthenticatedUser,
@@ -46,6 +46,7 @@ export class TransactionsController {
   }
 
   @Get()
+  @Permissions('transactions:view')
   findAll(
     @Query(ValidationPipe) pagination: PaginationDto,
     @CurrentUser() user: AuthenticatedUser,
@@ -54,6 +55,7 @@ export class TransactionsController {
   }
 
   @Get('recent')
+  @Permissions('transactions:view')
   findRecent(
     @Query('limit') limit?: string,
     @CurrentUser() user?: AuthenticatedUser,
@@ -63,12 +65,13 @@ export class TransactionsController {
   }
 
   @Get(':id')
+  @Permissions('transactions:view')
   findOne(@Param('id') id: string) {
     return this.transactionsService.findOne(id);
   }
 
   @Patch(':id')
-  @Roles('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER')
+  @Permissions('transactions:create')
   update(
     @Param('id') id: string,
     @Body(ValidationPipe) updateTransactionDto: UpdateTransactionDto,
@@ -78,7 +81,7 @@ export class TransactionsController {
 
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
-  @Roles('SYSTEM_ADMIN')
+  @Permissions('transactions:delete')
   async remove(@Param('id') id: string) {
     await this.transactionsService.remove(id);
   }

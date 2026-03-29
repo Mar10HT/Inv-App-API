@@ -15,21 +15,21 @@ import {
 import { ApiTags, ApiQuery } from '@nestjs/swagger';
 import { TransferRequestsService } from './transfer-requests.service';
 import { CreateTransferRequestDto } from './dto/create-transfer-request.dto';
-import { JwtAuthGuard, RolesGuard } from '../auth/guards';
-import { Roles, CurrentUser } from '../auth/decorators';
+import { JwtAuthGuard, PermissionsGuard } from '../auth/guards';
+import { Permissions, CurrentUser } from '../auth/decorators';
 import { PaginationDto } from '../common/dto/pagination.dto';
 import { RequestStatus } from '@prisma/client';
 import { AuthenticatedUser } from '../auth/interfaces/auth-user.interface';
 
 @ApiTags('transfer-requests')
 @Controller('transfer-requests')
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 export class TransferRequestsController {
   constructor(private readonly transferRequestsService: TransferRequestsService) {}
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
-  @Roles('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER', 'USER')
+  @Permissions('transfers:create')
   create(
     @Body(ValidationPipe) dto: CreateTransferRequestDto,
     @CurrentUser() user: AuthenticatedUser,
@@ -47,6 +47,7 @@ export class TransferRequestsController {
   }
 
   @Get()
+  @Permissions('transfers:view')
   @ApiQuery({ name: 'status', enum: ['PENDING', 'APPROVED', 'SENT', 'COMPLETED', 'REJECTED', 'CANCELLED'], required: false })
   findAll(
     @Query(ValidationPipe) pagination: PaginationDto,
@@ -57,6 +58,7 @@ export class TransferRequestsController {
   }
 
   @Get('pending')
+  @Permissions('transfers:view')
   findPending(
     @Query(ValidationPipe) pagination: PaginationDto,
     @CurrentUser() user: AuthenticatedUser,
@@ -65,11 +67,13 @@ export class TransferRequestsController {
   }
 
   @Get('stats')
+  @Permissions('transfers:view')
   getStats(@CurrentUser() user: AuthenticatedUser) {
     return this.transferRequestsService.getStats(user.warehouseIds);
   }
 
   @Get(':id')
+  @Permissions('transfers:view')
   findOne(@Param('id') id: string) {
     return this.transferRequestsService.findOne(id);
   }
@@ -77,20 +81,20 @@ export class TransferRequestsController {
   // ==================== QR-Based Operations ====================
 
   @Get(':id/qr')
-  @Roles('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER', 'USER')
+  @Permissions('transfers:manage')
   getQrCode(@Param('id') id: string) {
     return this.transferRequestsService.getQrCode(id);
   }
 
   @Patch(':id/send')
-  @Roles('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER')
+  @Permissions('transfers:manage')
   sendTransfer(@Param('id') id: string) {
     return this.transferRequestsService.sendTransfer(id);
   }
 
   @Post('confirm-receipt')
   @HttpCode(HttpStatus.OK)
-  @Roles('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER', 'USER')
+  @Permissions('transfers:manage')
   confirmReceipt(
     @Body('qrCode') qrCode: string,
     @CurrentUser() user: AuthenticatedUser,
@@ -100,7 +104,7 @@ export class TransferRequestsController {
 
   @Post('scan-qr')
   @HttpCode(HttpStatus.OK)
-  @Roles('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER', 'USER')
+  @Permissions('transfers:manage')
   processQrCode(
     @Body('scannedData') scannedData: string,
     @CurrentUser() user: AuthenticatedUser,
@@ -111,7 +115,7 @@ export class TransferRequestsController {
   // ==================== Standard Operations ====================
 
   @Patch(':id/approve')
-  @Roles('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER')
+  @Permissions('transfers:manage')
   approve(
     @Param('id') id: string,
     @CurrentUser() user: AuthenticatedUser,
@@ -120,7 +124,7 @@ export class TransferRequestsController {
   }
 
   @Patch(':id/reject')
-  @Roles('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER')
+  @Permissions('transfers:manage')
   reject(
     @Param('id') id: string,
     @Body('reason') reason: string,
@@ -130,7 +134,7 @@ export class TransferRequestsController {
   }
 
   @Patch(':id/complete')
-  @Roles('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER')
+  @Permissions('transfers:manage')
   complete(
     @Param('id') id: string,
     @CurrentUser() user: AuthenticatedUser,
@@ -139,7 +143,7 @@ export class TransferRequestsController {
   }
 
   @Patch(':id/cancel')
-  @Roles('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER', 'USER')
+  @Permissions('transfers:create')
   cancel(
     @Param('id') id: string,
     @CurrentUser() user: AuthenticatedUser,

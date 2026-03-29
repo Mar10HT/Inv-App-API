@@ -26,8 +26,9 @@ import { UpdateProfileDto } from './dto/update-profile.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
-import { JwtAuthGuard, RolesGuard } from './guards';
-import { Roles } from './decorators';
+import { JwtAuthGuard, RolesGuard, PermissionsGuard } from './guards';
+import { Roles, Permissions } from './decorators';
+import { PermissionsService } from '../permissions/permissions.service';
 
 @ApiTags('auth')
 @Controller('auth')
@@ -36,6 +37,7 @@ export class AuthController {
     private readonly authService: AuthService,
     private readonly csrfService: CsrfService,
     private readonly usersService: UsersService,
+    private readonly permissionsService: PermissionsService,
   ) {}
 
   /**
@@ -246,8 +248,8 @@ export class AuthController {
    * SYSTEM_ADMIN only.
    */
   @Get('pending-resets')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('SYSTEM_ADMIN')
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @Permissions('users:view')
   async getPendingResets() {
     return this.authService.getPendingResets();
   }
@@ -258,8 +260,8 @@ export class AuthController {
    */
   @Post('admin/generate-reset-link/:userId')
   @HttpCode(HttpStatus.OK)
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('SYSTEM_ADMIN')
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @Permissions('users:edit')
   async generateResetLink(@Param('userId') userId: string) {
     // Verify user exists
     const user = await this.usersService.findOne(userId);
@@ -288,6 +290,32 @@ export class AuthController {
   ) {
     await this.authService.resetPassword(token, dto.newPassword);
     return { message: 'Password has been reset successfully. Please log in with your new password.' };
+  }
+
+  /**
+   * Returns the authenticated user's profile plus their current permissions.
+   * Called on app init and polled every 60s to detect permission changes.
+   */
+  @Get('me')
+  @UseGuards(JwtAuthGuard)
+  async getMe(@Request() req) {
+    const userId: string = req.user.userId;
+    const [user, permissions, permissionsVersion] = await Promise.all([
+      this.authService.validateUser(userId),
+      this.permissionsService.getPermissionsForUser(userId),
+      this.permissionsService.getUserPermissionsVersion(userId),
+    ]);
+
+    return {
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        role: user.role,
+      },
+      permissions,
+      permissionsVersion,
+    };
   }
 
   @Get('profile')

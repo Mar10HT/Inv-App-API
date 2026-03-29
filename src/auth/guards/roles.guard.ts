@@ -7,6 +7,10 @@ import {
 import { Reflector } from '@nestjs/core';
 import { ROLES_KEY } from '../decorators/roles.decorator';
 
+/**
+ * @deprecated Use PermissionsGuard with @Permissions() instead.
+ * This guard will be removed in a future version.
+ */
 @Injectable()
 export class RolesGuard implements CanActivate {
   constructor(private reflector: Reflector) {}

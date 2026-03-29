@@ -10,19 +10,19 @@ import {
 import { ApiTags } from '@nestjs/swagger';
 import { Response } from 'express';
 import { ReportsService } from './reports.service';
-import { JwtAuthGuard, RolesGuard } from '../auth/guards';
-import { Roles, CurrentUser } from '../auth/decorators';
+import { JwtAuthGuard, PermissionsGuard } from '../auth/guards';
+import { Permissions, CurrentUser } from '../auth/decorators';
 import { FilterInventoryDto } from '../inventory/dto/filter-inventory.dto';
 import { AuthenticatedUser } from '../auth/interfaces/auth-user.interface';
 
 @ApiTags('reports')
 @Controller('reports')
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 export class ReportsController {
   constructor(private readonly reportsService: ReportsService) {}
 
   @Get('inventory/excel')
-  @Roles('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER', 'USER', 'VIEWER')
+  @Permissions('reports:export')
   async exportInventoryExcel(
     @Query(ValidationPipe) filters: FilterInventoryDto,
     @Query('locale') locale: 'en' | 'es' = 'es',
@@ -41,7 +41,7 @@ export class ReportsController {
   }
 
   @Get('inventory/pdf')
-  @Roles('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER', 'USER', 'VIEWER')
+  @Permissions('reports:export')
   async exportInventoryPdf(
     @Query(ValidationPipe) filters: FilterInventoryDto,
     @Query('locale') locale: 'en' | 'es' = 'es',
@@ -60,7 +60,7 @@ export class ReportsController {
   }
 
   @Get('low-stock/excel')
-  @Roles('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER')
+  @Permissions('reports:export')
   async exportLowStockExcel(
     @Query('locale') locale: 'en' | 'es' = 'es',
     @CurrentUser() user: AuthenticatedUser,
@@ -78,7 +78,7 @@ export class ReportsController {
   }
 
   @Get('transactions/excel')
-  @Roles('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER')
+  @Permissions('reports:export')
   async exportTransactionsExcel(
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
@@ -108,7 +108,7 @@ export class ReportsController {
   }
 
   @Get('loans/excel')
-  @Roles('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER')
+  @Permissions('reports:export')
   async exportLoansExcel(
     @Query('locale') locale: 'en' | 'es' = 'es',
     @CurrentUser() user: AuthenticatedUser,
@@ -126,7 +126,7 @@ export class ReportsController {
   }
 
   @Get('transfers/excel')
-  @Roles('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER')
+  @Permissions('reports:export')
   async exportTransfersExcel(
     @Query('locale') locale: 'en' | 'es' = 'es',
     @CurrentUser() user: AuthenticatedUser,
@@ -144,7 +144,7 @@ export class ReportsController {
   }
 
   @Get('stock-takes/excel')
-  @Roles('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER')
+  @Permissions('reports:export')
   async exportStockTakesExcel(
     @Query('locale') locale: 'en' | 'es' = 'es',
     @CurrentUser() user: AuthenticatedUser,
@@ -162,7 +162,7 @@ export class ReportsController {
   }
 
   @Get('discharges/excel')
-  @Roles('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER')
+  @Permissions('reports:export')
   async exportDischargesExcel(
     @Query('locale') locale: 'en' | 'es' = 'es',
     @CurrentUser() user: AuthenticatedUser,

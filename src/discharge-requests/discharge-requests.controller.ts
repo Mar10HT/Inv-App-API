@@ -16,8 +16,8 @@ import { Throttle } from '@nestjs/throttler';
 import { DischargeRequestsService } from './discharge-requests.service';
 import { CreateDischargeRequestDto } from './dto/create-discharge-request.dto';
 import { FilterDischargeRequestDto } from './dto/filter-discharge-request.dto';
-import { JwtAuthGuard, RolesGuard } from '../auth/guards';
-import { Roles, CurrentUser } from '../auth/decorators';
+import { JwtAuthGuard, PermissionsGuard } from '../auth/guards';
+import { Permissions, CurrentUser } from '../auth/decorators';
 import { AuthenticatedUser } from '../auth/interfaces/auth-user.interface';
 
 @ApiTags('discharge-requests')
@@ -43,8 +43,8 @@ export class DischargeRequestsController {
   // ==================== Protected Endpoints ====================
 
   @Get()
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER')
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @Permissions('discharges:view')
   findAll(
     @Query(ValidationPipe) filters: FilterDischargeRequestDto,
     @CurrentUser() user: AuthenticatedUser,
@@ -53,29 +53,29 @@ export class DischargeRequestsController {
   }
 
   @Get('stats')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER')
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @Permissions('discharges:view')
   getStats(@CurrentUser() user: AuthenticatedUser) {
     return this.dischargeRequestsService.getStats(user.warehouseIds);
   }
 
   @Get('request-form-qr')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER')
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @Permissions('discharges:manage')
   getRequestFormQr() {
     return this.dischargeRequestsService.getRequestFormQr();
   }
 
   @Get(':id')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER')
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @Permissions('discharges:view')
   findOne(@Param('id') id: string) {
     return this.dischargeRequestsService.findOne(id);
   }
 
   @Patch(':id/complete')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER')
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @Permissions('discharges:manage')
   complete(
     @Param('id') id: string,
     @CurrentUser() user: AuthenticatedUser,
@@ -84,8 +84,8 @@ export class DischargeRequestsController {
   }
 
   @Patch(':id/reject')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER')
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @Permissions('discharges:manage')
   reject(
     @Param('id') id: string,
     @Body('reason') reason: string,

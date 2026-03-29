@@ -165,6 +165,7 @@ export class AuthService {
         name: storedToken.user.name,
         role: storedToken.user.role,
         warehouseIds,
+        permissionsVersion: storedToken.user.permissionsVersion,
       },
     };
   }
@@ -354,6 +355,7 @@ export class AuthService {
         name: user.name,
         role: user.role,
         warehouseIds,
+        permissionsVersion: user.permissionsVersion,
       },
     };
   }
