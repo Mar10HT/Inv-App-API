@@ -89,8 +89,22 @@ export class PermissionsService {
   }
 
   /**
+   * Clears cache entries for a pre-fetched list of user IDs.
+   * Prefer this over invalidateRoleCache — it avoids a DB query outside the
+   * transaction that updated the role, closing the race window where a
+   * concurrent request could be served stale permissions.
+   */
+  invalidateCacheForUsers(userIds: string[]): void {
+    for (const id of userIds) {
+      this.cache.delete(id);
+    }
+    this.logger.log(`Invalidated permission cache for ${userIds.length} users.`);
+  }
+
+  /**
+   * @deprecated Use invalidateCacheForUsers with pre-fetched IDs to avoid the
+   * race window between transaction commit and this query completing.
    * Clears cache entries for all users assigned to a given role.
-   * Call this after updating a role's permissions in RolesService.
    */
   async invalidateRoleCache(roleId: string): Promise<void> {
     const users = await this.prisma.user.findMany({
@@ -98,11 +112,7 @@ export class PermissionsService {
       select: { id: true },
     });
 
-    for (const user of users) {
-      this.cache.delete(user.id);
-    }
-
-    this.logger.log(`Invalidated permission cache for ${users.length} users in role ${roleId}.`);
+    this.invalidateCacheForUsers(users.map((u) => u.id));
   }
 
   // ── Private helpers ──────────────────────────────────────────────────────────

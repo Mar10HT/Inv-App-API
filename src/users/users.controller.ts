@@ -12,9 +12,17 @@ import {
   ValidationPipe,
   UseGuards,
 } from '@nestjs/common';
+import { IsArray, IsString, ArrayMaxSize } from 'class-validator';
 import { UsersService } from './users.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
+
+class AssignWarehousesDto {
+  @IsArray()
+  @IsString({ each: true })
+  @ArrayMaxSize(500)
+  warehouseIds: string[];
+}
 import { PaginationDto } from '../common/dto';
 import { JwtAuthGuard, PermissionsGuard } from '../auth/guards';
 import { Permissions, CurrentUser } from '../auth/decorators';
@@ -97,9 +105,9 @@ export class UsersController {
   @Permissions('users:edit')
   async assignWarehouses(
     @Param('id') id: string,
-    @Body('warehouseIds') warehouseIds: string[],
+    @Body(ValidationPipe) dto: AssignWarehousesDto,
   ) {
-    await this.warehouseAccessService.setUserWarehouses(id, warehouseIds);
+    await this.warehouseAccessService.setUserWarehouses(id, dto.warehouseIds);
     return this.warehouseAccessService.getUserWarehouses(id);
   }
 }

@@ -278,7 +278,7 @@ export class AuthController {
 
     return {
       resetUrl,
-      token,
+      ...(process.env.NODE_ENV !== 'production' ? { token } : {}),
       expiresAt,
     };
   }

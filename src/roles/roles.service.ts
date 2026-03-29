@@ -117,6 +117,8 @@ export class RolesService {
       await this.validatePermissionIds(dto.permissionIds);
     }
 
+    let affectedUserIds: string[] = [];
+
     await this.prisma.$transaction(async (tx) => {
       await tx.role.update({
         where: { id },
@@ -136,7 +138,15 @@ export class RolesService {
           });
         }
 
-        // Bump permissionsVersion for all users in this role
+        // Fetch affected user IDs inside the transaction so the list is consistent
+        // with the permission update; passing them to invalidateRoleCache avoids
+        // a second DB round-trip after the transaction closes.
+        const affectedUsers = await tx.user.findMany({
+          where: { roleId: id },
+          select: { id: true },
+        });
+        affectedUserIds = affectedUsers.map((u) => u.id);
+
         await tx.user.updateMany({
           where: { roleId: id },
           data: { permissionsVersion: { increment: 1 } },
@@ -144,9 +154,9 @@ export class RolesService {
       }
     });
 
-    // Invalidate in-memory permission cache for affected users
-    if (dto.permissionIds !== undefined) {
-      await this.permissionsService.invalidateRoleCache(id);
+    // Invalidate in-memory permission cache using the IDs captured inside the tx
+    if (affectedUserIds.length > 0) {
+      this.permissionsService.invalidateCacheForUsers(affectedUserIds);
     }
 
     return this.findOne(id);
@@ -177,15 +187,17 @@ export class RolesService {
    * exist in the database. Prevents a Prisma FK error from surfacing as 500.
    */
   private async validatePermissionIds(ids: string[]): Promise<void> {
-    // Deduplicate before counting to avoid a false negative when the caller
-    // passes the same ID more than once (count returns distinct matches).
+    // Deduplicate before checking to avoid false negatives on duplicate IDs.
     const uniqueIds = [...new Set(ids)];
-    const found = await this.prisma.permission.count({
+    const found = await this.prisma.permission.findMany({
       where: { id: { in: uniqueIds } },
+      select: { id: true },
     });
 
-    if (found !== uniqueIds.length) {
-      throw new BadRequestException('One or more permission IDs are invalid');
+    if (found.length !== uniqueIds.length) {
+      const foundSet = new Set(found.map((p) => p.id));
+      const invalid = uniqueIds.filter((id) => !foundSet.has(id));
+      throw new BadRequestException(`Invalid permission IDs: ${invalid.join(', ')}`);
     }
   }
 
