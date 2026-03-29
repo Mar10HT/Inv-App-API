@@ -245,23 +245,25 @@ export class AuthController {
 
   /**
    * Get users with pending (active) password reset tokens.
-   * SYSTEM_ADMIN only.
+   * Requires auth:admin — intentionally not assigned to any role.
+   * SYSTEM_ADMIN bypasses the check.
    */
   @Get('pending-resets')
   @UseGuards(JwtAuthGuard, PermissionsGuard)
-  @Permissions('users:view')
+  @Permissions('auth:admin')
   async getPendingResets() {
     return this.authService.getPendingResets();
   }
 
   /**
    * Generate a password reset link for a specific user.
-   * SYSTEM_ADMIN only.
+   * Requires auth:admin — intentionally not assigned to any role.
+   * SYSTEM_ADMIN bypasses the check.
    */
   @Post('admin/generate-reset-link/:userId')
   @HttpCode(HttpStatus.OK)
   @UseGuards(JwtAuthGuard, PermissionsGuard)
-  @Permissions('users:edit')
+  @Permissions('auth:admin')
   async generateResetLink(@Param('userId') userId: string) {
     // Verify user exists
     const user = await this.usersService.findOne(userId);
@@ -295,15 +297,15 @@ export class AuthController {
   /**
    * Returns the authenticated user's profile plus their current permissions.
    * Called on app init and polled every 60s to detect permission changes.
+   * Uses getPermissionsWithVersion to resolve both in a single DB round-trip.
    */
   @Get('me')
   @UseGuards(JwtAuthGuard)
   async getMe(@Request() req) {
     const userId: string = req.user.userId;
-    const [user, permissions, permissionsVersion] = await Promise.all([
+    const [user, { permissions, version: permissionsVersion }] = await Promise.all([
       this.authService.validateUser(userId),
-      this.permissionsService.getPermissionsForUser(userId),
-      this.permissionsService.getUserPermissionsVersion(userId),
+      this.permissionsService.getPermissionsWithVersion(userId),
     ]);
 
     return {

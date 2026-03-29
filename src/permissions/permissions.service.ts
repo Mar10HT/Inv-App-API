@@ -20,6 +20,7 @@ const CACHE_TTL_MS = 60_000; // 60 seconds
 
 interface CacheEntry {
   permissions: string[];
+  version: number;
   expiresAt: number;
 }
 
@@ -31,14 +32,22 @@ export class PermissionsService {
   constructor(private readonly prisma: PrismaService) {}
 
   /**
-   * Returns the full list of permission keys for a user.
-   * SYSTEM_ADMIN always returns ['*'] (bypass — never stored in DB).
-   * Result is cached for 60 seconds keyed by userId.
+   * Returns the resolved permission keys for a user.
+   * Cached for 60 s keyed by userId.
    */
   async getPermissionsForUser(userId: string): Promise<string[]> {
+    const { permissions } = await this.getPermissionsWithVersion(userId);
+    return permissions;
+  }
+
+  /**
+   * Returns both the permission keys and the current permissionsVersion in a
+   * single DB round-trip. Use this in GET /auth/me to avoid a second query.
+   */
+  async getPermissionsWithVersion(userId: string): Promise<{ permissions: string[]; version: number }> {
     const cached = this.cache.get(userId);
     if (cached && cached.expiresAt > Date.now()) {
-      return cached.permissions;
+      return { permissions: cached.permissions, version: cached.version };
     }
 
     const user = await this.prisma.user.findUnique({
@@ -50,15 +59,15 @@ export class PermissionsService {
       },
     });
 
-    if (!user) return [];
+    if (!user) return { permissions: [], version: 0 };
 
     if (!user.roleId) {
       this.logger.warn(`User ${userId} has no roleId assigned — returning empty permissions.`);
-      return this.setCache(userId, []);
+      return this.setCache(userId, [], user.permissionsVersion);
     }
 
     const permissions = await this.getPermissionsForRole(user.roleId);
-    return this.setCache(userId, permissions);
+    return this.setCache(userId, permissions, user.permissionsVersion);
   }
 
   /**
@@ -72,19 +81,6 @@ export class PermissionsService {
     });
 
     return rolePermissions.map((rp) => rp.permission.key);
-  }
-
-  /**
-   * Returns the current permissionsVersion for a user.
-   * Used by the frontend polling to detect permission changes.
-   */
-  async getUserPermissionsVersion(userId: string): Promise<number> {
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-      select: { permissionsVersion: true },
-    });
-
-    return user?.permissionsVersion ?? 0;
   }
 
   /** Clears the cache entry for a single user. */
@@ -111,8 +107,12 @@ export class PermissionsService {
 
   // ── Private helpers ──────────────────────────────────────────────────────────
 
-  private setCache(userId: string, permissions: string[]): string[] {
-    this.cache.set(userId, { permissions, expiresAt: Date.now() + CACHE_TTL_MS });
-    return permissions;
+  private setCache(
+    userId: string,
+    permissions: string[],
+    version: number,
+  ): { permissions: string[]; version: number } {
+    this.cache.set(userId, { permissions, version, expiresAt: Date.now() + CACHE_TTL_MS });
+    return { permissions, version };
   }
 }

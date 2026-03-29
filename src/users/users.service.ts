@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { EmailService } from '../email/email.service';
 import { CreateUserDto } from './dto/create-user.dto';
@@ -29,6 +29,11 @@ export class UsersService {
       const hashedPassword = await bcrypt.hash(createUserDto.password, 10);
 
       const { roleId, ...rest } = createUserDto;
+
+      if (roleId) {
+        const roleExists = await this.prisma.role.findUnique({ where: { id: roleId }, select: { id: true } });
+        if (!roleExists) throw new BadRequestException(`Role '${roleId}' not found`);
+      }
 
       const user = await this.prisma.user.create({
         data: {

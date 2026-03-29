@@ -30,6 +30,7 @@ export const PERMISSIONS = [
   // transactions
   { key: 'transactions:view',       module: 'transactions',  action: 'view',          description: 'View transactions' },
   { key: 'transactions:create',     module: 'transactions',  action: 'create',        description: 'Create transactions' },
+  { key: 'transactions:edit',       module: 'transactions',  action: 'edit',          description: 'Edit transactions' },
   // stocktake
   { key: 'stocktake:view',          module: 'stocktake',     action: 'view',          description: 'View stock takes' },
   { key: 'stocktake:create',        module: 'stocktake',     action: 'create',        description: 'Create stock takes' },
@@ -64,6 +65,8 @@ export const PERMISSIONS = [
   { key: 'settings:edit',           module: 'settings',      action: 'edit',          description: 'Edit system settings' },
   // dashboard
   { key: 'dashboard:view',          module: 'dashboard',     action: 'view',          description: 'View the main dashboard' },
+  // auth admin — intentionally not assigned to any role; SYSTEM_ADMIN bypasses the check
+  { key: 'auth:admin',              module: 'auth',          action: 'admin',         description: 'Perform privileged auth operations (password resets, admin links)' },
 ] as const;
 
 export type PermissionKey = (typeof PERMISSIONS)[number]['key'];
@@ -75,7 +78,7 @@ export const ROLE_PERMISSIONS: Record<string, PermissionKey[]> = {
     'warehouse:view', 'warehouse:create', 'warehouse:edit',
     'categories:view', 'categories:create', 'categories:edit', 'categories:delete',
     'suppliers:view', 'suppliers:create', 'suppliers:edit', 'suppliers:delete',
-    'transactions:view', 'transactions:create',
+    'transactions:view', 'transactions:create', 'transactions:edit',
     'stocktake:view', 'stocktake:create', 'stocktake:manage',
     'transfers:view', 'transfers:create', 'transfers:manage',
     'loans:view', 'loans:create', 'loans:manage',
@@ -90,7 +93,7 @@ export const ROLE_PERMISSIONS: Record<string, PermissionKey[]> = {
     'warehouse:view',
     'categories:view', 'categories:create', 'categories:edit',
     'suppliers:view', 'suppliers:create', 'suppliers:edit',
-    'transactions:view', 'transactions:create',
+    'transactions:view', 'transactions:create', 'transactions:edit',
     'stocktake:view', 'stocktake:create',
     'transfers:view', 'transfers:create',
     'loans:view', 'loans:create',

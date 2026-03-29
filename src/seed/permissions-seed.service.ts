@@ -69,15 +69,24 @@ export class PermissionsSeedService {
   // ── Step 3 ──────────────────────────────────────────────────────────────────
 
   private async syncRolePermissions(): Promise<void> {
+    // Bulk-load all roles and permissions once to avoid N+1 sequential queries.
+    const [allRoles, allPermissions] = await Promise.all([
+      this.prisma.role.findMany({ select: { id: true, name: true } }),
+      this.prisma.permission.findMany({ select: { id: true, key: true } }),
+    ]);
+
+    const roleByName = new Map(allRoles.map((r) => [r.name, r]));
+    const permByKey  = new Map(allPermissions.map((p) => [p.key, p]));
+
     for (const [roleName, permKeys] of Object.entries(ROLE_PERMISSIONS)) {
-      const role = await this.prisma.role.findUnique({ where: { name: roleName } });
+      const role = roleByName.get(roleName);
       if (!role) {
         this.logger.warn(`Role not found: ${roleName} — skipping permission sync.`);
         continue;
       }
 
       for (const key of permKeys) {
-        const permission = await this.prisma.permission.findUnique({ where: { key } });
+        const permission = permByKey.get(key);
         if (!permission) {
           this.logger.warn(`Permission not found: ${key} — skipping.`);
           continue;

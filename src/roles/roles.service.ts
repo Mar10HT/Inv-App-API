@@ -173,16 +173,24 @@ export class RolesService {
    * exist in the database. Prevents a Prisma FK error from surfacing as 500.
    */
   private async validatePermissionIds(ids: string[]): Promise<void> {
+    // Deduplicate before counting to avoid a false negative when the caller
+    // passes the same ID more than once (count returns distinct matches).
+    const uniqueIds = [...new Set(ids)];
     const found = await this.prisma.permission.count({
-      where: { id: { in: ids } },
+      where: { id: { in: uniqueIds } },
     });
 
-    if (found !== ids.length) {
+    if (found !== uniqueIds.length) {
       throw new BadRequestException('One or more permission IDs are invalid');
     }
   }
 
-  /** Returns all permissions grouped by module. */
+  /**
+   * Returns all permissions grouped by module.
+   * NOTE: reads from the in-memory PERMISSIONS constant, not the database.
+   * If a permission is added to the DB outside the seed, this response will
+   * not reflect it until the constant is updated and the app is restarted.
+   */
   getAllPermissions() {
     const grouped: Record<string, { key: string; action: string; description: string }[]> = {};
 
