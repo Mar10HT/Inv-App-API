@@ -32,6 +32,7 @@ import { SearchModule } from './common/search/search.module';
 import { DischargeRequestsModule } from './discharge-requests/discharge-requests.module';
 import { WarehouseAccessModule } from './common/warehouse-access/warehouse-access.module';
 import { WarehouseAccessInterceptor } from './common/warehouse-access/warehouse-access.interceptor';
+import { ScheduledReportsModule } from './scheduled-reports/scheduled-reports.module';
 
 @Module({
   imports: [
@@ -109,6 +110,7 @@ import { WarehouseAccessInterceptor } from './common/warehouse-access/warehouse-
     SearchModule,
     DischargeRequestsModule,
     WarehouseAccessModule,
+    ScheduledReportsModule,
   ],
   controllers: [AppController],
   providers: [

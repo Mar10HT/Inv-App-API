@@ -1,6 +1,7 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
+import { EventsService } from '../events/events.service';
 import { AlertType, InventoryStatus } from '@prisma/client';
 import { PaginationDto } from '../common/dto/pagination.dto';
 
@@ -8,7 +9,10 @@ import { PaginationDto } from '../common/dto/pagination.dto';
 export class AlertsService {
   private readonly logger = new Logger(AlertsService.name);
 
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private eventsService: EventsService,
+  ) {}
 
   // Run every 6 hours to check for low stock
   @Cron(CronExpression.EVERY_6_HOURS)
@@ -47,7 +51,7 @@ export class AlertsService {
             ? AlertType.OUT_OF_STOCK
             : AlertType.LOW_STOCK;
 
-          await this.prisma.stockAlert.create({
+          const newAlert = await this.prisma.stockAlert.create({
             data: {
               itemId: item.id,
               type: alertType,
@@ -56,6 +60,7 @@ export class AlertsService {
             },
           });
 
+          this.eventsService.emitAlertChange('created', newAlert.id, { type: alertType, itemName: item.name });
           alertsCreated++;
           this.logger.log(`Alert created for item ${item.name} (${item.id}): ${alertType}`);
         } else if (existingAlert.type !== AlertType.OUT_OF_STOCK && item.quantity === 0) {
@@ -125,6 +130,10 @@ export class AlertsService {
           resolvedAt: new Date(),
         },
       });
+
+      if (resolvedAlerts.count > 0) {
+        this.eventsService.emitAlertChange('bulk_updated', undefined, { resolved: resolvedAlerts.count });
+      }
 
       this.logger.log(`Low stock check complete. Created: ${alertsCreated}, Resolved: ${resolvedAlerts.count}`);
     } catch (error) {
@@ -267,14 +276,17 @@ export class AlertsService {
   }
 
   async resolve(id: string) {
-    const alert = await this.findOne(id);
+    await this.findOne(id);
 
-    return this.prisma.stockAlert.update({
+    const updated = await this.prisma.stockAlert.update({
       where: { id },
       data: {
         resolvedAt: new Date(),
       },
     });
+
+    this.eventsService.emitAlertChange('updated', id, { resolved: true });
+    return updated;
   }
 
   async getStats() {

@@ -54,6 +54,8 @@ model User {
   managedWarehouses   Warehouse[]     @relation("WarehouseManager")
   warehouseAccess     UserWarehouse[]
 
+  scheduledReports    ScheduledReport[]
+
   @@index([deletedAt])
   @@map("users")
 }
@@ -95,6 +97,8 @@ model Warehouse {
 
   // Discharge Request relations
   dischargeRequests       DischargeRequest[]
+
+  scheduledReports        ScheduledReport[]
 
   @@map("warehouses")
 }
@@ -576,6 +580,48 @@ enum DischargeRequestStatus {
   PENDING    // Created, awaiting resolution
   COMPLETED  // Approved and items delivered
   REJECTED   // Rejected by manager
+}
+
+// ============================================
+// Scheduled Reports
+// ============================================
+
+enum ReportType {
+  INVENTORY
+  LOW_STOCK
+  TRANSACTIONS
+  LOANS
+  TRANSFERS
+  STOCK_TAKES
+  DISCHARGES
+}
+
+enum ReportFrequency {
+  DAILY
+  WEEKLY
+  MONTHLY
+}
+
+model ScheduledReport {
+  id              String          @id @default(cuid())
+  userId          String
+  reportType      ReportType
+  frequency       ReportFrequency
+  recipientEmails String
+  warehouseId     String?
+  locale          String          @default("es")
+  isActive        Boolean         @default(true)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  lastSentAt      DateTime?
+  nextSendAt      DateTime
+  deletedAt       DateTime?
+
+  user      User       @relation(fields: [userId], references: [id])
+  warehouse Warehouse? @relation(fields: [warehouseId], references: [id])
+
+  @@index([isActive, nextSendAt])
+  @@map("scheduled_reports")
 }
 
 // Password reset tokens
