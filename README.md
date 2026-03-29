@@ -26,7 +26,8 @@ Handles authentication, stock operations, multi-warehouse logistics, and reporti
 - **Reports** — Excel and PDF export, inventory value and status analytics
 - **Audit Trail** — Full activity logging with user, action, and change tracking
 - **Stock Alerts** — Scheduled cron jobs for low stock and overdue loan notifications
-- **Security** — Rate limiting, input validation, Helmet headers, RBAC with 5 roles
+- **Permissions** — Granular RBAC: 46 permissions across 14 modules, 5 seeded roles, in-memory cache (60s TTL)
+- **Security** — Rate limiting, input validation, Helmet headers, CSRF protection
 
 ## Tech Stack
 
@@ -47,30 +48,38 @@ Handles authentication, stock operations, multi-warehouse logistics, and reporti
 ```bash
 npm install
 cp .env.example .env           # Configure environment
-npx prisma migrate dev         # Run migrations
-npm run seed                   # Seed sample data (optional)
+npx prisma db push             # Push schema to SQLite (dev)
+npm run prisma:generate        # Generate Prisma client
 npm run start:dev              # → http://localhost:3000
+# POST http://localhost:3000/api/seed  (seed admin + RBAC permissions)
 ```
+
+> **Note:** In dev (SQLite) use `prisma db push` + `prisma:generate`, not `prisma migrate dev` — SQLite has migration drift.
 
 Swagger documentation is available at [`/api/docs`](http://localhost:3000/api/docs).
 
 ## API Overview
 
+<!-- AUTO-GENERATED: counts from controller files -->
 | Module | Endpoints | Description |
 |--------|:---------:|-------------|
-| Auth | 6 | Login, register, logout, profile, password |
-| Inventory | 12 | CRUD, bulk operations, stats |
-| Warehouses | 5 | CRUD |
+| Auth | 13 | Login, register, logout, refresh, profile, password, `/auth/me` |
+| Inventory | 16 | CRUD, bulk import/update/delete, stats, Excel template |
+| Warehouses | 5 | CRUD + manager assignment |
 | Suppliers | 5 | CRUD |
 | Categories | 5 | CRUD |
-| Transactions | 6 | Stock movements |
-| Loans | 11 | Lending workflow |
-| Alerts | 9 | Stock alerts |
-| Reports | 5 | Excel/PDF export |
-| Transfers | 9 | Approval workflow |
-| Stock Take | 8 | Reconciliation |
+| Transactions | 5 | Stock movements |
+| Loans | 14 | Lending workflow, QR scan/confirm, overdue check |
+| Alerts | 10 | Stock alerts, resolve, trigger check |
+| Reports | 8 | Excel/PDF export per module |
+| Scheduled Reports | 5 | Cron-based report scheduling |
+| Transfers | 13 | Approval workflow, QR scan/confirm |
+| Discharge Requests | 8 | Public form + admin review |
+| Stock Take | 7 | Reconciliation, variance report |
 | Audit | 3 | Activity logs |
+| Seed | 2 | Admin + RBAC seed |
 | Health | 1 | Health check |
+<!-- END AUTO-GENERATED -->
 
 <details>
 <summary><b>Example requests</b></summary>

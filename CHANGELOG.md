@@ -6,6 +6,33 @@ This project uses [Semantic Versioning](https://semver.org/). Version `0.x.x` in
 
 ---
 
+## [0.5.0] - 2026-03-28
+
+### Added
+- **Granular RBAC system**: `Role`, `Permission`, `RolePermission` tables replace the flat `UserRole` enum for authorization
+- `src/common/constants/permissions.constant.ts` — 46 permissions across 14 modules as code source of truth
+- `PermissionsService` with 60-second in-memory cache (Map-based, no external dependency)
+- `@Permissions()` decorator + `PermissionsGuard` replacing `RolesGuard` across all controllers
+- `GET /auth/me` endpoint returning user profile + resolved permissions + `permissionsVersion`
+- `POST /seed/permissions` — dedicated idempotent RBAC seed endpoint
+- `permissionsVersion` field on `User` for frontend permission-change polling
+- `roleId` field on `User` and `UserWarehouse` for future per-warehouse role support
+- `PermissionsModule` exporting `PermissionsService`
+- New permissions: `alerts:manage`, `transactions:delete`, `loans:delete`
+- Admin auth endpoints: `GET /auth/pending-resets`, `POST /auth/admin/generate-reset-link/:userId`
+
+### Changed
+- All 14+ controllers migrated from `@Roles()` + `RolesGuard` to `@Permissions()` + `PermissionsGuard`
+- Login and refresh token responses now include `permissionsVersion`
+- `POST /seed` also runs RBAC seed (idempotent, safe to re-run)
+- `WAREHOUSE_MANAGER` role gains `alerts:manage` permission
+
+### Deprecated
+- `RolesGuard` — marked `@deprecated`, retained for backwards compatibility until Phase 7 cleanup
+- `@Roles()` decorator — marked `@deprecated`, use `@Permissions()` instead
+
+---
+
 ## [0.4.5] - 2026-01-19
 
 ### Security
