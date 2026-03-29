@@ -1,0 +1,753 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ER Diagram — Inv-App-API</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: #0d0d0d;
+      color: #e0e0e0;
+      min-height: 100vh;
+      font-size: 13px;
+    }
+
+    header {
+      padding: 20px 28px 14px;
+      border-bottom: 1px solid #1e1e1e;
+    }
+    header h1 { font-size: 1.1rem; font-weight: 600; color: #fff; }
+    header p  { font-size: 0.75rem; color: #555; margin-top: 3px; }
+
+    /* ── TABS ── */
+    .tabs {
+      display: flex;
+      background: #111;
+      border-bottom: 1px solid #1e1e1e;
+      padding: 0 28px;
+    }
+    .tab-btn {
+      padding: 12px 20px;
+      background: none;
+      border: none;
+      border-bottom: 2px solid transparent;
+      color: #555;
+      font-size: 0.8rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: color .15s;
+    }
+    .tab-btn:hover  { color: #aaa; }
+    .tab-btn.active { color: #4d7c6f; border-bottom-color: #4d7c6f; }
+
+    .tab-pane { display: none; padding: 24px 28px; }
+    .tab-pane.active { display: block; }
+
+    /* ── LEGEND ── */
+    .legend {
+      display: flex; gap: 20px; flex-wrap: wrap;
+      padding: 10px 14px;
+      background: #141414; border: 1px solid #1e1e1e; border-radius: 6px;
+      margin-bottom: 20px;
+    }
+    .leg { display: flex; align-items: center; gap: 7px; font-size: 0.72rem; color: #888; }
+    .dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+
+    /* ── ENTITY GRID ── */
+    .er-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+      gap: 12px;
+      margin-bottom: 28px;
+    }
+
+    .entity {
+      border: 1px solid #222;
+      border-radius: 6px;
+      overflow: hidden;
+      background: #111;
+    }
+    .entity.new        { border-color: #1a4a30; }
+    .entity.modified   { border-color: #3d3000; }
+    .entity.deprecated { border-color: #3d1515; opacity: .65; }
+
+    .entity-head {
+      padding: 7px 10px;
+      font-weight: 600;
+      font-size: 0.78rem;
+      background: #191919;
+      border-bottom: 1px solid #222;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: #ddd;
+    }
+    .entity.new      .entity-head { background: #0a1f16; color: #5ec98a; }
+    .entity.modified .entity-head { background: #1a1600; color: #d4a843; }
+
+    .entity-badge {
+      font-size: 0.65rem;
+      font-weight: 600;
+      padding: 1px 6px;
+      border-radius: 3px;
+      margin-left: auto;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+    }
+    .entity.new      .entity-badge { background: #1a4a30; color: #5ec98a; }
+    .entity.modified .entity-badge { background: #3d3000; color: #d4a843; }
+    .entity.deprecated .entity-badge { background: #3d1515; color: #e06060; }
+
+    .entity-fields { width: 100%; border-collapse: collapse; }
+    .entity-fields tr { border-bottom: 1px solid #1a1a1a; }
+    .entity-fields tr:last-child { border-bottom: none; }
+    .entity-fields td {
+      padding: 4px 10px;
+      font-size: 0.72rem;
+      color: #888;
+      white-space: nowrap;
+    }
+    .entity-fields td:first-child { /* key badge */
+      width: 28px;
+      font-weight: 700;
+      font-size: 0.62rem;
+      color: #4d7c6f;
+      padding-right: 4px;
+    }
+    .entity-fields td:nth-child(2) { /* field name */
+      color: #ccc;
+      font-weight: 500;
+    }
+    .entity-fields td:last-child { /* type */
+      color: #555;
+      font-size: 0.68rem;
+    }
+    .entity-fields tr.field-new td { background: #0d1f14; }
+    .entity-fields tr.field-new td:nth-child(2) { color: #5ec98a; }
+    .entity-fields tr.field-deprecated td { background: #1a0d0d; }
+    .entity-fields tr.field-deprecated td:nth-child(2) { color: #e06060; text-decoration: line-through; opacity: .7; }
+
+    /* ── RELATIONSHIPS TABLE ── */
+    .section-title {
+      font-size: 0.7rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      color: #555;
+      margin-bottom: 10px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid #1e1e1e;
+    }
+
+    .rel-table { width: 100%; border-collapse: collapse; }
+    .rel-table th {
+      text-align: left;
+      font-size: 0.68rem;
+      font-weight: 600;
+      color: #555;
+      padding: 6px 12px;
+      border-bottom: 1px solid #1e1e1e;
+      text-transform: uppercase;
+      letter-spacing: .05em;
+    }
+    .rel-table td {
+      padding: 5px 12px;
+      font-size: 0.73rem;
+      border-bottom: 1px solid #161616;
+      color: #999;
+    }
+    .rel-table td:first-child  { color: #7ab8ae; font-weight: 500; }
+    .rel-table td:nth-child(3) { color: #7ab8ae; font-weight: 500; }
+    .rel-table td:nth-child(2) { /* cardinality */
+      color: #555;
+      font-family: 'Consolas', monospace;
+      font-size: 0.68rem;
+    }
+    .rel-table tr.rel-new td { background: #0d1a12; }
+    .rel-table tr.rel-new td:first-child,
+    .rel-table tr.rel-new td:nth-child(3) { color: #5ec98a; }
+
+    /* ── DIFF CARDS ── */
+    .diff-section { margin-bottom: 24px; }
+    .diff-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; }
+    .diff-card {
+      padding: 12px 14px; border-radius: 6px; font-size: 0.76rem; border: 1px solid;
+    }
+    .diff-card.new        { background: #0a1f16; border-color: #1a4a30; color: #5ec98a; }
+    .diff-card.modified   { background: #1a1600; border-color: #3d3000; color: #d4a843; }
+    .diff-card.deprecated { background: #1a0a0a; border-color: #3d1515; color: #e06060; }
+    .diff-card strong { display: block; margin-bottom: 6px; font-size: 0.8rem; }
+    .diff-card ul { list-style: none; padding-left: 6px; opacity: .85; }
+    .diff-card ul li { margin-bottom: 2px; }
+    .diff-card ul li::before { content: '+ '; opacity: .5; }
+    .diff-card.deprecated ul li::before { content: '- '; }
+    .diff-card.modified   ul li::before { content: '~ '; }
+
+    code {
+      font-family: 'Consolas', monospace;
+      font-size: .9em;
+      background: #1a1a1a;
+      padding: 1px 4px;
+      border-radius: 3px;
+      color: #9ecfca;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>Inv-App-API — Diagrama Entidad-Relación</h1>
+  <p>Schema actual vs. schema post-refactor RBAC</p>
+</header>
+
+<div class="tabs">
+  <button class="tab-btn active" onclick="show('current',this)">Schema Actual</button>
+  <button class="tab-btn"        onclick="show('future', this)">Schema Post-RBAC</button>
+  <button class="tab-btn"        onclick="show('diff',   this)">Resumen de Cambios</button>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════
+     TAB: CURRENT
+═══════════════════════════════════════════════════════════ -->
+<div id="pane-current" class="tab-pane active">
+
+  <div class="legend">
+    <div class="leg"><div class="dot" style="background:#4d7c6f"></div>Auth &amp; Usuarios</div>
+    <div class="leg"><div class="dot" style="background:#5b8dd9"></div>Inventario</div>
+    <div class="leg"><div class="dot" style="background:#c97c3a"></div>Operaciones</div>
+    <div class="leg"><div class="dot" style="background:#9b59b6"></div>Seguridad &amp; Tokens</div>
+  </div>
+
+  <!-- ── Auth & Usuarios ── -->
+  <div class="section-title" style="margin-bottom:10px">Auth &amp; Usuarios</div>
+  <div class="er-grid" style="margin-bottom:20px">
+
+    <div class="entity">
+      <div class="entity-head" style="color:#7ab8ae">User</div>
+      <table class="entity-fields">
+        <tr><td>PK</td><td>id</td><td>string</td></tr>
+        <tr><td></td><td>email</td><td>string unique</td></tr>
+        <tr><td></td><td>password</td><td>string</td></tr>
+        <tr><td></td><td>name</td><td>string?</td></tr>
+        <tr><td></td><td>role</td><td>enum UserRole</td></tr>
+        <tr><td></td><td>emailNotifications</td><td>boolean</td></tr>
+        <tr><td></td><td>lowStockAlerts</td><td>boolean</td></tr>
+        <tr><td></td><td>createdAt / updatedAt</td><td>datetime</td></tr>
+        <tr><td></td><td>deletedAt</td><td>datetime?</td></tr>
+      </table>
+    </div>
+
+    <div class="entity">
+      <div class="entity-head" style="color:#7ab8ae">Warehouse</div>
+      <table class="entity-fields">
+        <tr><td>PK</td><td>id</td><td>string</td></tr>
+        <tr><td></td><td>name</td><td>string</td></tr>
+        <tr><td></td><td>location</td><td>string</td></tr>
+        <tr><td></td><td>description</td><td>string?</td></tr>
+        <tr><td></td><td>isActive</td><td>boolean</td></tr>
+        <tr><td>FK</td><td>managerId</td><td>string? → User</td></tr>
+        <tr><td></td><td>createdAt / updatedAt</td><td>datetime</td></tr>
+      </table>
+    </div>
+
+    <div class="entity">
+      <div class="entity-head" style="color:#7ab8ae">UserWarehouse</div>
+      <table class="entity-fields">
+        <tr><td>PK</td><td>id</td><td>string</td></tr>
+        <tr><td>FK</td><td>userId</td><td>string → User</td></tr>
+        <tr><td>FK</td><td>warehouseId</td><td>string → Warehouse</td></tr>
+        <tr><td></td><td>createdAt</td><td>datetime</td></tr>
+      </table>
+    </div>
+
+    <div class="entity">
+      <div class="entity-head" style="color:#7ab8ae">RefreshToken</div>
+      <table class="entity-fields">
+        <tr><td>PK</td><td>id</td><td>string</td></tr>
+        <tr><td></td><td>token</td><td>string unique</td></tr>
+        <tr><td>FK</td><td>userId</td><td>string → User</td></tr>
+        <tr><td></td><td>revoked</td><td>boolean</td></tr>
+        <tr><td></td><td>expiresAt</td><td>datetime</td></tr>
+        <tr><td></td><td>createdAt</td><td>datetime</td></tr>
+      </table>
+    </div>
+
+    <div class="entity">
+      <div class="entity-head" style="color:#7ab8ae">PasswordResetToken</div>
+      <table class="entity-fields">
+        <tr><td>PK</td><td>id</td><td>string</td></tr>
+        <tr><td></td><td>token</td><td>string unique</td></tr>
+        <tr><td>FK</td><td>userId</td><td>string → User</td></tr>
+        <tr><td></td><td>used</td><td>boolean</td></tr>
+        <tr><td></td><td>expiresAt</td><td>datetime</td></tr>
+      </table>
+    </div>
+
+    <div class="entity">
+      <div class="entity-head" style="color:#7ab8ae">LoginAttempt</div>
+      <table class="entity-fields">
+        <tr><td>PK</td><td>id</td><td>string</td></tr>
+        <tr><td></td><td>email</td><td>string</td></tr>
+        <tr><td></td><td>ip</td><td>string</td></tr>
+        <tr><td></td><td>success</td><td>boolean</td></tr>
+        <tr><td></td><td>createdAt</td><td>datetime</td></tr>
+      </table>
+    </div>
+
+  </div>
+
+  <!-- ── Inventario ── -->
+  <div class="section-title" style="margin-bottom:10px">Inventario</div>
+  <div class="er-grid" style="margin-bottom:20px">
+
+    <div class="entity">
+      <div class="entity-head" style="color:#7aabde">InventoryItem</div>
+      <table class="entity-fields">
+        <tr><td>PK</td><td>id</td><td>string</td></tr>
+        <tr><td></td><td>name</td><td>string</td></tr>
+        <tr><td></td><td>quantity / minQuantity</td><td>int</td></tr>
+        <tr><td></td><td>category (legacy)</td><td>string</td></tr>
+        <tr><td>FK</td><td>categoryId</td><td>string? → Category</td></tr>
+        <tr><td></td><td>status</td><td>enum InventoryStatus</td></tr>
+        <tr><td></td><td>price</td><td>float?</td></tr>
+        <tr><td></td><td>currency</td><td>enum USD|HNL</td></tr>
+        <tr><td></td><td>sku</td><td>string? unique</td></tr>
+        <tr><td></td><td>itemType</td><td>enum UNIQUE|BULK</td></tr>
+        <tr><td></td><td>serviceTag / serialNumber</td><td>string?</td></tr>
+        <tr><td>FK</td><td>warehouseId</td><td>string → Warehouse</td></tr>
+        <tr><td>FK</td><td>supplierId</td><td>string? → Supplier</td></tr>
+        <tr><td>FK</td><td>assignedToUserId</td><td>string? → User</td></tr>
+        <tr><td>FK</td><td>createdById</td><td>string? → User</td></tr>
+        <tr><td></td><td>expirationDate</td><td>datetime?</td></tr>
+        <tr><td></td><td>deletedAt</td><td>datetime?</td></tr>
+      </table>
+    </div>
+
+    <div class="entity">
+      <div class="entity-head" style="color:#7aabde">Category</div>
+      <table class="entity-fields">
+        <tr><td>PK</td><td>id</td><td>string</td></tr>
+        <tr><td></td><td>name</td><td>string unique</td></tr>
+        <tr><td></td><td>description</td><td>string?</td></tr>
+        <tr><td></td><td>color</td><td>string?</td></tr>
+      </table>
+    </div>
+
+    <div class="entity">
+      <div class="entity-head" style="color:#7aabde">Supplier</div>
+      <table class="entity-fields">
+        <tr><td>PK</td><td>id</td><td>string</td></tr>
+        <tr><td></td><td>name</td><td>string</td></tr>
+        <tr><td></td><td>location</td><td>string</td></tr>
+        <tr><td></td><td>phone / email</td><td>string?</td></tr>
+      </table>
+    </div>
+
+    <div class="entity">
+      <div class="entity-head" style="color:#7aabde">StockAlert</div>
+      <table class="entity-fields">
+        <tr><td>PK</td><td>id</td><td>string</td></tr>
+        <tr><td>FK</td><td>itemId</td><td>string → InventoryItem</td></tr>
+        <tr><td></td><td>type</td><td>LOW_STOCK | OUT_OF_STOCK | EXPIRING_SOON</td></tr>
+        <tr><td></td><td>threshold / currentQty</td><td>int</td></tr>
+        <tr><td></td><td>notified</td><td>boolean</td></tr>
+        <tr><td></td><td>notifiedAt / resolvedAt</td><td>datetime?</td></tr>
+      </table>
+    </div>
+
+  </div>
+
+  <!-- ── Operaciones ── -->
+  <div class="section-title" style="margin-bottom:10px">Operaciones</div>
+  <div class="er-grid" style="margin-bottom:20px">
+
+    <div class="entity">
+      <div class="entity-head" style="color:#c89060">AuditLog</div>
+      <table class="entity-fields">
+        <tr><td>PK</td><td>id</td><td>string</td></tr>
+        <tr><td></td><td>action</td><td>string</td></tr>
+        <tr><td></td><td>entity / entityId</td><td>string</td></tr>
+        <tr><td></td><td>changes</td><td>json?</td></tr>
+        <tr><td>FK</td><td>userId</td><td>string? → User</td></tr>
+        <tr><td>FK</td><td>itemId</td><td>string? → InventoryItem</td></tr>
+        <tr><td></td><td>createdAt</td><td>datetime</td></tr>
+      </table>
+    </div>
+
+    <div class="entity">
+      <div class="entity-head" style="color:#c89060">Transaction</div>
+      <table class="entity-fields">
+        <tr><td>PK</td><td>id</td><td>string</td></tr>
+        <tr><td></td><td>type</td><td>TRANSFER | IN | OUT</td></tr>
+        <tr><td>FK</td><td>sourceWarehouseId</td><td>string? → Warehouse</td></tr>
+        <tr><td>FK</td><td>destinationWarehouseId</td><td>string? → Warehouse</td></tr>
+        <tr><td>FK</td><td>userId</td><td>string → User</td></tr>
+        <tr><td></td><td>date / notes</td><td>datetime / string?</td></tr>
+      </table>
+    </div>
+
+    <div class="entity">
+      <div class="entity-head" style="color:#c89060">TransactionItem</div>
+      <table class="entity-fields">
+        <tr><td>PK</td><td>id</td><td>string</td></tr>
+        <tr><td>FK</td><td>transactionId</td><td>string → Transaction</td></tr>
+        <tr><td>FK</td><td>inventoryItemId</td><td>string → InventoryItem</td></tr>
+        <tr><td></td><td>quantity</td><td>int</td></tr>
+        <tr><td></td><td>notes</td><td>string?</td></tr>
+      </table>
+    </div>
+
+    <div class="entity">
+      <div class="entity-head" style="color:#c89060">Loan</div>
+      <table class="entity-fields">
+        <tr><td>PK</td><td>id</td><td>string</td></tr>
+        <tr><td>FK</td><td>inventoryItemId</td><td>string → InventoryItem</td></tr>
+        <tr><td></td><td>quantity</td><td>int</td></tr>
+        <tr><td>FK</td><td>sourceWarehouseId</td><td>string → Warehouse</td></tr>
+        <tr><td>FK</td><td>destinationWarehouseId</td><td>string → Warehouse</td></tr>
+        <tr><td></td><td>status</td><td>enum LoanStatus</td></tr>
+        <tr><td></td><td>dueDate / returnDate</td><td>datetime</td></tr>
+        <tr><td>FK</td><td>createdById</td><td>string → User</td></tr>
+        <tr><td>FK</td><td>receivedById</td><td>string? → User</td></tr>
+        <tr><td>FK</td><td>returnConfirmedById</td><td>string? → User</td></tr>
+        <tr><td></td><td>sendQrCode / returnQrCode</td><td>string? unique</td></tr>
+      </table>
+    </div>
+
+    <div class="entity">
+      <div class="entity-head" style="color:#c89060">TransferRequest</div>
+      <table class="entity-fields">
+        <tr><td>PK</td><td>id</td><td>string</td></tr>
+        <tr><td></td><td>status</td><td>enum RequestStatus</td></tr>
+        <tr><td>FK</td><td>sourceWarehouseId</td><td>string → Warehouse</td></tr>
+        <tr><td>FK</td><td>destinationWarehouseId</td><td>string → Warehouse</td></tr>
+        <tr><td>FK</td><td>requestedById</td><td>string → User</td></tr>
+        <tr><td>FK</td><td>approvedById</td><td>string? → User</td></tr>
+        <tr><td>FK</td><td>receivedById</td><td>string? → User</td></tr>
+        <tr><td></td><td>sendQrCode</td><td>string? unique</td></tr>
+      </table>
+    </div>
+
+    <div class="entity">
+      <div class="entity-head" style="color:#c89060">TransferRequestItem</div>
+      <table class="entity-fields">
+        <tr><td>PK</td><td>id</td><td>string</td></tr>
+        <tr><td>FK</td><td>transferRequestId</td><td>string → TransferRequest</td></tr>
+        <tr><td>FK</td><td>inventoryItemId</td><td>string → InventoryItem</td></tr>
+        <tr><td></td><td>quantity</td><td>int</td></tr>
+      </table>
+    </div>
+
+    <div class="entity">
+      <div class="entity-head" style="color:#c89060">StockTake</div>
+      <table class="entity-fields">
+        <tr><td>PK</td><td>id</td><td>string</td></tr>
+        <tr><td>FK</td><td>warehouseId</td><td>string → Warehouse</td></tr>
+        <tr><td></td><td>status</td><td>IN_PROGRESS | COMPLETED | CANCELLED</td></tr>
+        <tr><td>FK</td><td>startedById</td><td>string → User</td></tr>
+        <tr><td>FK</td><td>completedById</td><td>string? → User</td></tr>
+        <tr><td></td><td>startedAt / completedAt</td><td>datetime</td></tr>
+      </table>
+    </div>
+
+    <div class="entity">
+      <div class="entity-head" style="color:#c89060">StockTakeItem</div>
+      <table class="entity-fields">
+        <tr><td>PK</td><td>id</td><td>string</td></tr>
+        <tr><td>FK</td><td>stockTakeId</td><td>string → StockTake</td></tr>
+        <tr><td>FK</td><td>itemId</td><td>string → InventoryItem</td></tr>
+        <tr><td></td><td>expectedQty</td><td>int</td></tr>
+        <tr><td></td><td>countedQty / variance</td><td>int?</td></tr>
+      </table>
+    </div>
+
+    <div class="entity">
+      <div class="entity-head" style="color:#c89060">DischargeRequest</div>
+      <table class="entity-fields">
+        <tr><td>PK</td><td>id</td><td>string</td></tr>
+        <tr><td></td><td>requesterName</td><td>string</td></tr>
+        <tr><td></td><td>requesterPosition</td><td>string?</td></tr>
+        <tr><td>FK</td><td>warehouseId</td><td>string → Warehouse</td></tr>
+        <tr><td></td><td>status</td><td>PENDING | COMPLETED | REJECTED</td></tr>
+        <tr><td>FK</td><td>resolvedById</td><td>string? → User</td></tr>
+        <tr><td></td><td>neededByDate / resolvedAt</td><td>datetime?</td></tr>
+      </table>
+    </div>
+
+    <div class="entity">
+      <div class="entity-head" style="color:#c89060">DischargeRequestItem</div>
+      <table class="entity-fields">
+        <tr><td>PK</td><td>id</td><td>string</td></tr>
+        <tr><td>FK</td><td>dischargeRequestId</td><td>string → DischargeRequest</td></tr>
+        <tr><td>FK</td><td>inventoryItemId</td><td>string → InventoryItem</td></tr>
+        <tr><td></td><td>quantity</td><td>int</td></tr>
+      </table>
+    </div>
+
+    <div class="entity">
+      <div class="entity-head" style="color:#c89060">ScheduledReport</div>
+      <table class="entity-fields">
+        <tr><td>PK</td><td>id</td><td>string</td></tr>
+        <tr><td>FK</td><td>userId</td><td>string → User</td></tr>
+        <tr><td></td><td>reportType</td><td>enum ReportType</td></tr>
+        <tr><td></td><td>frequency</td><td>DAILY | WEEKLY | MONTHLY</td></tr>
+        <tr><td></td><td>recipientEmails</td><td>string</td></tr>
+        <tr><td>FK</td><td>warehouseId</td><td>string? → Warehouse</td></tr>
+        <tr><td></td><td>isActive / nextSendAt</td><td>boolean / datetime</td></tr>
+      </table>
+    </div>
+
+  </div>
+
+  <!-- ── Relaciones ── -->
+  <div class="section-title" style="margin-bottom:10px">Relaciones</div>
+  <table class="rel-table">
+    <thead><tr><th>Desde</th><th>Cardinalidad</th><th>Hacia</th><th>Descripción</th></tr></thead>
+    <tbody>
+      <tr><td>User</td><td>1 → N</td><td>UserWarehouse</td><td>accede a almacenes</td></tr>
+      <tr><td>Warehouse</td><td>1 → N</td><td>UserWarehouse</td><td>tiene usuarios con acceso</td></tr>
+      <tr><td>User</td><td>0..1 → N</td><td>Warehouse</td><td>administra (managerId)</td></tr>
+      <tr><td>InventoryItem</td><td>N → 0..1</td><td>Category</td><td>pertenece a categoría</td></tr>
+      <tr><td>InventoryItem</td><td>N → 0..1</td><td>Supplier</td><td>viene de proveedor</td></tr>
+      <tr><td>InventoryItem</td><td>N → 1</td><td>Warehouse</td><td>está en almacén</td></tr>
+      <tr><td>InventoryItem</td><td>N → 0..1</td><td>User</td><td>asignado a usuario</td></tr>
+      <tr><td>InventoryItem</td><td>1 → N</td><td>StockAlert</td><td>genera alertas</td></tr>
+      <tr><td>AuditLog</td><td>N → 0..1</td><td>User</td><td>realizada por usuario</td></tr>
+      <tr><td>AuditLog</td><td>N → 0..1</td><td>InventoryItem</td><td>sobre ítem</td></tr>
+      <tr><td>Transaction</td><td>1 → N</td><td>TransactionItem</td><td>contiene ítems</td></tr>
+      <tr><td>Loan</td><td>N → 1</td><td>InventoryItem</td><td>presta ítem</td></tr>
+      <tr><td>TransferRequest</td><td>1 → N</td><td>TransferRequestItem</td><td>contiene ítems</td></tr>
+      <tr><td>StockTake</td><td>1 → N</td><td>StockTakeItem</td><td>registra ítems</td></tr>
+      <tr><td>DischargeRequest</td><td>1 → N</td><td>DischargeRequestItem</td><td>contiene ítems</td></tr>
+      <tr><td>User</td><td>1 → N</td><td>RefreshToken</td><td>tokens de sesión</td></tr>
+      <tr><td>User</td><td>1 → N</td><td>PasswordResetToken</td><td>tokens de reset</td></tr>
+      <tr><td>User</td><td>1 → N</td><td>ScheduledReport</td><td>reportes programados</td></tr>
+    </tbody>
+  </table>
+
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════
+     TAB: FUTURE
+═══════════════════════════════════════════════════════════ -->
+<div id="pane-future" class="tab-pane">
+
+  <div class="legend">
+    <div class="leg"><div class="dot" style="background:#5ec98a"></div>Tabla nueva (RBAC)</div>
+    <div class="leg"><div class="dot" style="background:#d4a843"></div>Tabla modificada</div>
+    <div class="leg"><div class="dot" style="background:#4d7c6f"></div>Sin cambios</div>
+    <div class="leg"><div class="dot" style="background:#e06060; opacity:.6"></div>Deprecado (Fase 7)</div>
+  </div>
+
+  <!-- ── Nuevas tablas RBAC ── -->
+  <div class="section-title" style="margin-bottom:10px">Nuevas tablas — RBAC</div>
+  <div class="er-grid" style="margin-bottom:20px">
+
+    <div class="entity new">
+      <div class="entity-head">Role <span class="entity-badge">nuevo</span></div>
+      <table class="entity-fields">
+        <tr><td>PK</td><td>id</td><td>string</td></tr>
+        <tr><td></td><td>name</td><td>string unique</td></tr>
+        <tr><td></td><td>displayName</td><td>string</td></tr>
+        <tr><td></td><td>description</td><td>string?</td></tr>
+        <tr><td></td><td>isSystem</td><td>boolean</td></tr>
+        <tr><td></td><td>createdAt / updatedAt</td><td>datetime</td></tr>
+      </table>
+    </div>
+
+    <div class="entity new">
+      <div class="entity-head">Permission <span class="entity-badge">nuevo</span></div>
+      <table class="entity-fields">
+        <tr><td>PK</td><td>id</td><td>string</td></tr>
+        <tr><td></td><td>key</td><td>string unique (modulo:accion)</td></tr>
+        <tr><td></td><td>module</td><td>string</td></tr>
+        <tr><td></td><td>action</td><td>string</td></tr>
+        <tr><td></td><td>description</td><td>string?</td></tr>
+      </table>
+    </div>
+
+    <div class="entity new">
+      <div class="entity-head">RolePermission <span class="entity-badge">nuevo</span></div>
+      <table class="entity-fields">
+        <tr><td>PK</td><td>id</td><td>string</td></tr>
+        <tr><td>FK</td><td>roleId</td><td>string → Role</td></tr>
+        <tr><td>FK</td><td>permissionId</td><td>string → Permission</td></tr>
+        <tr><td></td><td colspan="2">unique(roleId, permissionId)</td></tr>
+      </table>
+    </div>
+
+  </div>
+
+  <!-- ── Tablas modificadas ── -->
+  <div class="section-title" style="margin-bottom:10px">Tablas modificadas</div>
+  <div class="er-grid" style="margin-bottom:20px">
+
+    <div class="entity modified">
+      <div class="entity-head">User <span class="entity-badge">modificado</span></div>
+      <table class="entity-fields">
+        <tr><td>PK</td><td>id</td><td>string</td></tr>
+        <tr><td></td><td>email</td><td>string unique</td></tr>
+        <tr><td></td><td>password</td><td>string</td></tr>
+        <tr><td></td><td>name</td><td>string?</td></tr>
+        <tr class="field-deprecated"><td></td><td>role</td><td>enum UserRole (Fase 7)</td></tr>
+        <tr class="field-new"><td>FK</td><td>roleId</td><td>string? → Role</td></tr>
+        <tr class="field-new"><td></td><td>permissionsVersion</td><td>int default 0</td></tr>
+        <tr><td></td><td>emailNotifications</td><td>boolean</td></tr>
+        <tr><td></td><td>lowStockAlerts</td><td>boolean</td></tr>
+        <tr><td></td><td>createdAt / updatedAt</td><td>datetime</td></tr>
+        <tr><td></td><td>deletedAt</td><td>datetime?</td></tr>
+      </table>
+    </div>
+
+    <div class="entity modified">
+      <div class="entity-head">UserWarehouse <span class="entity-badge">modificado</span></div>
+      <table class="entity-fields">
+        <tr><td>PK</td><td>id</td><td>string</td></tr>
+        <tr><td>FK</td><td>userId</td><td>string → User</td></tr>
+        <tr><td>FK</td><td>warehouseId</td><td>string → Warehouse</td></tr>
+        <tr class="field-new"><td>FK</td><td>roleId</td><td>string? → Role (futuro)</td></tr>
+        <tr><td></td><td>createdAt</td><td>datetime</td></tr>
+      </table>
+    </div>
+
+  </div>
+
+  <!-- ── Sin cambios (resumen) ── -->
+  <div class="section-title" style="margin-bottom:10px">Sin cambios</div>
+  <div class="er-grid" style="margin-bottom:20px">
+    <div class="entity"><div class="entity-head" style="color:#666">Warehouse</div></div>
+    <div class="entity"><div class="entity-head" style="color:#666">InventoryItem</div></div>
+    <div class="entity"><div class="entity-head" style="color:#666">Category</div></div>
+    <div class="entity"><div class="entity-head" style="color:#666">Supplier</div></div>
+    <div class="entity"><div class="entity-head" style="color:#666">AuditLog</div></div>
+    <div class="entity"><div class="entity-head" style="color:#666">Transaction / TransactionItem</div></div>
+    <div class="entity"><div class="entity-head" style="color:#666">Loan</div></div>
+    <div class="entity"><div class="entity-head" style="color:#666">TransferRequest / Item</div></div>
+    <div class="entity"><div class="entity-head" style="color:#666">StockTake / Item</div></div>
+    <div class="entity"><div class="entity-head" style="color:#666">DischargeRequest / Item</div></div>
+    <div class="entity"><div class="entity-head" style="color:#666">StockAlert</div></div>
+    <div class="entity"><div class="entity-head" style="color:#666">ScheduledReport</div></div>
+    <div class="entity"><div class="entity-head" style="color:#666">RefreshToken / PasswordResetToken</div></div>
+    <div class="entity"><div class="entity-head" style="color:#666">LoginAttempt</div></div>
+  </div>
+
+  <!-- ── Relaciones nuevas RBAC ── -->
+  <div class="section-title" style="margin-bottom:10px">Relaciones nuevas</div>
+  <table class="rel-table" style="margin-bottom:20px">
+    <thead><tr><th>Desde</th><th>Cardinalidad</th><th>Hacia</th><th>Descripción</th></tr></thead>
+    <tbody>
+      <tr class="rel-new"><td>Role</td><td>1 → N</td><td>RolePermission</td><td>tiene permisos asignados</td></tr>
+      <tr class="rel-new"><td>Permission</td><td>1 → N</td><td>RolePermission</td><td>aparece en roles</td></tr>
+      <tr class="rel-new"><td>Role</td><td>1 → N</td><td>User</td><td>asignado a usuarios (roleId)</td></tr>
+      <tr class="rel-new"><td>Role</td><td>1 → N</td><td>UserWarehouse</td><td>rol por almacén (futuro)</td></tr>
+    </tbody>
+  </table>
+
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════
+     TAB: DIFF
+═══════════════════════════════════════════════════════════ -->
+<div id="pane-diff" class="tab-pane">
+
+  <div class="diff-section">
+    <div class="section-title" style="margin-bottom:12px">Tablas nuevas</div>
+    <div class="diff-grid">
+      <div class="diff-card new">
+        <strong>Role</strong>
+        <ul>
+          <li>id, name (unique), displayName, description</li>
+          <li>isSystem — no se puede eliminar desde UI</li>
+          <li>5 roles iniciales migrados del enum</li>
+        </ul>
+      </div>
+      <div class="diff-card new">
+        <strong>Permission</strong>
+        <ul>
+          <li>id, key (unique), module, action, description</li>
+          <li>Formato key: <code>modulo:accion</code></li>
+          <li>63 permisos — seeded, no editables desde UI</li>
+        </ul>
+      </div>
+      <div class="diff-card new">
+        <strong>RolePermission</strong>
+        <ul>
+          <li>Tabla de unión M:N entre Role y Permission</li>
+          <li>unique(roleId, permissionId)</li>
+          <li>Invalida cache al modificar</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="diff-section">
+    <div class="section-title" style="margin-bottom:12px">Campos nuevos en tablas existentes</div>
+    <div class="diff-grid">
+      <div class="diff-card modified">
+        <strong>User</strong>
+        <ul>
+          <li>roleId String? FK → Role</li>
+          <li>permissionsVersion Int @default(0)</li>
+        </ul>
+      </div>
+      <div class="diff-card modified">
+        <strong>UserWarehouse</strong>
+        <ul>
+          <li>roleId String? FK → Role (multi-rol futuro)</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="diff-section">
+    <div class="section-title" style="margin-bottom:12px">Eliminado en Fase 7 (post-estabilización)</div>
+    <div class="diff-grid">
+      <div class="diff-card deprecated">
+        <strong>Enum UserRole</strong>
+        <ul>
+          <li>SYSTEM_ADMIN, WAREHOUSE_MANAGER, USER, VIEWER, EXTERNAL</li>
+          <li>Reemplazado por tabla Role</li>
+        </ul>
+      </div>
+      <div class="diff-card deprecated">
+        <strong>User.role (campo)</strong>
+        <ul>
+          <li>Se elimina cuando todos los usuarios tengan roleId</li>
+          <li>Requiere migración completa de datos</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="diff-section">
+    <div class="section-title" style="margin-bottom:12px">Roles iniciales (migrados del enum)</div>
+    <div class="diff-grid">
+      <div class="diff-card new" style="grid-column: 1 / -1; max-width: 600px">
+        <strong>5 roles isSystem — no eliminables desde UI</strong>
+        <ul>
+          <li>SYSTEM_ADMIN → "Administrador del Sistema" — bypass implícito</li>
+          <li>WAREHOUSE_MANAGER → "Gerente de Almacén"</li>
+          <li>USER → "Operador"</li>
+          <li>VIEWER → "Observador"</li>
+          <li>EXTERNAL → "Externo" — solo inventory:view_assigned + alerts:view</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  function show(name, btn) {
+    document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.getElementById('pane-' + name).classList.add('active');
+    btn.classList.add('active');
+  }
+</script>
+
+</body>
+</html>
