@@ -78,6 +78,10 @@ export class RolesService {
     const existing = await this.prisma.role.findUnique({ where: { name: dto.name } });
     if (existing) throw new ConflictException(`Role name '${dto.name}' is already taken`);
 
+    if (dto.permissionIds?.length) {
+      await this.validatePermissionIds(dto.permissionIds);
+    }
+
     const role = await this.prisma.role.create({
       data: {
         name: dto.name,
@@ -92,6 +96,10 @@ export class RolesService {
             }
           : {}),
       },
+    }).catch((err: { code?: string }) => {
+      // Guard against a race-condition duplicate (P2002 unique constraint)
+      if (err.code === 'P2002') throw new ConflictException(`Role name '${dto.name}' is already taken`);
+      throw err;
     });
 
     return this.findOne(role.id);
@@ -100,6 +108,10 @@ export class RolesService {
   async update(id: string, dto: UpdateRoleDto) {
     const role = await this.prisma.role.findUnique({ where: { id } });
     if (!role) throw new NotFoundException('Role not found');
+
+    if (dto.permissionIds?.length) {
+      await this.validatePermissionIds(dto.permissionIds);
+    }
 
     await this.prisma.$transaction(async (tx) => {
       await tx.role.update({
@@ -152,6 +164,22 @@ export class RolesService {
 
     await this.prisma.role.delete({ where: { id } });
     return { message: `Role '${role.name}' deleted` };
+  }
+
+  // ── Private helpers ──────────────────────────────────────────────────────────
+
+  /**
+   * Throws BadRequestException if any of the supplied permissionIds do not
+   * exist in the database. Prevents a Prisma FK error from surfacing as 500.
+   */
+  private async validatePermissionIds(ids: string[]): Promise<void> {
+    const found = await this.prisma.permission.count({
+      where: { id: { in: ids } },
+    });
+
+    if (found !== ids.length) {
+      throw new BadRequestException('One or more permission IDs are invalid');
+    }
   }
 
   /** Returns all permissions grouped by module. */

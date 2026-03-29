@@ -1,6 +1,21 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
+/**
+ * In-memory permission cache. Keyed by userId, stores the resolved permission
+ * key array with a TTL. Entries are explicitly evicted on role updates.
+ *
+ * NOTE — process-local: each Node.js worker/replica has its own cache. In a
+ * horizontally-scaled deployment a role update invalidates only the instance
+ * that handled the request. Other instances will serve stale data until the
+ * TTL expires (at most 60 s). The `permissionsVersion` counter on the User
+ * model lets frontends detect and re-fetch when their cached version is stale.
+ *
+ * NOTE — invalidation race: there is a brief window between writing new role
+ * permissions in a transaction and calling `invalidateRoleCache`. Requests
+ * served in that window may receive the old permission set. The window is
+ * normally < 1 ms (in-process call), but it exists.
+ */
 const CACHE_TTL_MS = 60_000; // 60 seconds
 
 interface CacheEntry {
@@ -36,11 +51,6 @@ export class PermissionsService {
     });
 
     if (!user) return [];
-
-    // Legacy enum check during transition (removed in Phase 7)
-    if (user.role === 'SYSTEM_ADMIN') {
-      return this.setCache(userId, ['*']);
-    }
 
     if (!user.roleId) {
       this.logger.warn(`User ${userId} has no roleId assigned — returning empty permissions.`);

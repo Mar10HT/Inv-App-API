@@ -56,6 +56,10 @@ export class PermissionsGuard implements CanActivate {
     // ['*'] means full access (SYSTEM_ADMIN resolved via service)
     if (userPermissions.includes('*')) return true;
 
+    // OR semantics: access is granted when the user holds ANY one of the
+    // declared permissions. Use multiple @Permissions() keys on one handler
+    // to allow different roles to share an endpoint (e.g. both 'items:view'
+    // and 'warehouse:view' may read the same resource).
     const hasPermission = required.some((perm) =>
       userPermissions.includes(perm),
     );
