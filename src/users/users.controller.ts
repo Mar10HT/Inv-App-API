@@ -12,17 +12,11 @@ import {
   ValidationPipe,
   UseGuards,
 } from '@nestjs/common';
-import { IsArray, IsString, ArrayMaxSize } from 'class-validator';
 import { UsersService } from './users.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
-
-class AssignWarehousesDto {
-  @IsArray()
-  @IsString({ each: true })
-  @ArrayMaxSize(500)
-  warehouseIds: string[];
-}
+import { AssignWarehousesDto } from './dto/assign-warehouses.dto';
+import { UpdatePreferencesDto } from './dto/update-preferences.dto';
 import { PaginationDto } from '../common/dto';
 import { JwtAuthGuard, PermissionsGuard } from '../auth/guards';
 import { Permissions, CurrentUser } from '../auth/decorators';
@@ -59,7 +53,7 @@ export class UsersController {
   @Patch('preferences')
   updatePreferences(
     @CurrentUser() user: AuthenticatedUser,
-    @Body() prefs: { emailNotifications?: boolean; lowStockAlerts?: boolean },
+    @Body(ValidationPipe) prefs: UpdatePreferencesDto,
   ) {
     return this.usersService.updatePreferences(user.userId, prefs);
   }

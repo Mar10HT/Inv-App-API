@@ -9,6 +9,7 @@ import { Request } from 'express';
 import { PermissionsService } from '../../permissions/permissions.service';
 import { AuditService } from '../../audit/audit.service';
 import { PERMISSIONS_KEY } from '../decorators/permissions.decorator';
+import { AuthenticatedUser } from '../interfaces/auth-user.interface';
 
 @Injectable()
 export class PermissionsGuard implements CanActivate {
@@ -33,8 +34,8 @@ export class PermissionsGuard implements CanActivate {
     // must bypass JwtAuthGuard as well.
     if (!required || required.length === 0) return true;
 
-    const request = context.switchToHttp().getRequest<Request>();
-    const { user } = request as any;
+    const request = context.switchToHttp().getRequest<Request & { user?: AuthenticatedUser }>();
+    const { user } = request;
 
     if (!user) throw new ForbiddenException('User not authenticated');
 

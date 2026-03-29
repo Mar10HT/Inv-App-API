@@ -90,6 +90,9 @@ export class AuthController {
     return {
       user: result.user,
       expires_in: 900, // 15 minutes in seconds
+      // Tokens included for non-cookie clients (mobile apps)
+      access_token: result.access_token,
+      refresh_token: result.refresh_token,
     };
   }
 
@@ -164,6 +167,9 @@ export class AuthController {
     return {
       user: result.user,
       expires_in: 900,
+      // Tokens included for non-cookie clients (mobile apps)
+      access_token: result.access_token,
+      refresh_token: result.refresh_token,
     };
   }
 
@@ -195,9 +201,10 @@ export class AuthController {
 
   /**
    * Debug endpoint to check environment and cookie configuration.
-   * Only available in non-production environments.
+   * Only available in non-production environments. Requires authentication.
    */
   @Get('debug-env')
+  @UseGuards(JwtAuthGuard)
   debugEnv(@Request() req: ExpressRequest) {
     if (process.env.NODE_ENV === 'production') {
       return { message: 'Not available in production' };

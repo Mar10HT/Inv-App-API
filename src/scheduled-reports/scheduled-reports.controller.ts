@@ -55,7 +55,7 @@ export class ScheduledReportsController {
 
   @Post(':id/send-now')
   @Permissions('reports:export')
-  sendNow(@Param('id') id: string) {
-    return this.service.sendNow(id);
+  sendNow(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.service.sendNow(id, user.userId);
   }
 }

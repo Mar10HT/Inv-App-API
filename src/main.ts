@@ -72,8 +72,16 @@ async function bootstrap() {
   }));
 
   // CSRF protection middleware (after CORS)
+  // Requests using Bearer token (mobile apps, API clients) are inherently CSRF-immune
+  // because browsers never automatically attach Authorization headers cross-site
   const csrfService = app.get(CsrfService);
-  app.use(csrfService.getProtectionMiddleware());
+  app.use((req, res, next) => {
+    const authHeader = req.headers.authorization as string | undefined;
+    if (authHeader?.startsWith('Bearer ')) {
+      return next();
+    }
+    return csrfService.getProtectionMiddleware()(req, res, next);
+  });
 
   // Global validation pipe
   app.useGlobalPipes(

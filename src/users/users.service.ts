@@ -125,6 +125,17 @@ export class UsersService {
       throw new BadRequestException('Cannot assign SYSTEM_ADMIN role through this endpoint');
     }
 
+    if (updateUserDto.roleId) {
+      const targetRole = await this.prisma.role.findUnique({
+        where: { id: updateUserDto.roleId },
+        select: { id: true, name: true },
+      });
+      if (!targetRole) throw new BadRequestException(`Role '${updateUserDto.roleId}' not found`);
+      if (targetRole.name === 'SYSTEM_ADMIN') {
+        throw new BadRequestException('Cannot assign SYSTEM_ADMIN role through this endpoint');
+      }
+    }
+
     try {
       const user = await this.prisma.user.update({
         where: { id },
