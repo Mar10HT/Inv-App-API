@@ -121,7 +121,7 @@ export class InventoryController {
   }
 
   @Patch(':id/restore')
-  @Permissions('inventory:delete')
+  @Permissions('inventory:edit')
   restore(@Param('id') id: string) {
     return this.inventoryService.restore(id);
   }

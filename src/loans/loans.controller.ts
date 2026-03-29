@@ -11,7 +11,6 @@ import {
   ValidationPipe,
   Query,
   UseGuards,
-  Request,
   ForbiddenException,
 } from '@nestjs/common';
 import { LoansService } from './loans.service';

@@ -15,6 +15,8 @@ import {
 import { UsersService } from './users.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
+import { AssignWarehousesDto } from './dto/assign-warehouses.dto';
+import { UpdatePreferencesDto } from './dto/update-preferences.dto';
 import { PaginationDto } from '../common/dto';
 import { JwtAuthGuard, PermissionsGuard } from '../auth/guards';
 import { Permissions, CurrentUser } from '../auth/decorators';
@@ -51,7 +53,7 @@ export class UsersController {
   @Patch('preferences')
   updatePreferences(
     @CurrentUser() user: AuthenticatedUser,
-    @Body() prefs: { emailNotifications?: boolean; lowStockAlerts?: boolean },
+    @Body(ValidationPipe) prefs: UpdatePreferencesDto,
   ) {
     return this.usersService.updatePreferences(user.userId, prefs);
   }
@@ -97,9 +99,9 @@ export class UsersController {
   @Permissions('users:edit')
   async assignWarehouses(
     @Param('id') id: string,
-    @Body('warehouseIds') warehouseIds: string[],
+    @Body(ValidationPipe) dto: AssignWarehousesDto,
   ) {
-    await this.warehouseAccessService.setUserWarehouses(id, warehouseIds);
+    await this.warehouseAccessService.setUserWarehouses(id, dto.warehouseIds);
     return this.warehouseAccessService.getUserWarehouses(id);
   }
 }

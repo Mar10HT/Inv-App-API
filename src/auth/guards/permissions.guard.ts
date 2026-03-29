@@ -9,6 +9,7 @@ import { Request } from 'express';
 import { PermissionsService } from '../../permissions/permissions.service';
 import { AuditService } from '../../audit/audit.service';
 import { PERMISSIONS_KEY } from '../decorators/permissions.decorator';
+import { AuthenticatedUser } from '../interfaces/auth-user.interface';
 
 @Injectable()
 export class PermissionsGuard implements CanActivate {
@@ -24,11 +25,17 @@ export class PermissionsGuard implements CanActivate {
       context.getClass(),
     ]);
 
-    // No permissions decorator — allow through
+    // Open-by-default: if no @Permissions() decorator is present on the handler
+    // or its class, ANY authenticated user is allowed through (including EXTERNAL
+    // and VIEWER roles). This mirrors the previous RolesGuard behaviour.
+    // To restrict a new handler to authenticated-only access without a specific
+    // permission, add @Permissions() with an empty array explicitly, or apply
+    // @UseGuards(JwtAuthGuard) alone. Any handler that should be truly public
+    // must bypass JwtAuthGuard as well.
     if (!required || required.length === 0) return true;
 
-    const request = context.switchToHttp().getRequest<Request>();
-    const { user } = request as any;
+    const request = context.switchToHttp().getRequest<Request & { user?: AuthenticatedUser }>();
+    const { user } = request;
 
     if (!user) throw new ForbiddenException('User not authenticated');
 
@@ -65,9 +72,8 @@ export class PermissionsGuard implements CanActivate {
     );
 
     if (!hasPermission) {
-      throw new ForbiddenException(
-        `Access denied. Required: ${required.join(', ')}`,
-      );
+      // Use a generic message to avoid leaking required permission keys to the client.
+      throw new ForbiddenException('Access denied');
     }
 
     return true;

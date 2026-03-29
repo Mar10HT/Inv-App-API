@@ -71,7 +71,7 @@ export class TransactionsController {
   }
 
   @Patch(':id')
-  @Permissions('transactions:create')
+  @Permissions('transactions:edit')
   update(
     @Param('id') id: string,
     @Body(ValidationPipe) updateTransactionDto: UpdateTransactionDto,

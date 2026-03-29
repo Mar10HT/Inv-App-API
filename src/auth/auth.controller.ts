@@ -26,8 +26,8 @@ import { UpdateProfileDto } from './dto/update-profile.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
-import { JwtAuthGuard, RolesGuard, PermissionsGuard } from './guards';
-import { Roles, Permissions } from './decorators';
+import { JwtAuthGuard, PermissionsGuard } from './guards';
+import { Permissions } from './decorators';
 import { PermissionsService } from '../permissions/permissions.service';
 
 @ApiTags('auth')
@@ -90,6 +90,9 @@ export class AuthController {
     return {
       user: result.user,
       expires_in: 900, // 15 minutes in seconds
+      // Tokens included for non-cookie clients (mobile apps)
+      access_token: result.access_token,
+      refresh_token: result.refresh_token,
     };
   }
 
@@ -164,6 +167,9 @@ export class AuthController {
     return {
       user: result.user,
       expires_in: 900,
+      // Tokens included for non-cookie clients (mobile apps)
+      access_token: result.access_token,
+      refresh_token: result.refresh_token,
     };
   }
 
@@ -195,9 +201,10 @@ export class AuthController {
 
   /**
    * Debug endpoint to check environment and cookie configuration.
-   * Only available in non-production environments.
+   * Only available in non-production environments. Requires authentication.
    */
   @Get('debug-env')
+  @UseGuards(JwtAuthGuard)
   debugEnv(@Request() req: ExpressRequest) {
     if (process.env.NODE_ENV === 'production') {
       return { message: 'Not available in production' };
@@ -245,23 +252,25 @@ export class AuthController {
 
   /**
    * Get users with pending (active) password reset tokens.
-   * SYSTEM_ADMIN only.
+   * Requires auth:admin — intentionally not assigned to any role.
+   * SYSTEM_ADMIN bypasses the check.
    */
   @Get('pending-resets')
   @UseGuards(JwtAuthGuard, PermissionsGuard)
-  @Permissions('users:view')
+  @Permissions('auth:admin')
   async getPendingResets() {
     return this.authService.getPendingResets();
   }
 
   /**
    * Generate a password reset link for a specific user.
-   * SYSTEM_ADMIN only.
+   * Requires auth:admin — intentionally not assigned to any role.
+   * SYSTEM_ADMIN bypasses the check.
    */
   @Post('admin/generate-reset-link/:userId')
   @HttpCode(HttpStatus.OK)
   @UseGuards(JwtAuthGuard, PermissionsGuard)
-  @Permissions('users:edit')
+  @Permissions('auth:admin')
   async generateResetLink(@Param('userId') userId: string) {
     // Verify user exists
     const user = await this.usersService.findOne(userId);
@@ -276,7 +285,7 @@ export class AuthController {
 
     return {
       resetUrl,
-      token,
+      ...(process.env.NODE_ENV !== 'production' ? { token } : {}),
       expiresAt,
     };
   }
@@ -295,15 +304,15 @@ export class AuthController {
   /**
    * Returns the authenticated user's profile plus their current permissions.
    * Called on app init and polled every 60s to detect permission changes.
+   * Uses getPermissionsWithVersion to resolve both in a single DB round-trip.
    */
   @Get('me')
   @UseGuards(JwtAuthGuard)
   async getMe(@Request() req) {
     const userId: string = req.user.userId;
-    const [user, permissions, permissionsVersion] = await Promise.all([
+    const [user, { permissions, version: permissionsVersion }] = await Promise.all([
       this.authService.validateUser(userId),
-      this.permissionsService.getPermissionsForUser(userId),
-      this.permissionsService.getUserPermissionsVersion(userId),
+      this.permissionsService.getPermissionsWithVersion(userId),
     ]);
 
     return {

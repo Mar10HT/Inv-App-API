@@ -80,7 +80,7 @@ export class WarehousesController {
   }
 
   @Patch(':id/manager')
-  @Permissions('warehouse:delete')
+  @Permissions('warehouse:edit')
   async setManager(
     @Param('id') id: string,
     @Body('managerId') managerId: string | null,

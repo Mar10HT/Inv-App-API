@@ -1,4 +1,4 @@
-import { IsString, IsNotEmpty, IsOptional, IsArray, IsUUID, MaxLength } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional, IsArray, MaxLength, ArrayMaxSize, ArrayMinSize } from 'class-validator';
 
 export class CreateRoleDto {
   @IsString()
@@ -19,6 +19,10 @@ export class CreateRoleDto {
   /** IDs of Permission records to assign to this role. */
   @IsArray()
   @IsString({ each: true })
+  @IsNotEmpty({ each: true })
+  @MaxLength(30, { each: true }) // CUIDs are 25 chars
+  @ArrayMinSize(1)
+  @ArrayMaxSize(200)
   @IsOptional()
   permissionIds?: string[];
 }

@@ -65,9 +65,9 @@ export class ScheduledReportsService {
     });
   }
 
-  async sendNow(id: string): Promise<void> {
-    const report = await this.prisma.scheduledReport.findUnique({ where: { id } });
-    if (!report) throw new NotFoundException(`Scheduled report ${id} not found`);
+  async sendNow(id: string, userId: string): Promise<void> {
+    // findOne enforces ownership — throws 404 if report belongs to another user
+    const report = await this.findOne(id, userId);
     await this.generateAndSend(report);
     await this.prisma.scheduledReport.update({
       where: { id },

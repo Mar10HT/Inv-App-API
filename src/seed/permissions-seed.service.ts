@@ -69,28 +69,60 @@ export class PermissionsSeedService {
   // ── Step 3 ──────────────────────────────────────────────────────────────────
 
   private async syncRolePermissions(): Promise<void> {
+    // Bulk-load all roles and permissions once to avoid N+1 sequential queries.
+    const [allRoles, allPermissions] = await Promise.all([
+      this.prisma.role.findMany({ select: { id: true, name: true } }),
+      this.prisma.permission.findMany({ select: { id: true, key: true } }),
+    ]);
+
+    const roleByName = new Map(allRoles.map((r) => [r.name, r]));
+    const permByKey  = new Map(allPermissions.map((p) => [p.key, p]));
+
     for (const [roleName, permKeys] of Object.entries(ROLE_PERMISSIONS)) {
-      const role = await this.prisma.role.findUnique({ where: { name: roleName } });
+      const role = roleByName.get(roleName);
       if (!role) {
         this.logger.warn(`Role not found: ${roleName} — skipping permission sync.`);
         continue;
       }
 
+      // Resolve the desired permission IDs for this role from the constant.
+      const desiredPermIds = new Set<string>();
       for (const key of permKeys) {
-        const permission = await this.prisma.permission.findUnique({ where: { key } });
+        const permission = permByKey.get(key);
         if (!permission) {
           this.logger.warn(`Permission not found: ${key} — skipping.`);
           continue;
         }
+        desiredPermIds.add(permission.id);
+      }
 
-        await this.prisma.rolePermission.upsert({
-          where:  { roleId_permissionId: { roleId: role.id, permissionId: permission.id } },
-          update: {},
-          create: { roleId: role.id, permissionId: permission.id },
+      // Load the current DB assignments for this role.
+      const existing = await this.prisma.rolePermission.findMany({
+        where:  { roleId: role.id },
+        select: { permissionId: true },
+      });
+      const existingIds = new Set(existing.map((rp) => rp.permissionId));
+
+      // Add missing, remove stale — keeps the DB in sync with the constant.
+      const toAdd    = [...desiredPermIds].filter((id) => !existingIds.has(id));
+      const toRemove = [...existingIds].filter((id) => !desiredPermIds.has(id));
+
+      if (toAdd.length > 0) {
+        await this.prisma.rolePermission.createMany({
+          data: toAdd.map((permissionId) => ({ roleId: role.id, permissionId })),
+          skipDuplicates: true,
         });
       }
 
-      this.logger.log(`Synced permissions for role: ${roleName}`);
+      if (toRemove.length > 0) {
+        await this.prisma.rolePermission.deleteMany({
+          where: { roleId: role.id, permissionId: { in: toRemove } },
+        });
+      }
+
+      this.logger.log(
+        `Synced permissions for role: ${roleName} (+${toAdd.length} / -${toRemove.length})`,
+      );
     }
   }
 

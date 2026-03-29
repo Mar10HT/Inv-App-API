@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { EmailService } from '../email/email.service';
 import { CreateUserDto } from './dto/create-user.dto';
@@ -18,6 +18,7 @@ export class UsersService {
     email: true,
     name: true,
     role: true,
+    roleId: true,
     createdAt: true,
     updatedAt: true,
     // Exclude password
@@ -29,6 +30,11 @@ export class UsersService {
       const hashedPassword = await bcrypt.hash(createUserDto.password, 10);
 
       const { roleId, ...rest } = createUserDto;
+
+      if (roleId) {
+        const roleExists = await this.prisma.role.findUnique({ where: { id: roleId }, select: { id: true } });
+        if (!roleExists) throw new BadRequestException(`Role '${roleId}' not found`);
+      }
 
       const user = await this.prisma.user.create({
         data: {
@@ -100,6 +106,7 @@ export class UsersService {
         email: true,
         name: true,
         role: true,
+        roleId: true,
         createdAt: true,
         updatedAt: true,
         // Exclude password
@@ -114,6 +121,21 @@ export class UsersService {
   }
 
   async update(id: string, updateUserDto: UpdateUserDto) {
+    if (updateUserDto.role === 'SYSTEM_ADMIN') {
+      throw new BadRequestException('Cannot assign SYSTEM_ADMIN role through this endpoint');
+    }
+
+    if (updateUserDto.roleId) {
+      const targetRole = await this.prisma.role.findUnique({
+        where: { id: updateUserDto.roleId },
+        select: { id: true, name: true },
+      });
+      if (!targetRole) throw new BadRequestException(`Role '${updateUserDto.roleId}' not found`);
+      if (targetRole.name === 'SYSTEM_ADMIN') {
+        throw new BadRequestException('Cannot assign SYSTEM_ADMIN role through this endpoint');
+      }
+    }
+
     try {
       const user = await this.prisma.user.update({
         where: { id },

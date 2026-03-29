@@ -109,9 +109,15 @@ export class RolesService {
     const role = await this.prisma.role.findUnique({ where: { id } });
     if (!role) throw new NotFoundException('Role not found');
 
+    if (role.isSystem && dto.permissionIds !== undefined) {
+      throw new BadRequestException('System role permissions cannot be modified');
+    }
+
     if (dto.permissionIds?.length) {
       await this.validatePermissionIds(dto.permissionIds);
     }
+
+    let affectedUserIds: string[] = [];
 
     await this.prisma.$transaction(async (tx) => {
       await tx.role.update({
@@ -132,7 +138,15 @@ export class RolesService {
           });
         }
 
-        // Bump permissionsVersion for all users in this role
+        // Fetch affected user IDs inside the transaction so the list is consistent
+        // with the permission update; passing them to invalidateRoleCache avoids
+        // a second DB round-trip after the transaction closes.
+        const affectedUsers = await tx.user.findMany({
+          where: { roleId: id },
+          select: { id: true },
+        });
+        affectedUserIds = affectedUsers.map((u) => u.id);
+
         await tx.user.updateMany({
           where: { roleId: id },
           data: { permissionsVersion: { increment: 1 } },
@@ -140,9 +154,9 @@ export class RolesService {
       }
     });
 
-    // Invalidate in-memory permission cache for affected users
-    if (dto.permissionIds !== undefined) {
-      await this.permissionsService.invalidateRoleCache(id);
+    // Invalidate in-memory permission cache using the IDs captured inside the tx
+    if (affectedUserIds.length > 0) {
+      this.permissionsService.invalidateCacheForUsers(affectedUserIds);
     }
 
     return this.findOne(id);
@@ -173,31 +187,36 @@ export class RolesService {
    * exist in the database. Prevents a Prisma FK error from surfacing as 500.
    */
   private async validatePermissionIds(ids: string[]): Promise<void> {
-    const found = await this.prisma.permission.count({
-      where: { id: { in: ids } },
+    // Deduplicate before checking to avoid false negatives on duplicate IDs.
+    const uniqueIds = [...new Set(ids)];
+    const found = await this.prisma.permission.findMany({
+      where: { id: { in: uniqueIds } },
+      select: { id: true },
     });
 
-    if (found !== ids.length) {
-      throw new BadRequestException('One or more permission IDs are invalid');
+    if (found.length !== uniqueIds.length) {
+      const foundSet = new Set(found.map((p) => p.id));
+      const invalid = uniqueIds.filter((id) => !foundSet.has(id));
+      throw new BadRequestException(`Invalid permission IDs: ${invalid.join(', ')}`);
     }
   }
 
-  /** Returns all permissions grouped by module. */
-  getAllPermissions() {
-    const grouped: Record<string, { key: string; action: string; description: string }[]> = {};
+  /**
+   * Returns all permissions grouped by module, including DB-assigned IDs.
+   * Reads from the database so the response is always in sync with seeded data.
+   */
+  async getAllPermissions() {
+    const permissions = await this.prisma.permission.findMany({
+      orderBy: [{ module: 'asc' }, { action: 'asc' }],
+      select: { id: true, key: true, module: true, action: true, description: true },
+    });
 
-    for (const perm of PERMISSIONS) {
+    const grouped: Record<string, { id: string; key: string; action: string; description: string }[]> = {};
+    for (const perm of permissions) {
       if (!grouped[perm.module]) grouped[perm.module] = [];
-      grouped[perm.module].push({
-        key: perm.key,
-        action: perm.action,
-        description: perm.description,
-      });
+      grouped[perm.module].push({ id: perm.id, key: perm.key, action: perm.action, description: perm.description });
     }
 
-    return Object.entries(grouped).map(([module, permissions]) => ({
-      module,
-      permissions,
-    }));
+    return Object.entries(grouped).map(([module, permissions]) => ({ module, permissions }));
   }
 }

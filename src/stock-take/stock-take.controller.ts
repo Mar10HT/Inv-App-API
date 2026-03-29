@@ -16,6 +16,7 @@ import { StockTakeService } from './stock-take.service';
 import { CreateStockTakeDto, UpdateStockTakeItemDto } from './dto/create-stock-take.dto';
 import { JwtAuthGuard, PermissionsGuard } from '../auth/guards';
 import { Permissions, CurrentUser } from '../auth/decorators';
+import { AuthenticatedUser } from '../auth/interfaces/auth-user.interface';
 import { PaginationDto } from '../common/dto/pagination.dto';
 import { StockTakeStatus } from '@prisma/client';
 
@@ -30,7 +31,7 @@ export class StockTakeController {
   @Permissions('stocktake:create')
   create(
     @Body(ValidationPipe) dto: CreateStockTakeDto,
-    @CurrentUser() user: any,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.stockTakeService.create(dto, user.userId);
   }
@@ -68,7 +69,7 @@ export class StockTakeController {
   updateItem(
     @Param('id') id: string,
     @Body(ValidationPipe) dto: UpdateStockTakeItemDto,
-    @CurrentUser() user: any,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.stockTakeService.updateItem(id, dto, user.userId);
   }
@@ -78,7 +79,7 @@ export class StockTakeController {
   complete(
     @Param('id') id: string,
     @Query('applyChanges') applyChanges: string,
-    @CurrentUser() user: any,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
     const apply = applyChanges === 'true';
     return this.stockTakeService.complete(id, user.userId, apply);
@@ -88,7 +89,7 @@ export class StockTakeController {
   @Permissions('stocktake:manage')
   cancel(
     @Param('id') id: string,
-    @CurrentUser() user: any,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.stockTakeService.cancel(id, user.userId);
   }
