@@ -33,6 +33,7 @@ import { DischargeRequestsModule } from './discharge-requests/discharge-requests
 import { WarehouseAccessModule } from './common/warehouse-access/warehouse-access.module';
 import { WarehouseAccessInterceptor } from './common/warehouse-access/warehouse-access.interceptor';
 import { ScheduledReportsModule } from './scheduled-reports/scheduled-reports.module';
+import { RolesModule } from './roles/roles.module';
 
 @Module({
   imports: [
@@ -111,6 +112,7 @@ import { ScheduledReportsModule } from './scheduled-reports/scheduled-reports.mo
     DischargeRequestsModule,
     WarehouseAccessModule,
     ScheduledReportsModule,
+    RolesModule,
   ],
   controllers: [AppController],
   providers: [
