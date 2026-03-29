@@ -5,7 +5,9 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
+import { Request } from 'express';
 import { PermissionsService } from '../../permissions/permissions.service';
+import { AuditService } from '../../audit/audit.service';
 import { PERMISSIONS_KEY } from '../decorators/permissions.decorator';
 
 @Injectable()
@@ -13,6 +15,7 @@ export class PermissionsGuard implements CanActivate {
   constructor(
     private readonly reflector: Reflector,
     private readonly permissionsService: PermissionsService,
+    private readonly auditService: AuditService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -24,12 +27,27 @@ export class PermissionsGuard implements CanActivate {
     // No permissions decorator — allow through
     if (!required || required.length === 0) return true;
 
-    const { user } = context.switchToHttp().getRequest();
+    const request = context.switchToHttp().getRequest<Request>();
+    const { user } = request as any;
 
     if (!user) throw new ForbiddenException('User not authenticated');
 
-    // SYSTEM_ADMIN bypasses all permission checks
-    if (user.role === 'SYSTEM_ADMIN') return true;
+    // SYSTEM_ADMIN bypasses all permission checks — log the access
+    if (user.role === 'SYSTEM_ADMIN') {
+      this.auditService
+        .log({
+          action: 'ACCESS',
+          entity: 'system_admin_bypass',
+          entityId: user.userId,
+          userId: user.userId,
+          changes: {
+            fields: required,
+            after: { method: request.method, path: request.path },
+          },
+        })
+        .catch(() => undefined); // Non-blocking; never fail the request over audit
+      return true;
+    }
 
     const userPermissions = await this.permissionsService.getPermissionsForUser(
       user.userId,

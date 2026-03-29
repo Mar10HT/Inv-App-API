@@ -15,6 +15,16 @@ export class CreateUserDto {
   @IsOptional()
   name?: string;
 
+  /** RBAC role reference. Takes precedence over the legacy `role` enum when provided. */
+  @IsString()
+  @IsNotEmpty()
+  @IsOptional()
+  roleId?: string;
+
+  /**
+   * @deprecated Kept for backwards compatibility during migration.
+   * Use `roleId` (pointing to a Role record) instead.
+   */
   @IsEnum(UserRole)
   @IsOptional()
   role?: UserRole;

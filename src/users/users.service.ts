@@ -28,10 +28,14 @@ export class UsersService {
       // Hash password before storing
       const hashedPassword = await bcrypt.hash(createUserDto.password, 10);
 
+      const { roleId, ...rest } = createUserDto;
+
       const user = await this.prisma.user.create({
         data: {
-          ...createUserDto,
+          ...rest,
           password: hashedPassword,
+          // Wire up RBAC role when provided
+          ...(roleId ? { roleId } : {}),
         },
       });
 
