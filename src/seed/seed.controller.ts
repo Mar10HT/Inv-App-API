@@ -1,8 +1,8 @@
 import { Controller, Post, ForbiddenException, UseGuards } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { PermissionsSeedService } from './permissions-seed.service';
-import { JwtAuthGuard, RolesGuard } from '../auth/guards';
-import { Roles } from '../auth/decorators';
+import { JwtAuthGuard, PermissionsGuard } from '../auth/guards';
+import { Permissions } from '../auth/decorators';
 import { UserRole } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 
@@ -14,8 +14,8 @@ export class SeedController {
   ) {}
 
   @Post()
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('SYSTEM_ADMIN')
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @Permissions('settings:edit')
   async runSeed() {
     if (process.env.NODE_ENV === 'production') {
       throw new ForbiddenException('Seed endpoint is disabled in production');
@@ -58,8 +58,8 @@ export class SeedController {
 
   /** Dedicated endpoint for running only the RBAC seed (safe to run in dev anytime). */
   @Post('permissions')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('SYSTEM_ADMIN')
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @Permissions('settings:edit')
   async runPermissionsSeed() {
     if (process.env.NODE_ENV === 'production') {
       throw new ForbiddenException('Seed endpoint is disabled in production');

@@ -26,8 +26,8 @@ import { UpdateProfileDto } from './dto/update-profile.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
-import { JwtAuthGuard, RolesGuard } from './guards';
-import { Roles } from './decorators';
+import { JwtAuthGuard, RolesGuard, PermissionsGuard } from './guards';
+import { Roles, Permissions } from './decorators';
 import { PermissionsService } from '../permissions/permissions.service';
 
 @ApiTags('auth')
@@ -248,8 +248,8 @@ export class AuthController {
    * SYSTEM_ADMIN only.
    */
   @Get('pending-resets')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('SYSTEM_ADMIN')
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @Permissions('users:view')
   async getPendingResets() {
     return this.authService.getPendingResets();
   }
@@ -260,8 +260,8 @@ export class AuthController {
    */
   @Post('admin/generate-reset-link/:userId')
   @HttpCode(HttpStatus.OK)
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('SYSTEM_ADMIN')
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @Permissions('users:edit')
   async generateResetLink(@Param('userId') userId: string) {
     // Verify user exists
     const user = await this.usersService.findOne(userId);

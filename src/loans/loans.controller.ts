@@ -17,19 +17,19 @@ import {
 import { LoansService } from './loans.service';
 import { CreateLoanDto } from './dto/create-loan.dto';
 import { UpdateLoanDto, ReturnLoanDto } from './dto/update-loan.dto';
-import { JwtAuthGuard, RolesGuard } from '../auth/guards';
-import { Roles, CurrentUser } from '../auth/decorators';
+import { JwtAuthGuard, PermissionsGuard } from '../auth/guards';
+import { Permissions, CurrentUser } from '../auth/decorators';
 import { PaginationDto } from '../common/dto';
 import { AuthenticatedUser } from '../auth/interfaces/auth-user.interface';
 
 @Controller('loans')
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 export class LoansController {
   constructor(private readonly loansService: LoansService) {}
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
-  @Roles('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER', 'USER')
+  @Permissions('loans:create')
   create(
     @Body(ValidationPipe) createLoanDto: CreateLoanDto,
     @CurrentUser() user: AuthenticatedUser,
@@ -47,6 +47,7 @@ export class LoansController {
   }
 
   @Get()
+  @Permissions('loans:view')
   findAll(
     @Query(ValidationPipe) pagination: PaginationDto,
     @CurrentUser() user: AuthenticatedUser,
@@ -55,32 +56,38 @@ export class LoansController {
   }
 
   @Get('active')
+  @Permissions('loans:view')
   findActive(@CurrentUser() user: AuthenticatedUser) {
     return this.loansService.findActive(user.warehouseIds);
   }
 
   @Get('stats')
+  @Permissions('loans:view')
   getStats(@CurrentUser() user: AuthenticatedUser) {
     return this.loansService.getStats(user.warehouseIds);
   }
 
   @Get('item/:itemId')
+  @Permissions('loans:view')
   findByItem(@Param('itemId') itemId: string) {
     return this.loansService.findByItem(itemId);
   }
 
   @Get('warehouse/:warehouseId')
+  @Permissions('loans:view')
   findByWarehouse(@Param('warehouseId') warehouseId: string) {
     return this.loansService.findByWarehouse(warehouseId);
   }
 
   @Get('check-item/:itemId')
+  @Permissions('loans:view')
   async isItemOnLoan(@Param('itemId') itemId: string) {
     const onLoan = await this.loansService.isItemOnLoan(itemId);
     return { onLoan };
   }
 
   @Get(':id')
+  @Permissions('loans:view')
   findOne(@Param('id') id: string) {
     return this.loansService.findOne(id);
   }
@@ -88,13 +95,13 @@ export class LoansController {
   // ==================== QR Code Endpoints ====================
 
   @Patch(':id/send')
-  @Roles('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER', 'USER')
+  @Permissions('loans:manage')
   sendLoan(@Param('id') id: string) {
     return this.loansService.sendLoan(id);
   }
 
   @Get(':id/qr/:type')
-  @Roles('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER', 'USER')
+  @Permissions('loans:manage')
   async getQrCode(
     @Param('id') id: string,
     @Param('type') type: 'send' | 'return',
@@ -105,7 +112,7 @@ export class LoansController {
 
   @Post('confirm-receipt')
   @HttpCode(HttpStatus.OK)
-  @Roles('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER', 'USER')
+  @Permissions('loans:manage')
   confirmReceipt(
     @Body('qrCode') qrCode: string,
     @CurrentUser() user: AuthenticatedUser,
@@ -114,14 +121,14 @@ export class LoansController {
   }
 
   @Patch(':id/initiate-return')
-  @Roles('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER', 'USER')
+  @Permissions('loans:manage')
   initiateReturn(@Param('id') id: string) {
     return this.loansService.initiateReturn(id);
   }
 
   @Post('confirm-return')
   @HttpCode(HttpStatus.OK)
-  @Roles('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER', 'USER')
+  @Permissions('loans:manage')
   confirmReturn(
     @Body('qrCode') qrCode: string,
     @CurrentUser() user: AuthenticatedUser,
@@ -131,7 +138,7 @@ export class LoansController {
 
   @Post('scan-qr')
   @HttpCode(HttpStatus.OK)
-  @Roles('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER', 'USER')
+  @Permissions('loans:manage')
   scanQr(
     @Body('scannedData') scannedData: string,
     @CurrentUser() user: AuthenticatedUser,
@@ -142,7 +149,7 @@ export class LoansController {
   // ==================== Standard Endpoints ====================
 
   @Patch(':id')
-  @Roles('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER')
+  @Permissions('loans:manage')
   update(
     @Param('id') id: string,
     @Body(ValidationPipe) updateLoanDto: UpdateLoanDto,
@@ -151,7 +158,7 @@ export class LoansController {
   }
 
   @Patch(':id/return')
-  @Roles('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER', 'USER')
+  @Permissions('loans:manage')
   returnLoan(
     @Param('id') id: string,
     @Body(ValidationPipe) returnLoanDto: ReturnLoanDto,
@@ -160,20 +167,20 @@ export class LoansController {
   }
 
   @Patch(':id/cancel')
-  @Roles('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER')
+  @Permissions('loans:manage')
   cancelLoan(@Param('id') id: string) {
     return this.loansService.cancel(id);
   }
 
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
-  @Roles('SYSTEM_ADMIN')
+  @Permissions('loans:delete')
   async remove(@Param('id') id: string) {
     await this.loansService.remove(id);
   }
 
   @Post('check-overdue')
-  @Roles('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER')
+  @Permissions('loans:manage')
   async checkOverdueLoans() {
     await this.loansService.checkOverdueLoans();
     return { message: 'Overdue loans checked and updated' };

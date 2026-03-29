@@ -917,8 +917,137 @@ export class InventoryService {
     return { deletedCount: count };
   }
 
+  async generateImportTemplate(): Promise<Buffer> {
+    const ExcelJS = await import('exceljs');
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('Importar Inventario');
+
+    // Load reference data from DB
+    const warehouses = await this.prisma.warehouse.findMany({ select: { name: true } });
+    const suppliers = await this.prisma.supplier.findMany({ select: { name: true } });
+    const categoryRows = await this.prisma.inventoryItem.findMany({
+      where: { deletedAt: null },
+      select: { category: true },
+      distinct: ['category'],
+      orderBy: { category: 'asc' },
+    });
+
+    const warehouseNames = warehouses.map(w => w.name).filter(Boolean);
+    const supplierNames = suppliers.map(s => s.name).filter(Boolean);
+    const categoryNames = categoryRows.map(r => r.category).filter(Boolean);
+
+    // Define 14 columns (A-N)
+    worksheet.columns = [
+      { header: 'Nombre*', key: 'name', width: 28 },
+      { header: 'Descripción', key: 'description', width: 32 },
+      { header: 'Cantidad*', key: 'quantity', width: 12 },
+      { header: 'Mínimo', key: 'minQuantity', width: 12 },
+      { header: 'Categoría*', key: 'category', width: 22 },
+      { header: 'Tipo', key: 'itemType', width: 12 },
+      { header: 'SKU', key: 'sku', width: 16 },
+      { header: 'Código de Barras', key: 'barcode', width: 20 },
+      { header: 'Precio', key: 'price', width: 12 },
+      { header: 'Moneda', key: 'currency', width: 10 },
+      { header: 'Almacén*', key: 'warehouseName', width: 22 },
+      { header: 'Proveedor', key: 'supplierName', width: 22 },
+      { header: 'Service Tag', key: 'serviceTag', width: 16 },
+      { header: 'N° Serie', key: 'serialNumber', width: 16 },
+    ];
+
+    // Style header row
+    const headerRow = worksheet.getRow(1);
+    headerRow.height = 22;
+    headerRow.eachCell(cell => {
+      cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11, name: 'Calibri' };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1F4E3D' } };
+      cell.alignment = { vertical: 'middle', horizontal: 'center' };
+      cell.border = {
+        bottom: { style: 'medium', color: { argb: 'FF4D7C6F' } },
+      };
+    });
+
+    // Freeze header row
+    worksheet.views = [{ state: 'frozen', ySplit: 1 }];
+
+    // Helper: build inline dropdown formula (Excel limit ~255 chars)
+    const toFormula = (names: string[]): string | null => {
+      if (names.length === 0) return null;
+      const limited: string[] = [];
+      let len = 0;
+      for (const name of names) {
+        const part = (limited.length > 0 ? ',' : '') + name;
+        if (len + part.length > 250) break;
+        limited.push(name);
+        len += part.length;
+      }
+      return limited.length > 0 ? `"${limited.join(',')}"` : null;
+    };
+
+    const DATA_ROWS = 500;
+
+    // E: Categoría dropdown
+    const categoryFormula = toFormula(categoryNames);
+    if (categoryFormula) {
+      worksheet.dataValidations.add(`E2:E${DATA_ROWS + 1}`, {
+        type: 'list', allowBlank: true, formulae: [categoryFormula],
+      });
+    }
+
+    // F: Tipo dropdown
+    worksheet.dataValidations.add(`F2:F${DATA_ROWS + 1}`, {
+      type: 'list', allowBlank: true, formulae: ['"BULK,UNIQUE"'],
+    });
+
+    // J: Moneda dropdown
+    worksheet.dataValidations.add(`J2:J${DATA_ROWS + 1}`, {
+      type: 'list', allowBlank: true, formulae: ['"USD,HNL"'],
+    });
+
+    // K: Almacén dropdown
+    const warehouseFormula = toFormula(warehouseNames);
+    if (warehouseFormula) {
+      worksheet.dataValidations.add(`K2:K${DATA_ROWS + 1}`, {
+        type: 'list', allowBlank: true, formulae: [warehouseFormula],
+      });
+    }
+
+    // L: Proveedor dropdown
+    const supplierFormula = toFormula(supplierNames);
+    if (supplierFormula) {
+      worksheet.dataValidations.add(`L2:L${DATA_ROWS + 1}`, {
+        type: 'list', allowBlank: true, formulae: [supplierFormula],
+      });
+    }
+
+    // Add 2 example rows
+    const exampleWarehouse = warehouseNames[0] || 'Bodega Principal';
+    const exampleCategory = categoryNames[0] || 'Electrónica';
+    const exampleSupplier = supplierNames[0] || '';
+
+    worksheet.addRow([
+      'Laptop Dell Latitude 5430', 'Laptop empresarial 14"', 1, 1,
+      exampleCategory, 'UNIQUE', 'LAP-DELL-001', '', 1200.00, 'USD',
+      exampleWarehouse, exampleSupplier, 'ABC-TAG-001', 'SN-456789',
+    ]);
+    worksheet.addRow([
+      'Papel A4 500 Hojas', 'Papel blanco para impresión', 100, 20,
+      exampleCategory, 'BULK', 'PAP-A4-500', '1234567890', 5.99, 'USD',
+      exampleWarehouse, '', '', '',
+    ]);
+
+    // Light style for example rows
+    [2, 3].forEach(rowNum => {
+      const row = worksheet.getRow(rowNum);
+      row.eachCell(cell => {
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF5F9F7' } };
+        cell.font = { color: { argb: 'FF555555' }, italic: true, name: 'Calibri' };
+      });
+    });
+
+    return workbook.xlsx.writeBuffer() as Promise<Buffer>;
+  }
+
   async parseExcelFile(buffer: Buffer): Promise<BulkImportDto['items']> {
-    // Dynamic import for exceljs
     const ExcelJS = await import('exceljs');
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.load(buffer as any);
@@ -928,12 +1057,23 @@ export class InventoryService {
       throw new BadRequestException('Excel file has no worksheets');
     }
 
+    // Pre-load warehouses and suppliers for name-based lookup
+    const warehouses = await this.prisma.warehouse.findMany({ select: { id: true, name: true } });
+    const suppliers = await this.prisma.supplier.findMany({ select: { id: true, name: true } });
+    const warehouseMap = new Map(warehouses.map(w => [w.name.toLowerCase(), w.id]));
+    const supplierMap = new Map(suppliers.map(s => [s.name.toLowerCase(), s.id]));
+
     const items: BulkImportDto['items'] = [];
     const headers: string[] = [];
 
+    // Normalize header: strip *, remove diacritics, lowercase, trim
+    const normalizeHeader = (raw: string): string =>
+      raw.replace(/\*/g, '').trim().toLowerCase()
+        .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
     // Get headers from first row
     worksheet.getRow(1).eachCell((cell, colNumber) => {
-      headers[colNumber] = cell.value?.toString().toLowerCase().trim() || '';
+      headers[colNumber] = cell.value ? normalizeHeader(cell.value.toString()) : '';
     });
 
     // Parse data rows
@@ -966,6 +1106,7 @@ export class InventoryService {
           case 'minquantity':
           case 'min_quantity':
           case 'cantidadminima':
+          case 'minimo':
             item.minQuantity = Number(value) || 10;
             break;
           case 'category':
@@ -985,6 +1126,7 @@ export class InventoryService {
             break;
           case 'barcode':
           case 'codigobarras':
+          case 'codigo de barras':
             item.barcode = value?.toString();
             break;
           case 'itemtype':
@@ -993,23 +1135,32 @@ export class InventoryService {
             break;
           case 'servicetag':
           case 'service_tag':
+          case 'service tag':
             item.serviceTag = value?.toString();
             break;
           case 'serialnumber':
           case 'serial_number':
           case 'numeroserie':
+          case 'n\u00b0 serie': // N° serie (degree symbol U+00B0)
+          case 'n serie':
             item.serialNumber = value?.toString();
             break;
           case 'warehouseid':
           case 'warehouse_id':
-          case 'almacen':
-            item.warehouseId = value?.toString();
+          case 'almacen': {
+            // Resolve by name first, fall back to raw value (UUID)
+            const wName = value?.toString()?.toLowerCase();
+            item.warehouseId = (wName && warehouseMap.get(wName)) || value?.toString();
             break;
+          }
           case 'supplierid':
           case 'supplier_id':
-          case 'proveedor':
-            item.supplierId = value?.toString();
+          case 'proveedor': {
+            const sName = value?.toString()?.toLowerCase();
+            const sId = sName ? supplierMap.get(sName) : undefined;
+            if (sId) item.supplierId = sId;
             break;
+          }
         }
       });
 

@@ -6,12 +6,12 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { AuditService } from './audit.service';
-import { JwtAuthGuard, RolesGuard } from '../auth/guards';
-import { Roles } from '../auth/decorators';
+import { JwtAuthGuard, PermissionsGuard } from '../auth/guards';
+import { Permissions } from '../auth/decorators';
 
 @Controller('audit')
-@UseGuards(JwtAuthGuard, RolesGuard)
-@Roles('SYSTEM_ADMIN') // Only admins can view audit logs
+@UseGuards(JwtAuthGuard, PermissionsGuard)
+@Permissions('audit:view')
 export class AuditController {
   constructor(private readonly auditService: AuditService) {}
 

@@ -17,13 +17,13 @@ import { WarehousesService } from './warehouses.service';
 import { CreateWarehouseDto } from './dto/create-warehouse.dto';
 import { UpdateWarehouseDto } from './dto/update-warehouse.dto';
 import { PaginationDto } from '../common/dto';
-import { JwtAuthGuard, RolesGuard } from '../auth/guards';
-import { Roles, CurrentUser } from '../auth/decorators';
+import { JwtAuthGuard, PermissionsGuard } from '../auth/guards';
+import { Permissions, CurrentUser } from '../auth/decorators';
 import { AuthenticatedUser } from '../auth/interfaces/auth-user.interface';
 import { WarehouseAccessService } from '../common/warehouse-access/warehouse-access.service';
 
 @Controller('warehouses')
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 export class WarehousesController {
   constructor(
     private readonly warehousesService: WarehousesService,
@@ -32,12 +32,13 @@ export class WarehousesController {
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
-  @Roles('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER')
+  @Permissions('warehouse:create')
   create(@Body(ValidationPipe) createWarehouseDto: CreateWarehouseDto) {
     return this.warehousesService.create(createWarehouseDto);
   }
 
   @Get()
+  @Permissions('warehouse:view')
   findAll(
     @Query(new ValidationPipe({ transform: true })) pagination: PaginationDto,
     @CurrentUser() user: AuthenticatedUser,
@@ -46,6 +47,7 @@ export class WarehousesController {
   }
 
   @Get(':id')
+  @Permissions('warehouse:view')
   async findOne(
     @Param('id') id: string,
     @CurrentUser() user: AuthenticatedUser,
@@ -58,7 +60,7 @@ export class WarehousesController {
   }
 
   @Patch(':id')
-  @Roles('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER')
+  @Permissions('warehouse:edit')
   async update(
     @Param('id') id: string,
     @Body(ValidationPipe) updateWarehouseDto: UpdateWarehouseDto,
@@ -72,13 +74,13 @@ export class WarehousesController {
 
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
-  @Roles('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER')
+  @Permissions('warehouse:delete')
   async remove(@Param('id') id: string) {
     await this.warehousesService.remove(id);
   }
 
   @Patch(':id/manager')
-  @Roles('SYSTEM_ADMIN')
+  @Permissions('warehouse:delete')
   async setManager(
     @Param('id') id: string,
     @Body('managerId') managerId: string | null,

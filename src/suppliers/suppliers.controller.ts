@@ -16,33 +16,35 @@ import { SuppliersService } from './suppliers.service';
 import { CreateSupplierDto } from './dto/create-supplier.dto';
 import { UpdateSupplierDto } from './dto/update-supplier.dto';
 import { PaginationDto } from '../common/dto';
-import { JwtAuthGuard, RolesGuard } from '../auth/guards';
-import { Roles } from '../auth/decorators';
+import { JwtAuthGuard, PermissionsGuard } from '../auth/guards';
+import { Permissions } from '../auth/decorators';
 
 @Controller('suppliers')
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 export class SuppliersController {
   constructor(private readonly suppliersService: SuppliersService) {}
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
-  @Roles('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER')
+  @Permissions('suppliers:create')
   create(@Body(ValidationPipe) createSupplierDto: CreateSupplierDto) {
     return this.suppliersService.create(createSupplierDto);
   }
 
   @Get()
+  @Permissions('suppliers:view')
   findAll(@Query(new ValidationPipe({ transform: true })) pagination: PaginationDto) {
     return this.suppliersService.findAll(pagination);
   }
 
   @Get(':id')
+  @Permissions('suppliers:view')
   findOne(@Param('id') id: string) {
     return this.suppliersService.findOne(id);
   }
 
   @Patch(':id')
-  @Roles('SYSTEM_ADMIN', 'WAREHOUSE_MANAGER')
+  @Permissions('suppliers:edit')
   update(
     @Param('id') id: string,
     @Body(ValidationPipe) updateSupplierDto: UpdateSupplierDto,
@@ -52,7 +54,7 @@ export class SuppliersController {
 
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
-  @Roles('SYSTEM_ADMIN')
+  @Permissions('suppliers:delete')
   async remove(@Param('id') id: string) {
     await this.suppliersService.remove(id);
   }

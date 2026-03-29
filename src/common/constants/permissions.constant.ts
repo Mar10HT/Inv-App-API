@@ -54,6 +54,11 @@ export const PERMISSIONS = [
   { key: 'audit:export',            module: 'audit',         action: 'export',        description: 'Export audit log' },
   // alerts
   { key: 'alerts:view',             module: 'alerts',        action: 'view',          description: 'View stock alerts' },
+  { key: 'alerts:manage',           module: 'alerts',        action: 'manage',        description: 'Resolve / mark alerts as notified' },
+  // transactions (extended)
+  { key: 'transactions:delete',     module: 'transactions',  action: 'delete',        description: 'Delete transactions (SYSTEM_ADMIN only)' },
+  // loans (extended)
+  { key: 'loans:delete',            module: 'loans',         action: 'delete',        description: 'Delete loans (SYSTEM_ADMIN only)' },
   // settings
   { key: 'settings:view',           module: 'settings',      action: 'view',          description: 'View system settings' },
   { key: 'settings:edit',           module: 'settings',      action: 'edit',          description: 'Edit system settings' },
@@ -74,7 +79,7 @@ export const ROLE_PERMISSIONS: Record<string, PermissionKey[]> = {
     'loans:view', 'loans:create', 'loans:manage',
     'discharges:view', 'discharges:create', 'discharges:manage',
     'reports:view', 'reports:export',
-    'alerts:view',
+    'alerts:view', 'alerts:manage',
     'settings:view',
   ],
   USER: [
