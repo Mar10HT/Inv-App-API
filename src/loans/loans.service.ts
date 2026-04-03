@@ -9,6 +9,7 @@ import { CreateLoanDto } from './dto/create-loan.dto';
 import { UpdateLoanDto, ReturnLoanDto, LoanStatus } from './dto/update-loan.dto';
 import { PaginationDto, PaginatedResult } from '../common/dto';
 import { EventsService } from '../events/events.service';
+import { AuditService } from '../audit/audit.service';
 import { warehouseFilterMultiField } from '../common/warehouse-access/warehouse-filter.util';
 
 @Injectable()
@@ -17,6 +18,7 @@ export class LoansService {
     private prisma: PrismaService,
     private qrService: QrService,
     private eventsService: EventsService,
+    private auditService: AuditService,
   ) {}
 
   // Light include for list queries (faster)
@@ -347,6 +349,93 @@ export class LoansService {
     } else {
       throw new BadRequestException('Unknown QR code type');
     }
+  }
+
+  // ==================== Manual Confirmation (No QR) ====================
+
+  /**
+   * Apply receipt confirmation fields to a loan (shared logic for QR and manual flows).
+   * Receipt-specific fields: RECEIVED status, receivedAt, receivedById.
+   */
+  private async _applyReceiptConfirmation(id: string, userId: string) {
+    return this.prisma.loan.update({
+      where: { id },
+      data: {
+        status: 'RECEIVED',
+        receivedAt: new Date(),
+        receivedById: userId,
+      },
+      include: this.loanInclude,
+    });
+  }
+
+  /**
+   * Apply return confirmation fields to a loan (shared logic for QR and manual flows).
+   * Return-specific fields: RETURNED status, returnDate, returnConfirmedAt, returnConfirmedById.
+   */
+  private async _applyReturnConfirmation(id: string, userId: string) {
+    return this.prisma.loan.update({
+      where: { id },
+      data: {
+        status: 'RETURNED',
+        returnDate: new Date(),
+        returnConfirmedAt: new Date(),
+        returnConfirmedById: userId,
+      },
+      include: this.loanInclude,
+    });
+  }
+
+  /**
+   * Manually confirm receipt of a loan without QR code.
+   * Accepts SENT or OVERDUE status (OVERDUE covers loans that expired before being confirmed).
+   */
+  async manualConfirmReceipt(id: string, userId: string) {
+    const loan = await this.findOne(id);
+
+    if (loan.status !== 'SENT' && loan.status !== 'OVERDUE') {
+      throw new BadRequestException(
+        `Cannot confirm receipt. Loan is in ${loan.status} status. Only SENT or OVERDUE loans can be confirmed.`,
+      );
+    }
+
+    const updated = await this._applyReceiptConfirmation(id, userId);
+
+    await this.auditService.log({
+      action: 'UPDATE',
+      entity: 'Loan',
+      entityId: id,
+      userId,
+      changes: { status: 'RECEIVED', confirmedManually: true, previousStatus: loan.status },
+    });
+
+    return updated;
+  }
+
+  /**
+   * Manually confirm return of a loan without QR code.
+   * Accepts RETURN_PENDING or OVERDUE status (OVERDUE covers legacy loans without a return QR).
+   */
+  async manualConfirmReturn(id: string, userId: string) {
+    const loan = await this.findOne(id);
+
+    if (loan.status !== 'RETURN_PENDING' && loan.status !== 'OVERDUE') {
+      throw new BadRequestException(
+        `Cannot confirm return. Loan is in ${loan.status} status. Only RETURN_PENDING or OVERDUE loans can be confirmed.`,
+      );
+    }
+
+    const updated = await this._applyReturnConfirmation(id, userId);
+
+    await this.auditService.log({
+      action: 'UPDATE',
+      entity: 'Loan',
+      entityId: id,
+      userId,
+      changes: { status: 'RETURNED', confirmedManually: true, previousStatus: loan.status },
+    });
+
+    return updated;
   }
 
   async findAll(pagination?: PaginationDto, warehouseIds?: string[] | null): Promise<PaginatedResult<any>> {

@@ -415,7 +415,11 @@ export class TransferRequestsService {
   }
 
   /**
-   * Complete transfer without QR (legacy method)
+   * Complete transfer without QR — used by the manual confirmation flow.
+   * TODO [TECH-DEBT]: complete() accepts both SENT and APPROVED states.
+   * APPROVED is kept for backward compatibility with legacy flows.
+   * UI only exposes the manual confirm button for SENT status.
+   * Restrict to SENT-only once legacy APPROVED flows are confirmed unused.
    */
   async complete(id: string, completedById: string) {
     const request = await this.findOne(id);
@@ -484,7 +488,11 @@ export class TransferRequestsService {
 
       return tx.transferRequest.update({
         where: { id },
-        data: { status: RequestStatus.COMPLETED },
+        data: {
+          status: RequestStatus.COMPLETED,
+          receivedAt: new Date(),
+          receivedById: completedById,
+        },
         include: this.includeFull,
       });
     });
@@ -494,7 +502,7 @@ export class TransferRequestsService {
       entity: 'TransferRequest',
       entityId: id,
       userId: completedById,
-      changes: { status: 'COMPLETED', itemsTransferred: request.items.length },
+      changes: { status: 'COMPLETED', confirmedManually: true, itemsTransferred: request.items.length },
     });
 
     return updated;

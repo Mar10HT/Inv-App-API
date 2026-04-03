@@ -145,6 +145,44 @@ export class LoansController {
     return this.loansService.processQrCode(scannedData, user.userId);
   }
 
+  // ==================== Manual Confirmation Endpoints (No QR) ====================
+
+  @Patch(':id/manual-confirm-receipt')
+  @Permissions('loans:manage')
+  async manualConfirmReceipt(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    if (user.warehouseIds !== null) {
+      const loan = await this.loansService.findOne(id);
+      const hasAccess =
+        user.warehouseIds.includes(loan.sourceWarehouse.id) ||
+        user.warehouseIds.includes(loan.destinationWarehouse.id);
+      if (!hasAccess) {
+        throw new ForbiddenException('You do not have access to the involved warehouses');
+      }
+    }
+    return this.loansService.manualConfirmReceipt(id, user.userId);
+  }
+
+  @Patch(':id/manual-confirm-return')
+  @Permissions('loans:manage')
+  async manualConfirmReturn(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    if (user.warehouseIds !== null) {
+      const loan = await this.loansService.findOne(id);
+      const hasAccess =
+        user.warehouseIds.includes(loan.sourceWarehouse.id) ||
+        user.warehouseIds.includes(loan.destinationWarehouse.id);
+      if (!hasAccess) {
+        throw new ForbiddenException('You do not have access to the involved warehouses');
+      }
+    }
+    return this.loansService.manualConfirmReturn(id, user.userId);
+  }
+
   // ==================== Standard Endpoints ====================
 
   @Patch(':id')
