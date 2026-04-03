@@ -395,44 +395,10 @@ export class LoansService {
   // ==================== Manual Confirmation (No QR) ====================
 
   /**
-   * Apply receipt confirmation fields to a loan.
-   * Used by both the QR flow (confirmReceipt) and the manual flow (manualConfirmReceipt).
-   * Receipt-specific fields: RECEIVED status, receivedAt, receivedById.
-   */
-  private async _applyReceiptConfirmation(id: string, userId: string) {
-    return this.prisma.loan.update({
-      where: { id },
-      data: {
-        status: 'RECEIVED',
-        receivedAt: new Date(),
-        receivedById: userId,
-      },
-      include: this.loanInclude,
-    });
-  }
-
-  /**
-   * Apply return confirmation fields to a loan.
-   * Used by both the QR flow (confirmReturn) and the manual flow (manualConfirmReturn).
-   * Return-specific fields: RETURNED status, returnDate, returnConfirmedAt, returnConfirmedById.
-   */
-  private async _applyReturnConfirmation(id: string, userId: string) {
-    return this.prisma.loan.update({
-      where: { id },
-      data: {
-        status: 'RETURNED',
-        returnDate: new Date(),
-        returnConfirmedAt: new Date(),
-        returnConfirmedById: userId,
-      },
-      include: this.loanInclude,
-    });
-  }
-
-  /**
    * Manually confirm receipt of a loan without QR code.
    * Accepts SENT or OVERDUE (only if not yet received) status.
-   * Performs warehouse access check internally to avoid double fetch.
+   * Performs warehouse access check before the transaction, then re-validates
+   * status inside the transaction to prevent double-confirmation under concurrency.
    */
   async manualConfirmReceipt(id: string, userId: string, userWarehouseIds: string[] | null) {
     const loan = await this.findOne(id);
@@ -446,27 +412,35 @@ export class LoansService {
       }
     }
 
-    if (loan.status !== 'SENT' && loan.status !== 'OVERDUE') {
-      throw new BadRequestException(
-        `Cannot confirm receipt. Loan is in ${loan.status} status. Only SENT or OVERDUE loans can be confirmed.`,
-      );
-    }
+    const previousStatus = loan.status;
 
-    // Guard: OVERDUE can come from RECEIVED — prevent overwriting existing receipt data
-    if (loan.status === 'OVERDUE' && loan.receivedAt) {
-      throw new BadRequestException(
-        'This loan was already received. Use manual confirm return to confirm the return instead.',
-      );
-    }
-
-    const updated = await this._applyReceiptConfirmation(id, userId);
+    // Status check + write in one transaction to prevent double-confirmation under concurrency
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const current = await tx.loan.findUnique({ where: { id } });
+      if (!current || (current.status !== 'SENT' && current.status !== 'OVERDUE')) {
+        throw new BadRequestException(
+          `Cannot confirm receipt. Loan is in ${current?.status ?? 'unknown'} status. Only SENT or OVERDUE loans can be confirmed.`,
+        );
+      }
+      // Guard: OVERDUE from RECEIVED — prevent overwriting existing receipt data
+      if (current.status === 'OVERDUE' && current.receivedAt) {
+        throw new BadRequestException(
+          'This loan was already received. Use manual confirm return to confirm the return instead.',
+        );
+      }
+      return tx.loan.update({
+        where: { id },
+        data: { status: 'RECEIVED', receivedAt: new Date(), receivedById: userId },
+        include: this.loanInclude,
+      });
+    });
 
     await this.auditService.log({
       action: 'UPDATE',
       entity: 'Loan',
       entityId: id,
       userId,
-      changes: { status: 'RECEIVED', confirmedManually: true, previousStatus: loan.status },
+      changes: { status: 'RECEIVED', confirmedManually: true, previousStatus },
     });
 
     return updated;
@@ -475,7 +449,8 @@ export class LoansService {
   /**
    * Manually confirm return of a loan without QR code.
    * Accepts RETURN_PENDING or OVERDUE (only if already received) status.
-   * Performs warehouse access check internally to avoid double fetch.
+   * Performs warehouse access check before the transaction, then re-validates
+   * status inside the transaction to prevent double-confirmation under concurrency.
    */
   async manualConfirmReturn(id: string, userId: string, userWarehouseIds: string[] | null) {
     const loan = await this.findOne(id);
@@ -489,27 +464,40 @@ export class LoansService {
       }
     }
 
-    if (loan.status !== 'RETURN_PENDING' && loan.status !== 'OVERDUE') {
-      throw new BadRequestException(
-        `Cannot confirm return. Loan is in ${loan.status} status. Only RETURN_PENDING or OVERDUE loans can be confirmed.`,
-      );
-    }
+    const previousStatus = loan.status;
 
-    // Guard: OVERDUE can come from SENT (never received) — prevent confirming return without receipt
-    if (loan.status === 'OVERDUE' && !loan.receivedAt) {
-      throw new BadRequestException(
-        'This loan was never received. Use manual confirm receipt first.',
-      );
-    }
-
-    const updated = await this._applyReturnConfirmation(id, userId);
+    // Status check + write in one transaction to prevent double-confirmation under concurrency
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const current = await tx.loan.findUnique({ where: { id } });
+      if (!current || (current.status !== 'RETURN_PENDING' && current.status !== 'OVERDUE')) {
+        throw new BadRequestException(
+          `Cannot confirm return. Loan is in ${current?.status ?? 'unknown'} status. Only RETURN_PENDING or OVERDUE loans can be confirmed.`,
+        );
+      }
+      // Guard: OVERDUE from SENT (never received) — prevent confirming return without receipt
+      if (current.status === 'OVERDUE' && !current.receivedAt) {
+        throw new BadRequestException(
+          'This loan was never received. Use manual confirm receipt first.',
+        );
+      }
+      return tx.loan.update({
+        where: { id },
+        data: {
+          status: 'RETURNED',
+          returnDate: new Date(),
+          returnConfirmedAt: new Date(),
+          returnConfirmedById: userId,
+        },
+        include: this.loanInclude,
+      });
+    });
 
     await this.auditService.log({
       action: 'UPDATE',
       entity: 'Loan',
       entityId: id,
       userId,
-      changes: { status: 'RETURNED', confirmedManually: true, previousStatus: loan.status },
+      changes: { status: 'RETURNED', confirmedManually: true, previousStatus },
     });
 
     return updated;
@@ -610,12 +598,14 @@ export class LoansService {
       }
     }
     try {
+      // Explicitly omit status to prevent state machine bypass via the generic update endpoint
+      const { status: _omitted, ...safeFields } = updateLoanDto;
       return await this.prisma.loan.update({
         where: { id },
         data: {
-          ...updateLoanDto,
-          returnDate: updateLoanDto.returnDate
-            ? new Date(updateLoanDto.returnDate)
+          ...safeFields,
+          returnDate: safeFields.returnDate
+            ? new Date(safeFields.returnDate)
             : undefined,
         },
         include: this.loanInclude,

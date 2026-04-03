@@ -275,16 +275,18 @@ export class TransferRequestsService {
       throw new NotFoundException('Invalid QR code or transfer not found');
     }
 
-    if (request.status !== RequestStatus.SENT) {
-      throw new BadRequestException(
-        `Cannot confirm receipt. Transfer is in ${request.status} status.`
-      );
-    }
-
     // Execute the transfer - all inventory modifications in a single transaction.
     // NOTE [M3]: Promise.all inside $transaction is safe on SQLite (dev) but can cause
     // serialization conflicts on PostgreSQL under high concurrency. See comments in complete().
     const updated = await this.prisma.$transaction(async (tx) => {
+      // Re-check status inside the transaction to prevent double-confirmation under concurrency
+      const current = await tx.transferRequest.findUnique({ where: { id: request.id }, select: { status: true } });
+      if (!current || current.status !== RequestStatus.SENT) {
+        throw new BadRequestException(
+          `Cannot confirm receipt. Transfer is in ${current?.status ?? 'unknown'} status.`
+        );
+      }
+
       // Re-validate quantities inside the transaction to prevent negative stock
       // in case another operation decremented inventory since the request was approved.
       for (const item of request.items) {
@@ -459,18 +461,20 @@ export class TransferRequestsService {
       if (!hasAccess) throw new ForbiddenException('You do not have access to the involved warehouses');
     }
 
-    if (request.status !== RequestStatus.SENT) {
-      throw new BadRequestException(
-        `Transfer request must be in SENT status to confirm receipt. Current status: ${request.status}`
-      );
-    }
-
     // Execute the transfer - all inventory modifications in a single transaction.
     // NOTE [M3]: Promise.all inside $transaction is safe on SQLite (dev) but can cause
     // serialization conflicts on PostgreSQL under high concurrency. If this becomes an
     // issue in production, switch to sequential awaits or add a Serializable isolation
     // level (requires PostgreSQL — cannot be set in dev SQLite schema).
     const updated = await this.prisma.$transaction(async (tx) => {
+      // Re-check status inside the transaction to prevent double-confirmation under concurrency
+      const current = await tx.transferRequest.findUnique({ where: { id }, select: { status: true } });
+      if (!current || current.status !== RequestStatus.SENT) {
+        throw new BadRequestException(
+          `Transfer request must be in SENT status to confirm receipt. Current status: ${current?.status ?? 'unknown'}`
+        );
+      }
+
       // Re-validate quantities inside the transaction to prevent negative stock
       // in case another operation decremented inventory since the request was approved.
       for (const item of request.items) {
@@ -566,8 +570,8 @@ export class TransferRequestsService {
       if (!hasAccess) throw new ForbiddenException('You do not have access to the involved warehouses');
     }
 
-    if (request.status === RequestStatus.COMPLETED) {
-      throw new BadRequestException('Cannot cancel a completed transfer request');
+    if (request.status === RequestStatus.COMPLETED || request.status === RequestStatus.REJECTED) {
+      throw new BadRequestException(`Cannot cancel a transfer request in ${request.status} status`);
     }
 
     const updated = await this.prisma.transferRequest.update({
