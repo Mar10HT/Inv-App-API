@@ -269,8 +269,21 @@ export class TransferRequestsService {
       );
     }
 
-    // Execute the transfer - all inventory modifications in a single transaction
+    // Execute the transfer - all inventory modifications in a single transaction.
+    // NOTE [M3]: Promise.all inside $transaction is safe on SQLite (dev) but can cause
+    // serialization conflicts on PostgreSQL under high concurrency. See comments in complete().
     const updated = await this.prisma.$transaction(async (tx) => {
+      // Re-validate quantities inside the transaction to prevent negative stock
+      // in case another operation decremented inventory since the request was approved.
+      for (const item of request.items) {
+        const current = await tx.inventoryItem.findUnique({ where: { id: item.inventoryItemId } });
+        if (!current || current.quantity < item.quantity) {
+          throw new BadRequestException(
+            `Insufficient quantity for item: ${item.inventoryItem.name}. Available: ${current?.quantity ?? 0}, Required: ${item.quantity}`
+          );
+        }
+      }
+
       // Decrement source quantities in parallel
       await Promise.all(
         request.items.map((item) =>
@@ -434,6 +447,17 @@ export class TransferRequestsService {
     // issue in production, switch to sequential awaits or add a Serializable isolation
     // level (requires PostgreSQL — cannot be set in dev SQLite schema).
     const updated = await this.prisma.$transaction(async (tx) => {
+      // Re-validate quantities inside the transaction to prevent negative stock
+      // in case another operation decremented inventory since the request was approved.
+      for (const item of request.items) {
+        const current = await tx.inventoryItem.findUnique({ where: { id: item.inventoryItemId } });
+        if (!current || current.quantity < item.quantity) {
+          throw new BadRequestException(
+            `Insufficient quantity for item: ${item.inventoryItem.name}. Available: ${current?.quantity ?? 0}, Required: ${item.quantity}`
+          );
+        }
+      }
+
       // Decrement source quantities in parallel
       await Promise.all(
         request.items.map((item) =>

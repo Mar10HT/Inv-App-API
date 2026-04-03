@@ -580,7 +580,16 @@ export class LoansService {
     });
   }
 
-  async update(id: string, updateLoanDto: UpdateLoanDto) {
+  async update(id: string, updateLoanDto: UpdateLoanDto, userWarehouseIds?: string[] | null) {
+    const loan = await this.findOne(id);
+    if (userWarehouseIds != null) {
+      const hasAccess =
+        userWarehouseIds.includes(loan.sourceWarehouseId) ||
+        userWarehouseIds.includes(loan.destinationWarehouseId);
+      if (!hasAccess) {
+        throw new ForbiddenException('You do not have access to this loan');
+      }
+    }
     try {
       return await this.prisma.loan.update({
         where: { id },
@@ -603,8 +612,16 @@ export class LoansService {
   /**
    * Legacy return method (without QR) - kept for backwards compatibility
    */
-  async returnLoan(id: string, returnLoanDto?: ReturnLoanDto) {
+  async returnLoan(id: string, returnLoanDto?: ReturnLoanDto, userWarehouseIds?: string[] | null) {
     const loan = await this.findOne(id);
+    if (userWarehouseIds != null) {
+      const hasAccess =
+        userWarehouseIds.includes(loan.sourceWarehouseId) ||
+        userWarehouseIds.includes(loan.destinationWarehouseId);
+      if (!hasAccess) {
+        throw new ForbiddenException('You do not have access to this loan');
+      }
+    }
 
     if (loan.status === 'RETURNED') {
       throw new BadRequestException('Loan is already returned');
@@ -630,8 +647,16 @@ export class LoansService {
     });
   }
 
-  async cancel(id: string) {
+  async cancel(id: string, userWarehouseIds?: string[] | null) {
     const loan = await this.findOne(id);
+    if (userWarehouseIds != null) {
+      const hasAccess =
+        userWarehouseIds.includes(loan.sourceWarehouseId) ||
+        userWarehouseIds.includes(loan.destinationWarehouseId);
+      if (!hasAccess) {
+        throw new ForbiddenException('You do not have access to this loan');
+      }
+    }
 
     if (loan.status === 'RETURNED' || loan.status === 'CANCELLED') {
       throw new BadRequestException(`Cannot cancel loan in ${loan.status} status`);

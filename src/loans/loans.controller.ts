@@ -184,8 +184,9 @@ export class LoansController {
   update(
     @Param('id') id: string,
     @Body(ValidationPipe) updateLoanDto: UpdateLoanDto,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.loansService.update(id, updateLoanDto);
+    return this.loansService.update(id, updateLoanDto, user.warehouseIds);
   }
 
   @Patch(':id/return')
@@ -193,14 +194,18 @@ export class LoansController {
   returnLoan(
     @Param('id') id: string,
     @Body(ValidationPipe) returnLoanDto: ReturnLoanDto,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.loansService.returnLoan(id, returnLoanDto);
+    return this.loansService.returnLoan(id, returnLoanDto, user.warehouseIds);
   }
 
   @Patch(':id/cancel')
   @Permissions('loans:manage')
-  cancelLoan(@Param('id') id: string) {
-    return this.loansService.cancel(id);
+  cancelLoan(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.loansService.cancel(id, user.warehouseIds);
   }
 
   @Delete(':id')
