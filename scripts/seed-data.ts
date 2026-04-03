@@ -1,5 +1,5 @@
 import { PrismaClient, InventoryStatus, Currency, ItemType, UserRole } from '@prisma/client';
-import * as bcrypt from 'bcrypt';
+import * as bcrypt from 'bcryptjs';
 
 const prisma = new PrismaClient();
 
@@ -52,7 +52,7 @@ const suppliersData = [
     location: 'Tegucigalpa',
     phone: '+504 2222-1111',
     email: 'ventas@techsolutions.hn',
-    categories: ['Electronics', 'Computer Components'], // Especialidad
+    categories: ['Electronics', 'Computer Components'],
   },
   {
     name: 'Office Depot Honduras',
@@ -89,17 +89,189 @@ const suppliersData = [
     email: 'ventas@mueblesymas.hn',
     categories: ['Furniture'],
   },
+  {
+    name: 'Importaciones del Norte',
+    location: 'San Pedro Sula',
+    phone: '+504 2553-8888',
+    email: 'ventas@importnorte.hn',
+    categories: ['Electronics', 'Accessories', 'Computer Components'],
+  },
+  {
+    name: 'Suministros Industriales HN',
+    location: 'Tegucigalpa',
+    phone: '+504 2238-9999',
+    email: 'info@suministroshi.hn',
+    categories: ['Hardware', 'Office Supplies'],
+  },
+  {
+    name: 'GlobalTech Centroamérica',
+    location: 'Comayagua',
+    phone: '+504 2773-0001',
+    email: 'ventas@globaltech.hn',
+    categories: ['Computer Components', 'Electronics'],
+  },
+  {
+    name: 'Ofimuebles Honduras',
+    location: 'Choluteca',
+    phone: '+504 2782-0002',
+    email: 'ventas@ofimuebles.hn',
+    categories: ['Furniture', 'Office Supplies', 'Accessories'],
+  },
 ];
 
 const usersData = [
+  // SYSTEM_ADMIN x2 (no roleId needed — backend returns '*' for SYSTEM_ADMIN)
   { name: 'System Administrator', email: 'admin@example.com', role: UserRole.SYSTEM_ADMIN },
-  { name: 'Warehouse Manager', email: 'manager@example.com', role: UserRole.WAREHOUSE_MANAGER },
-  { name: 'Regular User', email: 'user@example.com', role: UserRole.USER },
-  { name: 'Viewer User', email: 'viewer@example.com', role: UserRole.VIEWER },
-  { name: 'Carlos Martinez', email: 'carlos.m@external.hn', role: UserRole.EXTERNAL },
-  { name: 'Ana Lopez', email: 'ana.l@external.hn', role: UserRole.EXTERNAL },
-  { name: 'Roberto Sanchez', email: 'roberto.s@external.hn', role: UserRole.EXTERNAL },
-  { name: 'Maria Fernandez', email: 'maria.f@external.hn', role: UserRole.EXTERNAL },
+  { name: 'Secondary Admin', email: 'admin2@example.com', role: UserRole.SYSTEM_ADMIN },
+  // WAREHOUSE_MANAGER x2
+  { name: 'Warehouse Manager', email: 'manager@example.com', role: UserRole.WAREHOUSE_MANAGER, roleKey: 'warehouse_manager' },
+  { name: 'Laura Reyes', email: 'laura.r@example.com', role: UserRole.WAREHOUSE_MANAGER, roleKey: 'warehouse_manager' },
+  // USER x2
+  { name: 'Regular User', email: 'user@example.com', role: UserRole.USER, roleKey: 'user' },
+  { name: 'Pedro Alvarado', email: 'pedro.a@example.com', role: UserRole.USER, roleKey: 'user' },
+  // VIEWER x2
+  { name: 'Viewer User', email: 'viewer@example.com', role: UserRole.VIEWER, roleKey: 'viewer' },
+  { name: 'Sofia Mendez', email: 'sofia.m@example.com', role: UserRole.VIEWER, roleKey: 'viewer' },
+  // EXTERNAL x2
+  { name: 'Carlos Martinez', email: 'carlos.m@external.hn', role: UserRole.EXTERNAL, roleKey: 'external' },
+  { name: 'Ana Lopez', email: 'ana.l@external.hn', role: UserRole.EXTERNAL, roleKey: 'external' },
+];
+
+// ── Permissions ────────────────────────────────────────────────────────────────
+
+const permissionsData = [
+  // Audit
+  { key: 'audit:view', module: 'audit', action: 'view', description: 'View audit logs' },
+  // Categories
+  { key: 'categories:view', module: 'categories', action: 'view', description: 'View categories' },
+  { key: 'categories:create', module: 'categories', action: 'create', description: 'Create categories' },
+  { key: 'categories:edit', module: 'categories', action: 'edit', description: 'Edit categories' },
+  { key: 'categories:delete', module: 'categories', action: 'delete', description: 'Delete categories' },
+  // Dashboard
+  { key: 'dashboard:view', module: 'dashboard', action: 'view', description: 'View dashboard' },
+  // Discharges
+  { key: 'discharges:view', module: 'discharges', action: 'view', description: 'View discharge requests' },
+  { key: 'discharges:manage', module: 'discharges', action: 'manage', description: 'Manage discharge requests' },
+  // Inventory
+  { key: 'inventory:view', module: 'inventory', action: 'view', description: 'View inventory' },
+  { key: 'inventory:create', module: 'inventory', action: 'create', description: 'Create inventory items' },
+  { key: 'inventory:edit', module: 'inventory', action: 'edit', description: 'Edit inventory items' },
+  { key: 'inventory:delete', module: 'inventory', action: 'delete', description: 'Delete inventory items' },
+  { key: 'inventory:change', module: 'inventory', action: 'change', description: 'Change inventory quantities' },
+  // Loans
+  { key: 'loans:view', module: 'loans', action: 'view', description: 'View loans' },
+  { key: 'loans:create', module: 'loans', action: 'create', description: 'Create loans' },
+  { key: 'loans:manage', module: 'loans', action: 'manage', description: 'Manage all loans' },
+  // Reports
+  { key: 'reports:view', module: 'reports', action: 'view', description: 'View reports' },
+  // Settings
+  { key: 'settings:view', module: 'settings', action: 'view', description: 'View settings' },
+  { key: 'settings:edit', module: 'settings', action: 'edit', description: 'Edit settings' },
+  // Stocktake
+  { key: 'stocktake:view', module: 'stocktake', action: 'view', description: 'View stock takes' },
+  { key: 'stocktake:create', module: 'stocktake', action: 'create', description: 'Create stock takes' },
+  { key: 'stocktake:manage', module: 'stocktake', action: 'manage', description: 'Manage stock takes' },
+  // Suppliers
+  { key: 'suppliers:view', module: 'suppliers', action: 'view', description: 'View suppliers' },
+  { key: 'suppliers:create', module: 'suppliers', action: 'create', description: 'Create suppliers' },
+  { key: 'suppliers:edit', module: 'suppliers', action: 'edit', description: 'Edit suppliers' },
+  { key: 'suppliers:delete', module: 'suppliers', action: 'delete', description: 'Delete suppliers' },
+  // Transactions
+  { key: 'transactions:view', module: 'transactions', action: 'view', description: 'View transactions' },
+  { key: 'transactions:create', module: 'transactions', action: 'create', description: 'Create transactions' },
+  { key: 'transactions:delete', module: 'transactions', action: 'delete', description: 'Delete transactions' },
+  // Transfers
+  { key: 'transfers:view', module: 'transfers', action: 'view', description: 'View transfer requests' },
+  { key: 'transfers:create', module: 'transfers', action: 'create', description: 'Create transfer requests' },
+  { key: 'transfers:manage', module: 'transfers', action: 'manage', description: 'Manage all transfer requests' },
+  // Users
+  { key: 'users:view', module: 'users', action: 'view', description: 'View users' },
+  { key: 'users:create', module: 'users', action: 'create', description: 'Create users' },
+  { key: 'users:edit', module: 'users', action: 'edit', description: 'Edit users' },
+  { key: 'users:delete', module: 'users', action: 'delete', description: 'Delete users' },
+  // Warehouse
+  { key: 'warehouse:view', module: 'warehouse', action: 'view', description: 'View warehouses' },
+  { key: 'warehouse:create', module: 'warehouse', action: 'create', description: 'Create warehouses' },
+  { key: 'warehouse:edit', module: 'warehouse', action: 'edit', description: 'Edit warehouses' },
+  { key: 'warehouse:delete', module: 'warehouse', action: 'delete', description: 'Delete warehouses' },
+];
+
+// ── Roles & their permission sets ─────────────────────────────────────────────
+
+const rolesData = [
+  {
+    name: 'warehouse_manager',
+    displayName: 'Warehouse Manager',
+    description: 'Full access to inventory, warehouses, and operations',
+    isSystem: true,
+    permissions: [
+      'audit:view',
+      'categories:view', 'categories:create', 'categories:edit', 'categories:delete',
+      'dashboard:view',
+      'discharges:view', 'discharges:manage',
+      'inventory:view', 'inventory:create', 'inventory:edit', 'inventory:delete', 'inventory:change',
+      'loans:view', 'loans:create', 'loans:manage',
+      'reports:view',
+      'settings:view',
+      'stocktake:view', 'stocktake:create', 'stocktake:manage',
+      'suppliers:view', 'suppliers:create', 'suppliers:edit', 'suppliers:delete',
+      'transactions:view', 'transactions:create', 'transactions:delete',
+      'transfers:view', 'transfers:create', 'transfers:manage',
+      'users:view',
+      'warehouse:view', 'warehouse:create', 'warehouse:edit', 'warehouse:delete',
+    ],
+  },
+  {
+    name: 'user',
+    displayName: 'Regular User',
+    description: 'Operational access — can create and view but not manage',
+    isSystem: true,
+    permissions: [
+      'categories:view',
+      'dashboard:view',
+      'discharges:view',
+      'inventory:view', 'inventory:create', 'inventory:edit', 'inventory:change',
+      'loans:view', 'loans:create',
+      'reports:view',
+      'stocktake:view', 'stocktake:create',
+      'suppliers:view',
+      'transactions:view', 'transactions:create',
+      'transfers:view', 'transfers:create',
+      'warehouse:view',
+    ],
+  },
+  {
+    name: 'viewer',
+    displayName: 'Viewer',
+    description: 'Read-only access to all modules',
+    isSystem: true,
+    permissions: [
+      'audit:view',
+      'categories:view',
+      'dashboard:view',
+      'discharges:view',
+      'inventory:view',
+      'loans:view',
+      'reports:view',
+      'stocktake:view',
+      'suppliers:view',
+      'transactions:view',
+      'transfers:view',
+      'warehouse:view',
+    ],
+  },
+  {
+    name: 'external',
+    displayName: 'External',
+    description: 'External user — can view assigned items and their loans',
+    isSystem: true,
+    permissions: [
+      'dashboard:view',
+      'discharges:view',
+      'inventory:view',
+      'loans:view',
+    ],
+  },
 ];
 
 type ProductDef = {
@@ -334,6 +506,9 @@ async function main() {
   await prisma.refreshToken.deleteMany();
   await prisma.loginAttempt.deleteMany();
   await prisma.user.deleteMany();
+  await prisma.rolePermission.deleteMany();
+  await prisma.role.deleteMany();
+  await prisma.permission.deleteMany();
 
   console.log('   ✓ All tables cleared\n');
 
@@ -396,26 +571,66 @@ async function main() {
   console.log(`   ✓ Created ${suppliers.length} suppliers\n`);
 
   // ----------------------------------------
+  // Create Permissions
+  // ----------------------------------------
+  console.log('🔑 Creating permissions...');
+  const permissionsMap: Record<string, any> = {};
+
+  for (const permData of permissionsData) {
+    const perm = await prisma.permission.create({ data: permData });
+    permissionsMap[perm.key] = perm;
+  }
+  console.log(`   ✓ Created ${Object.keys(permissionsMap).length} permissions\n`);
+
+  // ----------------------------------------
+  // Create Roles & assign permissions
+  // ----------------------------------------
+  console.log('🎭 Creating roles...');
+  const rolesMap: Record<string, any> = {};
+
+  for (const roleData of rolesData) {
+    const { permissions: permKeys, ...rest } = roleData;
+    const role = await prisma.role.create({ data: rest });
+    rolesMap[role.name] = role;
+
+    for (const key of permKeys) {
+      const perm = permissionsMap[key];
+      if (perm) {
+        await prisma.rolePermission.create({
+          data: { roleId: role.id, permissionId: perm.id },
+        });
+      }
+    }
+    console.log(`   ✓ ${role.displayName}: ${permKeys.length} permissions`);
+  }
+  console.log();
+
+  // ----------------------------------------
   // Create Users
   // ----------------------------------------
   console.log('👥 Creating users...');
   const hashedPassword = await bcrypt.hash('password123', 10);
   const users: any[] = [];
-  const externalUsers: any[] = [];
+  const assignableUsers: any[] = []; // Users that can be assigned unique items
 
   for (const userData of usersData) {
+    const { roleKey, ...rest } = userData as any;
+    const roleId = roleKey ? rolesMap[roleKey]?.id : undefined;
+
     const user = await prisma.user.create({
       data: {
-        ...userData,
+        ...rest,
         password: hashedPassword,
+        ...(roleId ? { roleId } : {}),
       },
     });
     users.push(user);
-    if (userData.role === UserRole.EXTERNAL) {
-      externalUsers.push(user);
+    // Assign unique items to non-admin, non-viewer users
+    if (userData.role !== UserRole.SYSTEM_ADMIN && userData.role !== UserRole.VIEWER) {
+      assignableUsers.push(user);
     }
   }
-  console.log(`   ✓ Created ${users.length} users (${externalUsers.length} external)\n`);
+  console.log(`   ✓ Created ${users.length} users (${assignableUsers.length} assignable)\n`);
 
   // ----------------------------------------
   // Create Inventory Items
@@ -429,7 +644,7 @@ async function main() {
 
   const categoryNames = Object.keys(productsByCategory);
 
-  for (let i = 0; i < 200; i++) {
+  for (let i = 0; i < 500; i++) {
     const categoryName = random(categoryNames);
     const category = categories[categoryName];
     const productList = productsByCategory[categoryName];
@@ -479,11 +694,11 @@ async function main() {
     // Service tag for unique items
     const serviceTag = itemType === ItemType.UNIQUE ? generateServiceTag() : null;
 
-    // Assign some unique items to external users
+    // Assign some unique items to managers, users, and external users
     const assignedUser = itemType === ItemType.UNIQUE &&
       status === InventoryStatus.IN_STOCK &&
-      Math.random() > 0.6
-        ? random(externalUsers)
+      Math.random() > 0.5
+        ? random(assignableUsers)
         : null;
 
     if (assignedUser) assignedCount++;
@@ -516,7 +731,7 @@ async function main() {
     else bulkCount++;
   }
 
-  console.log(`   ✓ Created 200 inventory items`);
+  console.log(`   ✓ Created 500 inventory items`);
   console.log(`     - Unique items: ${uniqueCount}`);
   console.log(`     - Bulk items: ${bulkCount}`);
   console.log(`     - Assigned to users: ${assignedCount}\n`);
@@ -594,11 +809,12 @@ async function main() {
   // Done
   // ----------------------------------------
   console.log('\n✅ Seed completed successfully!');
-  console.log('\n📝 Login credentials:');
-  console.log('   Admin: admin@example.com / password123');
-  console.log('   Manager: manager@example.com / password123');
-  console.log('   User: user@example.com / password123');
-  console.log('   Viewer: viewer@example.com / password123');
+  console.log('\n📝 Login credentials (all use password123):');
+  console.log('   Admin:    admin@example.com, admin2@example.com');
+  console.log('   Manager:  manager@example.com, laura.r@example.com');
+  console.log('   User:     user@example.com, pedro.a@example.com');
+  console.log('   Viewer:   viewer@example.com, sofia.m@example.com');
+  console.log('   External: carlos.m@external.hn, ana.l@external.hn');
 }
 
 main()

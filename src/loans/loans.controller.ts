@@ -48,10 +48,11 @@ export class LoansController {
   @Get()
   @Permissions('loans:view')
   findAll(
-    @Query(ValidationPipe) pagination: PaginationDto,
+    @Query(new ValidationPipe({ whitelist: true, transform: true })) pagination: PaginationDto,
+    @Query('status') status?: string,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.loansService.findAll(pagination, user.warehouseIds);
+    return this.loansService.findAll(pagination, user.warehouseIds, status);
   }
 
   @Get('active')

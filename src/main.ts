@@ -73,11 +73,20 @@ async function bootstrap() {
 
   // CSRF protection middleware (after CORS)
   // Requests using Bearer token (mobile apps, API clients) are inherently CSRF-immune
-  // because browsers never automatically attach Authorization headers cross-site
+  // because browsers never automatically attach Authorization headers cross-site.
+  // Login and refresh are also exempt: mobile calls these before having a token,
+  // and React Native fetch cannot access HttpOnly Set-Cookie headers to complete
+  // the double-submit handshake. These endpoints are safe to exempt because:
+  //   - login: no privileged action on behalf of an authenticated user
+  //   - refresh: protected by the opaque refresh token value itself
   const csrfService = app.get(CsrfService);
+  const CSRF_EXEMPT_PATHS = ['/api/auth/login', '/api/auth/refresh'];
   app.use((req, res, next) => {
     const authHeader = req.headers.authorization as string | undefined;
     if (authHeader?.startsWith('Bearer ')) {
+      return next();
+    }
+    if (CSRF_EXEMPT_PATHS.includes(req.path)) {
       return next();
     }
     return csrfService.getProtectionMiddleware()(req, res, next);

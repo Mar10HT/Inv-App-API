@@ -61,6 +61,11 @@ export class PermissionsService {
 
     if (!user) return { permissions: [], version: 0 };
 
+    // SYSTEM_ADMIN has unrestricted access — return wildcard permission
+    if (user.role === 'SYSTEM_ADMIN') {
+      return this.setCache(userId, ['*'], user.permissionsVersion);
+    }
+
     if (!user.roleId) {
       this.logger.warn(`User ${userId} has no roleId assigned — returning empty permissions.`);
       return this.setCache(userId, [], user.permissionsVersion);

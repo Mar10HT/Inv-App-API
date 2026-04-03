@@ -509,12 +509,15 @@ export class LoansService {
     return updated;
   }
 
-  async findAll(pagination?: PaginationDto, warehouseIds?: string[] | null): Promise<PaginatedResult<any>> {
+  async findAll(pagination?: PaginationDto, warehouseIds?: string[] | null, status?: string): Promise<PaginatedResult<any>> {
     const page = pagination?.page || 1;
     const limit = pagination?.limit || 10;
     const skip = (page - 1) * limit;
 
-    const where = warehouseFilterMultiField(warehouseIds, ['sourceWarehouseId', 'destinationWarehouseId']);
+    const where = {
+      ...warehouseFilterMultiField(warehouseIds, ['sourceWarehouseId', 'destinationWarehouseId']),
+      ...(status ? { status: status as any } : {}),
+    };
 
     const [data, total] = await Promise.all([
       this.prisma.loan.findMany({

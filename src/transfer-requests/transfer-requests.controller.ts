@@ -50,7 +50,7 @@ export class TransferRequestsController {
   @Permissions('transfers:view')
   @ApiQuery({ name: 'status', enum: ['PENDING', 'APPROVED', 'SENT', 'COMPLETED', 'REJECTED', 'CANCELLED'], required: false })
   findAll(
-    @Query(ValidationPipe) pagination: PaginationDto,
+    @Query(new ValidationPipe({ whitelist: true, transform: true })) pagination: PaginationDto,
     @Query('status') status?: string,
     @CurrentUser() user?: AuthenticatedUser,
   ) {
