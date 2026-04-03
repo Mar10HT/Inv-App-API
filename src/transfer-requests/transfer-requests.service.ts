@@ -461,15 +461,15 @@ export class TransferRequestsService {
       }
     }
 
-    // Decrement source quantities in parallel
-    await Promise.all(
-      request.items.map((item) =>
-        tx.inventoryItem.update({
-          where: { id: item.inventoryItemId },
-          data: { quantity: { decrement: item.quantity } },
-        }),
-      ),
-    );
+    // Decrement source quantities sequentially — same reason as destination below:
+    // parallel decrements on the same item under READ COMMITTED (PostgreSQL default)
+    // can produce negative stock if two transactions read before either writes.
+    for (const item of request.items) {
+      await tx.inventoryItem.update({
+        where: { id: item.inventoryItemId },
+        data: { quantity: { decrement: item.quantity } },
+      });
+    }
 
     // Find and update/create destination items sequentially to prevent concurrent transactions
     // from both seeing no existing item and racing to create duplicates (findFirst + create TOCTOU).
@@ -478,8 +478,8 @@ export class TransferRequestsService {
         where: {
           warehouseId: request.destinationWarehouseId,
           name: item.inventoryItem.name,
-          category: item.inventoryItem.category,
-          sku: item.inventoryItem.sku,
+          category: item.inventoryItem.category ?? undefined,
+          sku: item.inventoryItem.sku ?? undefined,
         },
       });
 
@@ -489,7 +489,8 @@ export class TransferRequestsService {
           data: { quantity: { increment: item.quantity } },
         });
       } else {
-        await tx.inventoryItem.create({
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await (tx.inventoryItem.create as any)({
           data: {
             name: item.inventoryItem.name,
             description: item.inventoryItem.description,
@@ -531,7 +532,7 @@ export class TransferRequestsService {
     // Wrap status check and update in a single transaction to prevent TOCTOU races
     const updated = await this.prisma.$transaction(async (tx) => {
       const current = await tx.transferRequest.findUnique({ where: { id }, select: { status: true } });
-      if (!current || current.status === RequestStatus.COMPLETED || current.status === RequestStatus.REJECTED) {
+      if (!current || current.status === RequestStatus.COMPLETED || current.status === RequestStatus.REJECTED || current.status === RequestStatus.CANCELLED) {
         throw new BadRequestException(
           `Cannot cancel a transfer request in ${current?.status ?? 'unknown'} status`
         );
