@@ -2,6 +2,7 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { QrService } from '../qr/qr.service';
@@ -221,15 +222,17 @@ export class LoansService {
       );
     }
 
-    return this.prisma.loan.update({
-      where: { id: loan.id },
-      data: {
-        status: 'RECEIVED',
-        receivedAt: new Date(),
-        receivedById: userId,
-      },
-      include: this.loanInclude,
+    const updated = await this._applyReceiptConfirmation(loan.id, userId);
+
+    await this.auditService.log({
+      action: 'UPDATE',
+      entity: 'Loan',
+      entityId: loan.id,
+      userId,
+      changes: { status: 'RECEIVED', confirmedViaQr: true },
     });
+
+    return updated;
   }
 
   /**
@@ -291,16 +294,17 @@ export class LoansService {
       );
     }
 
-    return this.prisma.loan.update({
-      where: { id: loan.id },
-      data: {
-        status: 'RETURNED',
-        returnDate: new Date(),
-        returnConfirmedAt: new Date(),
-        returnConfirmedById: userId,
-      },
-      include: this.loanInclude,
+    const updated = await this._applyReturnConfirmation(loan.id, userId);
+
+    await this.auditService.log({
+      action: 'UPDATE',
+      entity: 'Loan',
+      entityId: loan.id,
+      userId,
+      changes: { status: 'RETURNED', confirmedViaQr: true },
     });
+
+    return updated;
   }
 
   /**
@@ -354,7 +358,8 @@ export class LoansService {
   // ==================== Manual Confirmation (No QR) ====================
 
   /**
-   * Apply receipt confirmation fields to a loan (shared logic for QR and manual flows).
+   * Apply receipt confirmation fields to a loan.
+   * Used by both the QR flow (confirmReceipt) and the manual flow (manualConfirmReceipt).
    * Receipt-specific fields: RECEIVED status, receivedAt, receivedById.
    */
   private async _applyReceiptConfirmation(id: string, userId: string) {
@@ -370,7 +375,8 @@ export class LoansService {
   }
 
   /**
-   * Apply return confirmation fields to a loan (shared logic for QR and manual flows).
+   * Apply return confirmation fields to a loan.
+   * Used by both the QR flow (confirmReturn) and the manual flow (manualConfirmReturn).
    * Return-specific fields: RETURNED status, returnDate, returnConfirmedAt, returnConfirmedById.
    */
   private async _applyReturnConfirmation(id: string, userId: string) {
@@ -388,14 +394,31 @@ export class LoansService {
 
   /**
    * Manually confirm receipt of a loan without QR code.
-   * Accepts SENT or OVERDUE status (OVERDUE covers loans that expired before being confirmed).
+   * Accepts SENT or OVERDUE (only if not yet received) status.
+   * Performs warehouse access check internally to avoid double fetch.
    */
-  async manualConfirmReceipt(id: string, userId: string) {
+  async manualConfirmReceipt(id: string, userId: string, userWarehouseIds: string[] | null) {
     const loan = await this.findOne(id);
+
+    if (userWarehouseIds !== null) {
+      const hasAccess =
+        userWarehouseIds.includes(loan.sourceWarehouse.id) ||
+        userWarehouseIds.includes(loan.destinationWarehouse.id);
+      if (!hasAccess) {
+        throw new ForbiddenException('You do not have access to the involved warehouses');
+      }
+    }
 
     if (loan.status !== 'SENT' && loan.status !== 'OVERDUE') {
       throw new BadRequestException(
         `Cannot confirm receipt. Loan is in ${loan.status} status. Only SENT or OVERDUE loans can be confirmed.`,
+      );
+    }
+
+    // Guard: OVERDUE can come from RECEIVED — prevent overwriting existing receipt data
+    if (loan.status === 'OVERDUE' && loan.receivedAt) {
+      throw new BadRequestException(
+        'This loan was already received. Use manual confirm return to confirm the return instead.',
       );
     }
 
@@ -414,10 +437,20 @@ export class LoansService {
 
   /**
    * Manually confirm return of a loan without QR code.
-   * Accepts RETURN_PENDING or OVERDUE status (OVERDUE covers legacy loans without a return QR).
+   * Accepts RETURN_PENDING or OVERDUE (only if already received) status.
+   * Performs warehouse access check internally to avoid double fetch.
    */
-  async manualConfirmReturn(id: string, userId: string) {
+  async manualConfirmReturn(id: string, userId: string, userWarehouseIds: string[] | null) {
     const loan = await this.findOne(id);
+
+    if (userWarehouseIds !== null) {
+      const hasAccess =
+        userWarehouseIds.includes(loan.sourceWarehouse.id) ||
+        userWarehouseIds.includes(loan.destinationWarehouse.id);
+      if (!hasAccess) {
+        throw new ForbiddenException('You do not have access to the involved warehouses');
+      }
+    }
 
     if (loan.status !== 'RETURN_PENDING' && loan.status !== 'OVERDUE') {
       throw new BadRequestException(
