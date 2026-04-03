@@ -146,7 +146,7 @@ export class TransferRequestsController {
   }
 
   @Patch(':id/cancel')
-  @Permissions('transfers:manage')
+  @Permissions('transfers:create')
   cancel(
     @Param('id') id: string,
     @CurrentUser() user: AuthenticatedUser,
