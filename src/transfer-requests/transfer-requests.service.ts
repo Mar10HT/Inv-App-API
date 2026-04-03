@@ -471,48 +471,41 @@ export class TransferRequestsService {
       ),
     );
 
-    // Find existing items at destination in parallel
-    const existingInDestItems = await Promise.all(
-      request.items.map((item) =>
-        tx.inventoryItem.findFirst({
-          where: {
-            warehouseId: request.destinationWarehouseId,
-            name: item.inventoryItem.name,
-            category: item.inventoryItem.category,
-            sku: item.inventoryItem.sku,
-          },
-        }),
-      ),
-    );
+    // Find and update/create destination items sequentially to prevent concurrent transactions
+    // from both seeing no existing item and racing to create duplicates (findFirst + create TOCTOU).
+    for (const item of request.items) {
+      const existingInDest = await tx.inventoryItem.findFirst({
+        where: {
+          warehouseId: request.destinationWarehouseId,
+          name: item.inventoryItem.name,
+          category: item.inventoryItem.category,
+          sku: item.inventoryItem.sku,
+        },
+      });
 
-    // Increment or create destination items in parallel
-    await Promise.all(
-      request.items.map((item, index) => {
-        const existingInDest = existingInDestItems[index];
-        if (existingInDest) {
-          return tx.inventoryItem.update({
-            where: { id: existingInDest.id },
-            data: { quantity: { increment: item.quantity } },
-          });
-        } else {
-          return tx.inventoryItem.create({
-            data: {
-              name: item.inventoryItem.name,
-              description: item.inventoryItem.description,
-              quantity: item.quantity,
-              minQuantity: item.inventoryItem.minQuantity,
-              category: item.inventoryItem.category,
-              price: item.inventoryItem.price,
-              currency: item.inventoryItem.currency,
-              sku: item.inventoryItem.sku ? `${item.inventoryItem.sku}-${request.destinationWarehouseId.slice(0, 4)}` : null,
-              warehouseId: request.destinationWarehouseId,
-              supplierId: item.inventoryItem.supplierId,
-              itemType: item.inventoryItem.itemType,
-            },
-          });
-        }
-      }),
-    );
+      if (existingInDest) {
+        await tx.inventoryItem.update({
+          where: { id: existingInDest.id },
+          data: { quantity: { increment: item.quantity } },
+        });
+      } else {
+        await tx.inventoryItem.create({
+          data: {
+            name: item.inventoryItem.name,
+            description: item.inventoryItem.description,
+            quantity: item.quantity,
+            minQuantity: item.inventoryItem.minQuantity,
+            category: item.inventoryItem.category,
+            price: item.inventoryItem.price,
+            currency: item.inventoryItem.currency,
+            sku: item.inventoryItem.sku ? `${item.inventoryItem.sku}-${request.destinationWarehouseId.slice(0, 4)}` : null,
+            warehouseId: request.destinationWarehouseId,
+            supplierId: item.inventoryItem.supplierId,
+            itemType: item.inventoryItem.itemType,
+          },
+        });
+      }
+    }
 
     // Update transfer request status within the same transaction
     return tx.transferRequest.update({

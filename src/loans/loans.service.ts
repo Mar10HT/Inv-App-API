@@ -416,7 +416,7 @@ export class LoansService {
       }
     }
 
-    let previousStatus: string;
+    let previousStatus = 'unknown';
 
     // Status check + write in one transaction to prevent double-confirmation under concurrency
     const updated = await this.prisma.$transaction(async (tx) => {
@@ -445,7 +445,7 @@ export class LoansService {
       entity: 'Loan',
       entityId: id,
       userId,
-      changes: { status: 'RECEIVED', confirmedManually: true, previousStatus: previousStatus! },
+      changes: { status: 'RECEIVED', confirmedManually: true, previousStatus },
     });
 
     return updated;
@@ -469,7 +469,7 @@ export class LoansService {
       }
     }
 
-    let previousStatus: string;
+    let previousStatus = 'unknown';
 
     // Status check + write in one transaction to prevent double-confirmation under concurrency
     const updated = await this.prisma.$transaction(async (tx) => {
@@ -503,7 +503,7 @@ export class LoansService {
       entity: 'Loan',
       entityId: id,
       userId,
-      changes: { status: 'RETURNED', confirmedManually: true, previousStatus: previousStatus! },
+      changes: { status: 'RETURNED', confirmedManually: true, previousStatus },
     });
 
     return updated;
