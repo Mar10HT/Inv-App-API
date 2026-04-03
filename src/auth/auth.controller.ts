@@ -178,9 +178,10 @@ export class AuthController {
   async logout(
     @Request() req: ExpressRequest,
     @Response({ passthrough: true }) res: ExpressResponse,
+    @Body('refresh_token') bodyRefreshToken?: string,
   ) {
-    // Revoke refresh token if present
-    const refreshToken = req.cookies?.refresh_token;
+    // Accept refresh token from cookie (web) or body (mobile)
+    const refreshToken = req.cookies?.refresh_token ?? bodyRefreshToken;
     if (refreshToken) {
       await this.authService.revokeRefreshToken(refreshToken);
     }
