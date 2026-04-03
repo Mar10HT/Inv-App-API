@@ -416,22 +416,23 @@ export class TransferRequestsService {
 
   /**
    * Complete transfer without QR — used by the manual confirmation flow.
-   * TODO [TECH-DEBT]: complete() accepts both SENT and APPROVED states.
-   * APPROVED is kept for backward compatibility with legacy flows.
-   * UI only exposes the manual confirm button for SENT status.
-   * Restrict to SENT-only once legacy APPROVED flows are confirmed unused.
+   * Only accepts SENT status. The request must be explicitly sent before it
+   * can be manually confirmed as received.
    */
   async complete(id: string, completedById: string) {
     const request = await this.findOne(id);
 
-    // Allow completing from APPROVED (legacy) or SENT status
-    if (request.status !== RequestStatus.APPROVED && request.status !== RequestStatus.SENT) {
+    if (request.status !== RequestStatus.SENT) {
       throw new BadRequestException(
-        `Transfer request must be approved or sent first. Current status: ${request.status}`
+        `Transfer request must be in SENT status to confirm receipt. Current status: ${request.status}`
       );
     }
 
-    // Execute the transfer - all inventory modifications in a single transaction
+    // Execute the transfer - all inventory modifications in a single transaction.
+    // NOTE [M3]: Promise.all inside $transaction is safe on SQLite (dev) but can cause
+    // serialization conflicts on PostgreSQL under high concurrency. If this becomes an
+    // issue in production, switch to sequential awaits or add a Serializable isolation
+    // level (requires PostgreSQL — cannot be set in dev SQLite schema).
     const updated = await this.prisma.$transaction(async (tx) => {
       // Decrement source quantities in parallel
       await Promise.all(

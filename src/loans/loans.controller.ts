@@ -68,14 +68,20 @@ export class LoansController {
 
   @Get('item/:itemId')
   @Permissions('loans:view')
-  findByItem(@Param('itemId') itemId: string) {
-    return this.loansService.findByItem(itemId);
+  findByItem(
+    @Param('itemId') itemId: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.loansService.findByItem(itemId, user.warehouseIds);
   }
 
   @Get('warehouse/:warehouseId')
   @Permissions('loans:view')
-  findByWarehouse(@Param('warehouseId') warehouseId: string) {
-    return this.loansService.findByWarehouse(warehouseId);
+  findByWarehouse(
+    @Param('warehouseId') warehouseId: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.loansService.findByWarehouse(warehouseId, user.warehouseIds);
   }
 
   @Get('check-item/:itemId')
@@ -95,8 +101,11 @@ export class LoansController {
 
   @Patch(':id/send')
   @Permissions('loans:manage')
-  sendLoan(@Param('id') id: string) {
-    return this.loansService.sendLoan(id);
+  sendLoan(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.loansService.sendLoan(id, user.warehouseIds);
   }
 
   @Get(':id/qr/:type')
@@ -121,8 +130,11 @@ export class LoansController {
 
   @Patch(':id/initiate-return')
   @Permissions('loans:manage')
-  initiateReturn(@Param('id') id: string) {
-    return this.loansService.initiateReturn(id);
+  initiateReturn(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.loansService.initiateReturn(id, user.warehouseIds);
   }
 
   @Post('confirm-return')
@@ -200,8 +212,8 @@ export class LoansController {
 
   @Post('check-overdue')
   @Permissions('loans:manage')
-  async checkOverdueLoans() {
-    await this.loansService.checkOverdueLoans();
+  async checkOverdueLoans(@CurrentUser() user: AuthenticatedUser) {
+    await this.loansService.checkOverdueLoans(user.warehouseIds);
     return { message: 'Overdue loans checked and updated' };
   }
 }

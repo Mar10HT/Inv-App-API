@@ -168,8 +168,17 @@ export class LoansService {
   /**
    * Mark loan as sent and generate QR code for receipt confirmation
    */
-  async sendLoan(id: string) {
+  async sendLoan(id: string, userWarehouseIds?: string[] | null) {
     const loan = await this.findOne(id);
+
+    if (userWarehouseIds != null) {
+      const hasAccess =
+        userWarehouseIds.includes(loan.sourceWarehouse.id) ||
+        userWarehouseIds.includes(loan.destinationWarehouse.id);
+      if (!hasAccess) {
+        throw new ForbiddenException('You do not have access to the involved warehouses');
+      }
+    }
 
     if (loan.status !== 'PENDING') {
       throw new BadRequestException(
@@ -238,8 +247,17 @@ export class LoansService {
   /**
    * Initiate return and generate QR code for return confirmation
    */
-  async initiateReturn(id: string) {
+  async initiateReturn(id: string, userWarehouseIds?: string[] | null) {
     const loan = await this.findOne(id);
+
+    if (userWarehouseIds != null) {
+      const hasAccess =
+        userWarehouseIds.includes(loan.sourceWarehouse.id) ||
+        userWarehouseIds.includes(loan.destinationWarehouse.id);
+      if (!hasAccess) {
+        throw new ForbiddenException('You do not have access to the involved warehouses');
+      }
+    }
 
     // Allow ACTIVE for backwards compatibility with legacy loans
     const allowedStatuses = ['RECEIVED', 'OVERDUE', 'ACTIVE'];
@@ -400,7 +418,7 @@ export class LoansService {
   async manualConfirmReceipt(id: string, userId: string, userWarehouseIds: string[] | null) {
     const loan = await this.findOne(id);
 
-    if (userWarehouseIds !== null) {
+    if (userWarehouseIds != null) {
       const hasAccess =
         userWarehouseIds.includes(loan.sourceWarehouse.id) ||
         userWarehouseIds.includes(loan.destinationWarehouse.id);
@@ -443,7 +461,7 @@ export class LoansService {
   async manualConfirmReturn(id: string, userId: string, userWarehouseIds: string[] | null) {
     const loan = await this.findOne(id);
 
-    if (userWarehouseIds !== null) {
+    if (userWarehouseIds != null) {
       const hasAccess =
         userWarehouseIds.includes(loan.sourceWarehouse.id) ||
         userWarehouseIds.includes(loan.destinationWarehouse.id);
@@ -455,6 +473,13 @@ export class LoansService {
     if (loan.status !== 'RETURN_PENDING' && loan.status !== 'OVERDUE') {
       throw new BadRequestException(
         `Cannot confirm return. Loan is in ${loan.status} status. Only RETURN_PENDING or OVERDUE loans can be confirmed.`,
+      );
+    }
+
+    // Guard: OVERDUE can come from SENT (never received) — prevent confirming return without receipt
+    if (loan.status === 'OVERDUE' && !loan.receivedAt) {
+      throw new BadRequestException(
+        'This loan was never received. Use manual confirm receipt first.',
       );
     }
 
@@ -530,15 +555,19 @@ export class LoansService {
     return loan;
   }
 
-  async findByItem(inventoryItemId: string) {
+  async findByItem(inventoryItemId: string, userWarehouseIds?: string[] | null) {
+    const wFilter = warehouseFilterMultiField(userWarehouseIds, ['sourceWarehouseId', 'destinationWarehouseId']);
     return this.prisma.loan.findMany({
-      where: { inventoryItemId },
+      where: { inventoryItemId, ...wFilter },
       orderBy: { loanDate: 'desc' },
       include: this.loanIncludeLight,
     });
   }
 
-  async findByWarehouse(warehouseId: string) {
+  async findByWarehouse(warehouseId: string, userWarehouseIds?: string[] | null) {
+    if (userWarehouseIds != null && !userWarehouseIds.includes(warehouseId)) {
+      throw new ForbiddenException('You do not have access to this warehouse');
+    }
     return this.prisma.loan.findMany({
       where: {
         OR: [
@@ -677,13 +706,15 @@ export class LoansService {
   }
 
   // Check and update overdue loans - called on demand
-  async checkOverdueLoans() {
+  async checkOverdueLoans(userWarehouseIds?: string[] | null) {
     const now = new Date();
+    const wFilter = warehouseFilterMultiField(userWarehouseIds, ['sourceWarehouseId', 'destinationWarehouseId']);
 
     await this.prisma.loan.updateMany({
       where: {
         status: { in: ['SENT', 'RECEIVED'] },
         dueDate: { lt: now },
+        ...wFilter,
       },
       data: {
         status: 'OVERDUE',
