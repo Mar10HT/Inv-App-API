@@ -88,8 +88,11 @@ export class TransferRequestsController {
 
   @Patch(':id/send')
   @Permissions('transfers:manage')
-  sendTransfer(@Param('id') id: string) {
-    return this.transferRequestsService.sendTransfer(id);
+  sendTransfer(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.transferRequestsService.sendTransfer(id, user.warehouseIds);
   }
 
   @Post('confirm-receipt')
@@ -120,7 +123,7 @@ export class TransferRequestsController {
     @Param('id') id: string,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.transferRequestsService.approve(id, user.userId);
+    return this.transferRequestsService.approve(id, user.userId, user.warehouseIds);
   }
 
   @Patch(':id/reject')
@@ -130,7 +133,7 @@ export class TransferRequestsController {
     @Body('reason') reason: string,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.transferRequestsService.reject(id, user.userId, reason);
+    return this.transferRequestsService.reject(id, user.userId, reason, user.warehouseIds);
   }
 
   @Patch(':id/complete')
@@ -139,7 +142,7 @@ export class TransferRequestsController {
     @Param('id') id: string,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.transferRequestsService.complete(id, user.userId);
+    return this.transferRequestsService.complete(id, user.userId, user.warehouseIds);
   }
 
   @Patch(':id/cancel')
@@ -148,6 +151,6 @@ export class TransferRequestsController {
     @Param('id') id: string,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.transferRequestsService.cancel(id, user.userId);
+    return this.transferRequestsService.cancel(id, user.userId, user.warehouseIds);
   }
 }

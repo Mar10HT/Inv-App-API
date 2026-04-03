@@ -1,9 +1,9 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { QrService } from '../qr/qr.service';
 import { CreateTransferRequestDto } from './dto/create-transfer-request.dto';
-import { RequestStatus } from '@prisma/client';
+import { Prisma, RequestStatus } from '@prisma/client';
 import { PaginationDto } from '../common/dto/pagination.dto';
 import { warehouseFilterMultiField } from '../common/warehouse-access/warehouse-filter.util';
 
@@ -164,33 +164,47 @@ export class TransferRequestsService {
     return request;
   }
 
-  async approve(id: string, approvedById: string) {
+  async approve(id: string, approvedById: string, userWarehouseIds?: string[] | null) {
     const request = await this.findOne(id);
-
-    if (request.status !== RequestStatus.PENDING) {
-      throw new BadRequestException(`Transfer request is not pending. Current status: ${request.status}`);
+    if (userWarehouseIds != null) {
+      const hasAccess =
+        userWarehouseIds.includes(request.sourceWarehouseId) ||
+        userWarehouseIds.includes(request.destinationWarehouseId);
+      if (!hasAccess) throw new ForbiddenException('You do not have access to the involved warehouses');
     }
 
-    for (const item of request.items) {
-      const inventoryItem = await this.prisma.inventoryItem.findUnique({
-        where: { id: item.inventoryItemId },
+    // Wrap status check, quantity validation, and update in a single transaction to prevent TOCTOU races
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const current = await tx.transferRequest.findUnique({
+        where: { id },
+        include: { items: { include: { inventoryItem: true } } },
       });
-
-      if (!inventoryItem || inventoryItem.quantity < item.quantity) {
+      if (!current || current.status !== RequestStatus.PENDING) {
         throw new BadRequestException(
-          `Insufficient quantity for item ${item.inventoryItem.name}. Transfer cannot be approved.`
+          `Transfer request is not pending. Current status: ${current?.status ?? 'unknown'}`
         );
       }
-    }
 
-    const updated = await this.prisma.transferRequest.update({
-      where: { id },
-      data: {
-        status: RequestStatus.APPROVED,
-        approvedById,
-        approvedAt: new Date(),
-      },
-      include: this.includeFull,
+      for (const item of current.items) {
+        const inventoryItem = await tx.inventoryItem.findUnique({
+          where: { id: item.inventoryItemId },
+        });
+        if (!inventoryItem || inventoryItem.quantity < item.quantity) {
+          throw new BadRequestException(
+            `Insufficient quantity for item ${item.inventoryItem.name}. Transfer cannot be approved.`
+          );
+        }
+      }
+
+      return tx.transferRequest.update({
+        where: { id },
+        data: {
+          status: RequestStatus.APPROVED,
+          approvedById,
+          approvedAt: new Date(),
+        },
+        include: this.includeFull,
+      });
     });
 
     await this.auditService.log({
@@ -209,8 +223,14 @@ export class TransferRequestsService {
   /**
    * Send transfer - generates QR code for receipt confirmation
    */
-  async sendTransfer(id: string) {
+  async sendTransfer(id: string, userWarehouseIds?: string[] | null) {
     const request = await this.findOne(id);
+    if (userWarehouseIds != null) {
+      const hasAccess =
+        userWarehouseIds.includes(request.sourceWarehouseId) ||
+        userWarehouseIds.includes(request.destinationWarehouseId);
+      if (!hasAccess) throw new ForbiddenException('You do not have access to the involved warehouses');
+    }
 
     if (request.status !== RequestStatus.APPROVED) {
       throw new BadRequestException(
@@ -263,77 +283,18 @@ export class TransferRequestsService {
       throw new NotFoundException('Invalid QR code or transfer not found');
     }
 
-    if (request.status !== RequestStatus.SENT) {
-      throw new BadRequestException(
-        `Cannot confirm receipt. Transfer is in ${request.status} status.`
-      );
-    }
-
-    // Execute the transfer - all inventory modifications in a single transaction
+    // Execute the transfer - all inventory modifications in a single transaction.
+    // NOTE [M3]: Promise.all inside $transaction is safe on SQLite (dev) but can cause
+    // serialization conflicts on PostgreSQL under high concurrency. See comments in complete().
     const updated = await this.prisma.$transaction(async (tx) => {
-      // Decrement source quantities in parallel
-      await Promise.all(
-        request.items.map((item) =>
-          tx.inventoryItem.update({
-            where: { id: item.inventoryItemId },
-            data: { quantity: { decrement: item.quantity } },
-          }),
-        ),
-      );
-
-      // Find existing items at destination in parallel
-      const existingInDestItems = await Promise.all(
-        request.items.map((item) =>
-          tx.inventoryItem.findFirst({
-            where: {
-              warehouseId: request.destinationWarehouseId,
-              name: item.inventoryItem.name,
-              category: item.inventoryItem.category,
-              sku: item.inventoryItem.sku,
-            },
-          }),
-        ),
-      );
-
-      // Increment or create destination items in parallel
-      await Promise.all(
-        request.items.map((item, index) => {
-          const existingInDest = existingInDestItems[index];
-          if (existingInDest) {
-            return tx.inventoryItem.update({
-              where: { id: existingInDest.id },
-              data: { quantity: { increment: item.quantity } },
-            });
-          } else {
-            return tx.inventoryItem.create({
-              data: {
-                name: item.inventoryItem.name,
-                description: item.inventoryItem.description,
-                quantity: item.quantity,
-                minQuantity: item.inventoryItem.minQuantity,
-                category: item.inventoryItem.category,
-                price: item.inventoryItem.price,
-                currency: item.inventoryItem.currency,
-                sku: item.inventoryItem.sku ? `${item.inventoryItem.sku}-${request.destinationWarehouseId.slice(0, 4)}` : null,
-                warehouseId: request.destinationWarehouseId,
-                supplierId: item.inventoryItem.supplierId,
-                itemType: item.inventoryItem.itemType,
-              },
-            });
-          }
-        }),
-      );
-
-      // Update transfer request status within the same transaction
-      return tx.transferRequest.update({
-        where: { id: request.id },
-        data: {
-          status: RequestStatus.COMPLETED,
-          receivedAt: new Date(),
-          receivedById: userId,
-        },
-        include: this.includeFull,
-      });
+      // Re-check status inside the transaction to prevent double-confirmation under concurrency
+      const current = await tx.transferRequest.findUnique({ where: { id: request.id }, select: { status: true } });
+      if (!current || current.status !== RequestStatus.SENT) {
+        throw new BadRequestException(
+          `Cannot confirm receipt. Transfer is in ${current?.status ?? 'unknown'} status.`
+        );
+      }
+      return this.applyInventoryTransfer(tx, request, userId);
     });
 
     await this.auditService.log({
@@ -385,8 +346,14 @@ export class TransferRequestsService {
 
   // ==================== Standard Operations ====================
 
-  async reject(id: string, rejectedById: string, reason?: string) {
+  async reject(id: string, rejectedById: string, reason?: string, userWarehouseIds?: string[] | null) {
     const request = await this.findOne(id);
+    if (userWarehouseIds != null) {
+      const hasAccess =
+        userWarehouseIds.includes(request.sourceWarehouseId) ||
+        userWarehouseIds.includes(request.destinationWarehouseId);
+      if (!hasAccess) throw new ForbiddenException('You do not have access to the involved warehouses');
+    }
 
     if (request.status !== RequestStatus.PENDING) {
       throw new BadRequestException(`Transfer request is not pending. Current status: ${request.status}`);
@@ -415,78 +382,33 @@ export class TransferRequestsService {
   }
 
   /**
-   * Complete transfer without QR (legacy method)
+   * Complete transfer without QR — used by the manual confirmation flow.
+   * Only accepts SENT status. The request must be explicitly sent before it
+   * can be manually confirmed as received.
    */
-  async complete(id: string, completedById: string) {
+  async complete(id: string, completedById: string, userWarehouseIds?: string[] | null) {
     const request = await this.findOne(id);
-
-    // Allow completing from APPROVED (legacy) or SENT status
-    if (request.status !== RequestStatus.APPROVED && request.status !== RequestStatus.SENT) {
-      throw new BadRequestException(
-        `Transfer request must be approved or sent first. Current status: ${request.status}`
-      );
+    if (userWarehouseIds != null) {
+      const hasAccess =
+        userWarehouseIds.includes(request.sourceWarehouseId) ||
+        userWarehouseIds.includes(request.destinationWarehouseId);
+      if (!hasAccess) throw new ForbiddenException('You do not have access to the involved warehouses');
     }
 
-    // Execute the transfer - all inventory modifications in a single transaction
+    // Execute the transfer - all inventory modifications in a single transaction.
+    // NOTE [M3]: Promise.all inside $transaction is safe on SQLite (dev) but can cause
+    // serialization conflicts on PostgreSQL under high concurrency. If this becomes an
+    // issue in production, switch to sequential awaits or add a Serializable isolation
+    // level (requires PostgreSQL — cannot be set in dev SQLite schema).
     const updated = await this.prisma.$transaction(async (tx) => {
-      // Decrement source quantities in parallel
-      await Promise.all(
-        request.items.map((item) =>
-          tx.inventoryItem.update({
-            where: { id: item.inventoryItemId },
-            data: { quantity: { decrement: item.quantity } },
-          }),
-        ),
-      );
-
-      // Find existing items at destination in parallel
-      const existingInDestItems = await Promise.all(
-        request.items.map((item) =>
-          tx.inventoryItem.findFirst({
-            where: {
-              warehouseId: request.destinationWarehouseId,
-              name: item.inventoryItem.name,
-              category: item.inventoryItem.category,
-              sku: item.inventoryItem.sku,
-            },
-          }),
-        ),
-      );
-
-      // Increment or create destination items in parallel
-      await Promise.all(
-        request.items.map((item, index) => {
-          const existingInDest = existingInDestItems[index];
-          if (existingInDest) {
-            return tx.inventoryItem.update({
-              where: { id: existingInDest.id },
-              data: { quantity: { increment: item.quantity } },
-            });
-          } else {
-            return tx.inventoryItem.create({
-              data: {
-                name: item.inventoryItem.name,
-                description: item.inventoryItem.description,
-                quantity: item.quantity,
-                minQuantity: item.inventoryItem.minQuantity,
-                category: item.inventoryItem.category,
-                price: item.inventoryItem.price,
-                currency: item.inventoryItem.currency,
-                sku: item.inventoryItem.sku ? `${item.inventoryItem.sku}-${request.destinationWarehouseId.slice(0, 4)}` : null,
-                warehouseId: request.destinationWarehouseId,
-                supplierId: item.inventoryItem.supplierId,
-                itemType: item.inventoryItem.itemType,
-              },
-            });
-          }
-        }),
-      );
-
-      return tx.transferRequest.update({
-        where: { id },
-        data: { status: RequestStatus.COMPLETED },
-        include: this.includeFull,
-      });
+      // Re-check status inside the transaction to prevent double-confirmation under concurrency
+      const current = await tx.transferRequest.findUnique({ where: { id }, select: { status: true } });
+      if (!current || current.status !== RequestStatus.SENT) {
+        throw new BadRequestException(
+          `Transfer request must be in SENT status to confirm receipt. Current status: ${current?.status ?? 'unknown'}`
+        );
+      }
+      return this.applyInventoryTransfer(tx, request, completedById);
     });
 
     await this.auditService.log({
@@ -494,23 +416,132 @@ export class TransferRequestsService {
       entity: 'TransferRequest',
       entityId: id,
       userId: completedById,
-      changes: { status: 'COMPLETED', itemsTransferred: request.items.length },
+      changes: { status: 'COMPLETED', confirmedManually: true, itemsTransferred: request.items.length },
     });
 
     return updated;
   }
 
-  async cancel(id: string, cancelledById: string) {
-    const request = await this.findOne(id);
-
-    if (request.status === RequestStatus.COMPLETED) {
-      throw new BadRequestException('Cannot cancel a completed transfer request');
+  /**
+   * Apply inventory transfer: validate quantities, decrement source, increment/create destination,
+   * and mark the transfer request as COMPLETED. Must be called inside a $transaction.
+   */
+  private async applyInventoryTransfer(
+    tx: Prisma.TransactionClient,
+    request: {
+      id: string;
+      destinationWarehouseId: string;
+      items: Array<{
+        inventoryItemId: string;
+        quantity: number;
+        inventoryItem: {
+          name: string;
+          description: string | null;
+          quantity: number;
+          minQuantity: number;
+          category: string | null;
+          price: number | null;
+          currency: string | null;
+          sku: string | null;
+          supplierId: string | null;
+          itemType: string;
+        };
+      }>;
+    },
+    receivedById: string,
+  ): Promise<any> {
+    // Re-validate quantities inside the transaction to prevent negative stock
+    // in case another operation decremented inventory since the request was approved.
+    for (const item of request.items) {
+      const currentItem = await tx.inventoryItem.findUnique({ where: { id: item.inventoryItemId } });
+      if (!currentItem || currentItem.quantity < item.quantity) {
+        throw new BadRequestException(
+          `Insufficient quantity for item: ${item.inventoryItem.name}. Available: ${currentItem?.quantity ?? 0}, Required: ${item.quantity}`
+        );
+      }
     }
 
-    const updated = await this.prisma.transferRequest.update({
-      where: { id },
-      data: { status: RequestStatus.CANCELLED },
+    // Decrement source quantities sequentially — same reason as destination below:
+    // parallel decrements on the same item under READ COMMITTED (PostgreSQL default)
+    // can produce negative stock if two transactions read before either writes.
+    for (const item of request.items) {
+      await tx.inventoryItem.update({
+        where: { id: item.inventoryItemId },
+        data: { quantity: { decrement: item.quantity } },
+      });
+    }
+
+    // Find and update/create destination items sequentially to prevent concurrent transactions
+    // from both seeing no existing item and racing to create duplicates (findFirst + create TOCTOU).
+    for (const item of request.items) {
+      const existingInDest = await tx.inventoryItem.findFirst({
+        where: {
+          warehouseId: request.destinationWarehouseId,
+          name: item.inventoryItem.name,
+          category: item.inventoryItem.category ?? undefined,
+          sku: item.inventoryItem.sku ?? undefined,
+        },
+      });
+
+      if (existingInDest) {
+        await tx.inventoryItem.update({
+          where: { id: existingInDest.id },
+          data: { quantity: { increment: item.quantity } },
+        });
+      } else {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await (tx.inventoryItem.create as any)({
+          data: {
+            name: item.inventoryItem.name,
+            description: item.inventoryItem.description,
+            quantity: item.quantity,
+            minQuantity: item.inventoryItem.minQuantity,
+            category: item.inventoryItem.category,
+            price: item.inventoryItem.price,
+            currency: item.inventoryItem.currency,
+            sku: item.inventoryItem.sku ? `${item.inventoryItem.sku}-${request.destinationWarehouseId.slice(0, 4)}` : null,
+            warehouseId: request.destinationWarehouseId,
+            supplierId: item.inventoryItem.supplierId,
+            itemType: item.inventoryItem.itemType,
+          },
+        });
+      }
+    }
+
+    // Update transfer request status within the same transaction
+    return tx.transferRequest.update({
+      where: { id: request.id },
+      data: {
+        status: RequestStatus.COMPLETED,
+        receivedAt: new Date(),
+        receivedById,
+      },
       include: this.includeFull,
+    });
+  }
+
+  async cancel(id: string, cancelledById: string, userWarehouseIds?: string[] | null) {
+    const request = await this.findOne(id);
+    if (userWarehouseIds != null) {
+      const hasAccess =
+        userWarehouseIds.includes(request.sourceWarehouseId) ||
+        userWarehouseIds.includes(request.destinationWarehouseId);
+      if (!hasAccess) throw new ForbiddenException('You do not have access to the involved warehouses');
+    }
+
+    // Wrap status check and update in a single transaction to prevent TOCTOU races
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const current = await tx.transferRequest.findUnique({ where: { id }, select: { status: true } });
+      if (!current || current.status === RequestStatus.COMPLETED || current.status === RequestStatus.REJECTED || current.status === RequestStatus.CANCELLED) {
+        throw new BadRequestException(
+          `Cannot cancel a transfer request in ${current?.status ?? 'unknown'} status`
+        );
+      }
+      return tx.transferRequest.update({
+        where: { id },
+        data: { status: RequestStatus.CANCELLED },
+        include: this.includeFull,
+      });
     });
 
     await this.auditService.log({

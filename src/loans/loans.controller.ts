@@ -68,14 +68,20 @@ export class LoansController {
 
   @Get('item/:itemId')
   @Permissions('loans:view')
-  findByItem(@Param('itemId') itemId: string) {
-    return this.loansService.findByItem(itemId);
+  findByItem(
+    @Param('itemId') itemId: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.loansService.findByItem(itemId, user.warehouseIds);
   }
 
   @Get('warehouse/:warehouseId')
   @Permissions('loans:view')
-  findByWarehouse(@Param('warehouseId') warehouseId: string) {
-    return this.loansService.findByWarehouse(warehouseId);
+  findByWarehouse(
+    @Param('warehouseId') warehouseId: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.loansService.findByWarehouse(warehouseId, user.warehouseIds);
   }
 
   @Get('check-item/:itemId')
@@ -87,16 +93,22 @@ export class LoansController {
 
   @Get(':id')
   @Permissions('loans:view')
-  findOne(@Param('id') id: string) {
-    return this.loansService.findOne(id);
+  findOne(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.loansService.findOne(id, user.warehouseIds);
   }
 
   // ==================== QR Code Endpoints ====================
 
   @Patch(':id/send')
   @Permissions('loans:manage')
-  sendLoan(@Param('id') id: string) {
-    return this.loansService.sendLoan(id);
+  sendLoan(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.loansService.sendLoan(id, user.warehouseIds);
   }
 
   @Get(':id/qr/:type')
@@ -121,8 +133,11 @@ export class LoansController {
 
   @Patch(':id/initiate-return')
   @Permissions('loans:manage')
-  initiateReturn(@Param('id') id: string) {
-    return this.loansService.initiateReturn(id);
+  initiateReturn(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.loansService.initiateReturn(id, user.warehouseIds);
   }
 
   @Post('confirm-return')
@@ -145,6 +160,26 @@ export class LoansController {
     return this.loansService.processQrCode(scannedData, user.userId);
   }
 
+  // ==================== Manual Confirmation Endpoints (No QR) ====================
+
+  @Patch(':id/manual-confirm-receipt')
+  @Permissions('loans:manage')
+  manualConfirmReceipt(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.loansService.manualConfirmReceipt(id, user.userId, user.warehouseIds);
+  }
+
+  @Patch(':id/manual-confirm-return')
+  @Permissions('loans:manage')
+  manualConfirmReturn(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.loansService.manualConfirmReturn(id, user.userId, user.warehouseIds);
+  }
+
   // ==================== Standard Endpoints ====================
 
   @Patch(':id')
@@ -152,8 +187,9 @@ export class LoansController {
   update(
     @Param('id') id: string,
     @Body(ValidationPipe) updateLoanDto: UpdateLoanDto,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.loansService.update(id, updateLoanDto);
+    return this.loansService.update(id, updateLoanDto, user.warehouseIds);
   }
 
   @Patch(':id/return')
@@ -161,14 +197,18 @@ export class LoansController {
   returnLoan(
     @Param('id') id: string,
     @Body(ValidationPipe) returnLoanDto: ReturnLoanDto,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.loansService.returnLoan(id, returnLoanDto);
+    return this.loansService.returnLoan(id, returnLoanDto, user.warehouseIds);
   }
 
   @Patch(':id/cancel')
   @Permissions('loans:manage')
-  cancelLoan(@Param('id') id: string) {
-    return this.loansService.cancel(id);
+  cancelLoan(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.loansService.cancel(id, user.warehouseIds);
   }
 
   @Delete(':id')
@@ -180,8 +220,8 @@ export class LoansController {
 
   @Post('check-overdue')
   @Permissions('loans:manage')
-  async checkOverdueLoans() {
-    await this.loansService.checkOverdueLoans();
+  async checkOverdueLoans(@CurrentUser() user: AuthenticatedUser) {
+    await this.loansService.checkOverdueLoans(user.warehouseIds);
     return { message: 'Overdue loans checked and updated' };
   }
 }

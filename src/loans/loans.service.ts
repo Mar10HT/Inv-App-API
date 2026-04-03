@@ -2,6 +2,7 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { QrService } from '../qr/qr.service';
@@ -9,6 +10,7 @@ import { CreateLoanDto } from './dto/create-loan.dto';
 import { UpdateLoanDto, ReturnLoanDto, LoanStatus } from './dto/update-loan.dto';
 import { PaginationDto, PaginatedResult } from '../common/dto';
 import { EventsService } from '../events/events.service';
+import { AuditService } from '../audit/audit.service';
 import { warehouseFilterMultiField } from '../common/warehouse-access/warehouse-filter.util';
 
 @Injectable()
@@ -17,6 +19,7 @@ export class LoansService {
     private prisma: PrismaService,
     private qrService: QrService,
     private eventsService: EventsService,
+    private auditService: AuditService,
   ) {}
 
   // Light include for list queries (faster)
@@ -165,8 +168,17 @@ export class LoansService {
   /**
    * Mark loan as sent and generate QR code for receipt confirmation
    */
-  async sendLoan(id: string) {
+  async sendLoan(id: string, userWarehouseIds?: string[] | null) {
     const loan = await this.findOne(id);
+
+    if (userWarehouseIds != null) {
+      const hasAccess =
+        userWarehouseIds.includes(loan.sourceWarehouse.id) ||
+        userWarehouseIds.includes(loan.destinationWarehouse.id);
+      if (!hasAccess) {
+        throw new ForbiddenException('You do not have access to the involved warehouses');
+      }
+    }
 
     if (loan.status !== 'PENDING') {
       throw new BadRequestException(
@@ -213,28 +225,46 @@ export class LoansService {
       throw new NotFoundException('Invalid QR code or loan not found');
     }
 
-    if (loan.status !== 'SENT') {
-      throw new BadRequestException(
-        `Cannot confirm receipt. Loan is in ${loan.status} status.`,
-      );
-    }
-
-    return this.prisma.loan.update({
-      where: { id: loan.id },
-      data: {
-        status: 'RECEIVED',
-        receivedAt: new Date(),
-        receivedById: userId,
-      },
-      include: this.loanInclude,
+    // Status check + write in one transaction to prevent double-confirmation under concurrency
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const current = await tx.loan.findUnique({ where: { id: loan.id } });
+      if (!current || current.status !== 'SENT') {
+        throw new BadRequestException(
+          `Cannot confirm receipt. Loan is in ${current?.status ?? 'unknown'} status.`,
+        );
+      }
+      return tx.loan.update({
+        where: { id: loan.id },
+        data: { status: 'RECEIVED', receivedAt: new Date(), receivedById: userId },
+        include: this.loanInclude,
+      });
     });
+
+    await this.auditService.log({
+      action: 'UPDATE',
+      entity: 'Loan',
+      entityId: loan.id,
+      userId,
+      changes: { status: 'RECEIVED', confirmedViaQr: true },
+    });
+
+    return updated;
   }
 
   /**
    * Initiate return and generate QR code for return confirmation
    */
-  async initiateReturn(id: string) {
+  async initiateReturn(id: string, userWarehouseIds?: string[] | null) {
     const loan = await this.findOne(id);
+
+    if (userWarehouseIds != null) {
+      const hasAccess =
+        userWarehouseIds.includes(loan.sourceWarehouse.id) ||
+        userWarehouseIds.includes(loan.destinationWarehouse.id);
+      if (!hasAccess) {
+        throw new ForbiddenException('You do not have access to the involved warehouses');
+      }
+    }
 
     // Allow ACTIVE for backwards compatibility with legacy loans
     const allowedStatuses = ['RECEIVED', 'OVERDUE', 'ACTIVE'];
@@ -283,28 +313,45 @@ export class LoansService {
       throw new NotFoundException('Invalid QR code or loan not found');
     }
 
-    if (loan.status !== 'RETURN_PENDING') {
-      throw new BadRequestException(
-        `Cannot confirm return. Loan is in ${loan.status} status.`,
-      );
-    }
-
-    return this.prisma.loan.update({
-      where: { id: loan.id },
-      data: {
-        status: 'RETURNED',
-        returnDate: new Date(),
-        returnConfirmedAt: new Date(),
-        returnConfirmedById: userId,
-      },
-      include: this.loanInclude,
+    // Status check + write in one transaction to prevent double-confirmation under concurrency
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const current = await tx.loan.findUnique({ where: { id: loan.id } });
+      if (!current || current.status !== 'RETURN_PENDING') {
+        throw new BadRequestException(
+          `Cannot confirm return. Loan is in ${current?.status ?? 'unknown'} status.`,
+        );
+      }
+      return tx.loan.update({
+        where: { id: loan.id },
+        data: {
+          status: 'RETURNED',
+          returnDate: new Date(),
+          returnConfirmedAt: new Date(),
+          returnConfirmedById: userId,
+        },
+        include: this.loanInclude,
+      });
     });
+
+    await this.auditService.log({
+      action: 'UPDATE',
+      entity: 'Loan',
+      entityId: loan.id,
+      userId,
+      changes: { status: 'RETURNED', confirmedViaQr: true },
+    });
+
+    return updated;
   }
 
   /**
    * Get QR code image for a loan (send or return)
    */
   async getQrCode(id: string, type: 'send' | 'return') {
+    if (type !== 'send' && type !== 'return') {
+      throw new BadRequestException(`Invalid QR code type: ${type}. Must be 'send' or 'return'.`);
+    }
+
     const loan = await this.findOne(id);
 
     if (type === 'send') {
@@ -347,6 +394,119 @@ export class LoansService {
     } else {
       throw new BadRequestException('Unknown QR code type');
     }
+  }
+
+  // ==================== Manual Confirmation (No QR) ====================
+
+  /**
+   * Manually confirm receipt of a loan without QR code.
+   * Accepts SENT or OVERDUE (only if not yet received) status.
+   * Performs warehouse access check before the transaction, then re-validates
+   * status inside the transaction to prevent double-confirmation under concurrency.
+   */
+  async manualConfirmReceipt(id: string, userId: string, userWarehouseIds: string[] | null) {
+    const loan = await this.findOne(id);
+
+    if (userWarehouseIds != null) {
+      const hasAccess =
+        userWarehouseIds.includes(loan.sourceWarehouse.id) ||
+        userWarehouseIds.includes(loan.destinationWarehouse.id);
+      if (!hasAccess) {
+        throw new ForbiddenException('You do not have access to the involved warehouses');
+      }
+    }
+
+    let previousStatus = 'unknown';
+
+    // Status check + write in one transaction to prevent double-confirmation under concurrency
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const current = await tx.loan.findUnique({ where: { id } });
+      if (!current || (current.status !== 'SENT' && current.status !== 'OVERDUE')) {
+        throw new BadRequestException(
+          `Cannot confirm receipt. Loan is in ${current?.status ?? 'unknown'} status. Only SENT or OVERDUE loans can be confirmed.`,
+        );
+      }
+      // Guard: OVERDUE from RECEIVED — prevent overwriting existing receipt data
+      if (current.status === 'OVERDUE' && current.receivedAt) {
+        throw new BadRequestException(
+          'This loan was already received. Use manual confirm return to confirm the return instead.',
+        );
+      }
+      previousStatus = current.status;
+      return tx.loan.update({
+        where: { id },
+        data: { status: 'RECEIVED', receivedAt: new Date(), receivedById: userId },
+        include: this.loanInclude,
+      });
+    });
+
+    await this.auditService.log({
+      action: 'UPDATE',
+      entity: 'Loan',
+      entityId: id,
+      userId,
+      changes: { status: 'RECEIVED', confirmedManually: true, previousStatus },
+    });
+
+    return updated;
+  }
+
+  /**
+   * Manually confirm return of a loan without QR code.
+   * Accepts RETURN_PENDING or OVERDUE (only if already received) status.
+   * Performs warehouse access check before the transaction, then re-validates
+   * status inside the transaction to prevent double-confirmation under concurrency.
+   */
+  async manualConfirmReturn(id: string, userId: string, userWarehouseIds: string[] | null) {
+    const loan = await this.findOne(id);
+
+    if (userWarehouseIds != null) {
+      const hasAccess =
+        userWarehouseIds.includes(loan.sourceWarehouse.id) ||
+        userWarehouseIds.includes(loan.destinationWarehouse.id);
+      if (!hasAccess) {
+        throw new ForbiddenException('You do not have access to the involved warehouses');
+      }
+    }
+
+    let previousStatus = 'unknown';
+
+    // Status check + write in one transaction to prevent double-confirmation under concurrency
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const current = await tx.loan.findUnique({ where: { id } });
+      if (!current || (current.status !== 'RETURN_PENDING' && current.status !== 'OVERDUE')) {
+        throw new BadRequestException(
+          `Cannot confirm return. Loan is in ${current?.status ?? 'unknown'} status. Only RETURN_PENDING or OVERDUE loans can be confirmed.`,
+        );
+      }
+      // Guard: OVERDUE from SENT (never received) — prevent confirming return without receipt
+      if (current.status === 'OVERDUE' && !current.receivedAt) {
+        throw new BadRequestException(
+          'This loan was never received. Use manual confirm receipt first.',
+        );
+      }
+      previousStatus = current.status;
+      return tx.loan.update({
+        where: { id },
+        data: {
+          status: 'RETURNED',
+          returnDate: new Date(),
+          returnConfirmedAt: new Date(),
+          returnConfirmedById: userId,
+        },
+        include: this.loanInclude,
+      });
+    });
+
+    await this.auditService.log({
+      action: 'UPDATE',
+      entity: 'Loan',
+      entityId: id,
+      userId,
+      changes: { status: 'RETURNED', confirmedManually: true, previousStatus },
+    });
+
+    return updated;
   }
 
   async findAll(pagination?: PaginationDto, warehouseIds?: string[] | null): Promise<PaginatedResult<any>> {
@@ -395,7 +555,7 @@ export class LoansService {
     });
   }
 
-  async findOne(id: string) {
+  async findOne(id: string, userWarehouseIds?: string[] | null) {
     const loan = await this.prisma.loan.findUnique({
       where: { id },
       include: this.loanInclude,
@@ -405,18 +565,31 @@ export class LoansService {
       throw new NotFoundException('Loan not found');
     }
 
+    if (userWarehouseIds != null) {
+      const hasAccess =
+        userWarehouseIds.includes(loan.sourceWarehouseId) ||
+        userWarehouseIds.includes(loan.destinationWarehouseId);
+      if (!hasAccess) {
+        throw new ForbiddenException('You do not have access to this loan');
+      }
+    }
+
     return loan;
   }
 
-  async findByItem(inventoryItemId: string) {
+  async findByItem(inventoryItemId: string, userWarehouseIds?: string[] | null) {
+    const wFilter = warehouseFilterMultiField(userWarehouseIds, ['sourceWarehouseId', 'destinationWarehouseId']);
     return this.prisma.loan.findMany({
-      where: { inventoryItemId },
+      where: { inventoryItemId, ...wFilter },
       orderBy: { loanDate: 'desc' },
       include: this.loanIncludeLight,
     });
   }
 
-  async findByWarehouse(warehouseId: string) {
+  async findByWarehouse(warehouseId: string, userWarehouseIds?: string[] | null) {
+    if (userWarehouseIds != null && !userWarehouseIds.includes(warehouseId)) {
+      throw new ForbiddenException('You do not have access to this warehouse');
+    }
     return this.prisma.loan.findMany({
       where: {
         OR: [
@@ -429,14 +602,25 @@ export class LoansService {
     });
   }
 
-  async update(id: string, updateLoanDto: UpdateLoanDto) {
+  async update(id: string, updateLoanDto: UpdateLoanDto, userWarehouseIds?: string[] | null) {
+    const loan = await this.findOne(id);
+    if (userWarehouseIds != null) {
+      const hasAccess =
+        userWarehouseIds.includes(loan.sourceWarehouseId) ||
+        userWarehouseIds.includes(loan.destinationWarehouseId);
+      if (!hasAccess) {
+        throw new ForbiddenException('You do not have access to this loan');
+      }
+    }
     try {
+      // Explicitly omit status to prevent state machine bypass via the generic update endpoint
+      const { status: _omitted, ...safeFields } = updateLoanDto;
       return await this.prisma.loan.update({
         where: { id },
         data: {
-          ...updateLoanDto,
-          returnDate: updateLoanDto.returnDate
-            ? new Date(updateLoanDto.returnDate)
+          ...safeFields,
+          returnDate: safeFields.returnDate
+            ? new Date(safeFields.returnDate)
             : undefined,
         },
         include: this.loanInclude,
@@ -452,8 +636,16 @@ export class LoansService {
   /**
    * Legacy return method (without QR) - kept for backwards compatibility
    */
-  async returnLoan(id: string, returnLoanDto?: ReturnLoanDto) {
+  async returnLoan(id: string, returnLoanDto?: ReturnLoanDto, userWarehouseIds?: string[] | null) {
     const loan = await this.findOne(id);
+    if (userWarehouseIds != null) {
+      const hasAccess =
+        userWarehouseIds.includes(loan.sourceWarehouseId) ||
+        userWarehouseIds.includes(loan.destinationWarehouseId);
+      if (!hasAccess) {
+        throw new ForbiddenException('You do not have access to this loan');
+      }
+    }
 
     if (loan.status === 'RETURNED') {
       throw new BadRequestException('Loan is already returned');
@@ -479,17 +671,28 @@ export class LoansService {
     });
   }
 
-  async cancel(id: string) {
+  async cancel(id: string, userWarehouseIds?: string[] | null) {
     const loan = await this.findOne(id);
-
-    if (loan.status === 'RETURNED' || loan.status === 'CANCELLED') {
-      throw new BadRequestException(`Cannot cancel loan in ${loan.status} status`);
+    if (userWarehouseIds != null) {
+      const hasAccess =
+        userWarehouseIds.includes(loan.sourceWarehouseId) ||
+        userWarehouseIds.includes(loan.destinationWarehouseId);
+      if (!hasAccess) {
+        throw new ForbiddenException('You do not have access to this loan');
+      }
     }
 
-    return this.prisma.loan.update({
-      where: { id },
-      data: { status: 'CANCELLED' },
-      include: this.loanInclude,
+    // Wrap status check and update in a single transaction to prevent TOCTOU races
+    return this.prisma.$transaction(async (tx) => {
+      const current = await tx.loan.findUnique({ where: { id } });
+      if (!current || current.status === 'RETURNED' || current.status === 'CANCELLED') {
+        throw new BadRequestException(`Cannot cancel loan in ${current?.status ?? 'unknown'} status`);
+      }
+      return tx.loan.update({
+        where: { id },
+        data: { status: 'CANCELLED' },
+        include: this.loanInclude,
+      });
     });
   }
 
@@ -555,13 +758,15 @@ export class LoansService {
   }
 
   // Check and update overdue loans - called on demand
-  async checkOverdueLoans() {
+  async checkOverdueLoans(userWarehouseIds?: string[] | null) {
     const now = new Date();
+    const wFilter = warehouseFilterMultiField(userWarehouseIds, ['sourceWarehouseId', 'destinationWarehouseId']);
 
     await this.prisma.loan.updateMany({
       where: {
         status: { in: ['SENT', 'RECEIVED'] },
         dueDate: { lt: now },
+        ...wFilter,
       },
       data: {
         status: 'OVERDUE',
