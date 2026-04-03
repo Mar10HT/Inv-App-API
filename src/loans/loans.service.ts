@@ -225,13 +225,20 @@ export class LoansService {
       throw new NotFoundException('Invalid QR code or loan not found');
     }
 
-    if (loan.status !== 'SENT') {
-      throw new BadRequestException(
-        `Cannot confirm receipt. Loan is in ${loan.status} status.`,
-      );
-    }
-
-    const updated = await this._applyReceiptConfirmation(loan.id, userId);
+    // Status check + write in one transaction to prevent double-confirmation under concurrency
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const current = await tx.loan.findUnique({ where: { id: loan.id } });
+      if (!current || current.status !== 'SENT') {
+        throw new BadRequestException(
+          `Cannot confirm receipt. Loan is in ${current?.status ?? 'unknown'} status.`,
+        );
+      }
+      return tx.loan.update({
+        where: { id: loan.id },
+        data: { status: 'RECEIVED', receivedAt: new Date(), receivedById: userId },
+        include: this.loanInclude,
+      });
+    });
 
     await this.auditService.log({
       action: 'UPDATE',
@@ -306,13 +313,25 @@ export class LoansService {
       throw new NotFoundException('Invalid QR code or loan not found');
     }
 
-    if (loan.status !== 'RETURN_PENDING') {
-      throw new BadRequestException(
-        `Cannot confirm return. Loan is in ${loan.status} status.`,
-      );
-    }
-
-    const updated = await this._applyReturnConfirmation(loan.id, userId);
+    // Status check + write in one transaction to prevent double-confirmation under concurrency
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const current = await tx.loan.findUnique({ where: { id: loan.id } });
+      if (!current || current.status !== 'RETURN_PENDING') {
+        throw new BadRequestException(
+          `Cannot confirm return. Loan is in ${current?.status ?? 'unknown'} status.`,
+        );
+      }
+      return tx.loan.update({
+        where: { id: loan.id },
+        data: {
+          status: 'RETURNED',
+          returnDate: new Date(),
+          returnConfirmedAt: new Date(),
+          returnConfirmedById: userId,
+        },
+        include: this.loanInclude,
+      });
+    });
 
     await this.auditService.log({
       action: 'UPDATE',

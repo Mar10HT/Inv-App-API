@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { QrService } from '../qr/qr.service';
@@ -164,8 +164,14 @@ export class TransferRequestsService {
     return request;
   }
 
-  async approve(id: string, approvedById: string) {
+  async approve(id: string, approvedById: string, userWarehouseIds?: string[] | null) {
     const request = await this.findOne(id);
+    if (userWarehouseIds != null) {
+      const hasAccess =
+        userWarehouseIds.includes(request.sourceWarehouseId) ||
+        userWarehouseIds.includes(request.destinationWarehouseId);
+      if (!hasAccess) throw new ForbiddenException('You do not have access to the involved warehouses');
+    }
 
     if (request.status !== RequestStatus.PENDING) {
       throw new BadRequestException(`Transfer request is not pending. Current status: ${request.status}`);
@@ -209,8 +215,14 @@ export class TransferRequestsService {
   /**
    * Send transfer - generates QR code for receipt confirmation
    */
-  async sendTransfer(id: string) {
+  async sendTransfer(id: string, userWarehouseIds?: string[] | null) {
     const request = await this.findOne(id);
+    if (userWarehouseIds != null) {
+      const hasAccess =
+        userWarehouseIds.includes(request.sourceWarehouseId) ||
+        userWarehouseIds.includes(request.destinationWarehouseId);
+      if (!hasAccess) throw new ForbiddenException('You do not have access to the involved warehouses');
+    }
 
     if (request.status !== RequestStatus.APPROVED) {
       throw new BadRequestException(
@@ -398,8 +410,14 @@ export class TransferRequestsService {
 
   // ==================== Standard Operations ====================
 
-  async reject(id: string, rejectedById: string, reason?: string) {
+  async reject(id: string, rejectedById: string, reason?: string, userWarehouseIds?: string[] | null) {
     const request = await this.findOne(id);
+    if (userWarehouseIds != null) {
+      const hasAccess =
+        userWarehouseIds.includes(request.sourceWarehouseId) ||
+        userWarehouseIds.includes(request.destinationWarehouseId);
+      if (!hasAccess) throw new ForbiddenException('You do not have access to the involved warehouses');
+    }
 
     if (request.status !== RequestStatus.PENDING) {
       throw new BadRequestException(`Transfer request is not pending. Current status: ${request.status}`);
@@ -432,8 +450,14 @@ export class TransferRequestsService {
    * Only accepts SENT status. The request must be explicitly sent before it
    * can be manually confirmed as received.
    */
-  async complete(id: string, completedById: string) {
+  async complete(id: string, completedById: string, userWarehouseIds?: string[] | null) {
     const request = await this.findOne(id);
+    if (userWarehouseIds != null) {
+      const hasAccess =
+        userWarehouseIds.includes(request.sourceWarehouseId) ||
+        userWarehouseIds.includes(request.destinationWarehouseId);
+      if (!hasAccess) throw new ForbiddenException('You do not have access to the involved warehouses');
+    }
 
     if (request.status !== RequestStatus.SENT) {
       throw new BadRequestException(
@@ -533,8 +557,14 @@ export class TransferRequestsService {
     return updated;
   }
 
-  async cancel(id: string, cancelledById: string) {
+  async cancel(id: string, cancelledById: string, userWarehouseIds?: string[] | null) {
     const request = await this.findOne(id);
+    if (userWarehouseIds != null) {
+      const hasAccess =
+        userWarehouseIds.includes(request.sourceWarehouseId) ||
+        userWarehouseIds.includes(request.destinationWarehouseId);
+      if (!hasAccess) throw new ForbiddenException('You do not have access to the involved warehouses');
+    }
 
     if (request.status === RequestStatus.COMPLETED) {
       throw new BadRequestException('Cannot cancel a completed transfer request');
