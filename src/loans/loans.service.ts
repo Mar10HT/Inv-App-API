@@ -348,6 +348,10 @@ export class LoansService {
    * Get QR code image for a loan (send or return)
    */
   async getQrCode(id: string, type: 'send' | 'return') {
+    if (type !== 'send' && type !== 'return') {
+      throw new BadRequestException(`Invalid QR code type: ${type}. Must be 'send' or 'return'.`);
+    }
+
     const loan = await this.findOne(id);
 
     if (type === 'send') {
@@ -412,7 +416,7 @@ export class LoansService {
       }
     }
 
-    const previousStatus = loan.status;
+    let previousStatus: string;
 
     // Status check + write in one transaction to prevent double-confirmation under concurrency
     const updated = await this.prisma.$transaction(async (tx) => {
@@ -428,6 +432,7 @@ export class LoansService {
           'This loan was already received. Use manual confirm return to confirm the return instead.',
         );
       }
+      previousStatus = current.status;
       return tx.loan.update({
         where: { id },
         data: { status: 'RECEIVED', receivedAt: new Date(), receivedById: userId },
@@ -440,7 +445,7 @@ export class LoansService {
       entity: 'Loan',
       entityId: id,
       userId,
-      changes: { status: 'RECEIVED', confirmedManually: true, previousStatus },
+      changes: { status: 'RECEIVED', confirmedManually: true, previousStatus: previousStatus! },
     });
 
     return updated;
@@ -464,7 +469,7 @@ export class LoansService {
       }
     }
 
-    const previousStatus = loan.status;
+    let previousStatus: string;
 
     // Status check + write in one transaction to prevent double-confirmation under concurrency
     const updated = await this.prisma.$transaction(async (tx) => {
@@ -480,6 +485,7 @@ export class LoansService {
           'This loan was never received. Use manual confirm receipt first.',
         );
       }
+      previousStatus = current.status;
       return tx.loan.update({
         where: { id },
         data: {
@@ -497,7 +503,7 @@ export class LoansService {
       entity: 'Loan',
       entityId: id,
       userId,
-      changes: { status: 'RETURNED', confirmedManually: true, previousStatus },
+      changes: { status: 'RETURNED', confirmedManually: true, previousStatus: previousStatus! },
     });
 
     return updated;
@@ -549,7 +555,7 @@ export class LoansService {
     });
   }
 
-  async findOne(id: string) {
+  async findOne(id: string, userWarehouseIds?: string[] | null) {
     const loan = await this.prisma.loan.findUnique({
       where: { id },
       include: this.loanInclude,
@@ -557,6 +563,15 @@ export class LoansService {
 
     if (!loan) {
       throw new NotFoundException('Loan not found');
+    }
+
+    if (userWarehouseIds != null) {
+      const hasAccess =
+        userWarehouseIds.includes(loan.sourceWarehouseId) ||
+        userWarehouseIds.includes(loan.destinationWarehouseId);
+      if (!hasAccess) {
+        throw new ForbiddenException('You do not have access to this loan');
+      }
     }
 
     return loan;
@@ -667,14 +682,17 @@ export class LoansService {
       }
     }
 
-    if (loan.status === 'RETURNED' || loan.status === 'CANCELLED') {
-      throw new BadRequestException(`Cannot cancel loan in ${loan.status} status`);
-    }
-
-    return this.prisma.loan.update({
-      where: { id },
-      data: { status: 'CANCELLED' },
-      include: this.loanInclude,
+    // Wrap status check and update in a single transaction to prevent TOCTOU races
+    return this.prisma.$transaction(async (tx) => {
+      const current = await tx.loan.findUnique({ where: { id } });
+      if (!current || current.status === 'RETURNED' || current.status === 'CANCELLED') {
+        throw new BadRequestException(`Cannot cancel loan in ${current?.status ?? 'unknown'} status`);
+      }
+      return tx.loan.update({
+        where: { id },
+        data: { status: 'CANCELLED' },
+        include: this.loanInclude,
+      });
     });
   }
 

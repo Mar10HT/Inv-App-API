@@ -93,8 +93,11 @@ export class LoansController {
 
   @Get(':id')
   @Permissions('loans:view')
-  findOne(@Param('id') id: string) {
-    return this.loansService.findOne(id);
+  findOne(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.loansService.findOne(id, user.warehouseIds);
   }
 
   // ==================== QR Code Endpoints ====================

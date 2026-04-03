@@ -3,7 +3,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { QrService } from '../qr/qr.service';
 import { CreateTransferRequestDto } from './dto/create-transfer-request.dto';
-import { RequestStatus } from '@prisma/client';
+import { Prisma, RequestStatus } from '@prisma/client';
 import { PaginationDto } from '../common/dto/pagination.dto';
 import { warehouseFilterMultiField } from '../common/warehouse-access/warehouse-filter.util';
 
@@ -173,30 +173,38 @@ export class TransferRequestsService {
       if (!hasAccess) throw new ForbiddenException('You do not have access to the involved warehouses');
     }
 
-    if (request.status !== RequestStatus.PENDING) {
-      throw new BadRequestException(`Transfer request is not pending. Current status: ${request.status}`);
-    }
-
-    for (const item of request.items) {
-      const inventoryItem = await this.prisma.inventoryItem.findUnique({
-        where: { id: item.inventoryItemId },
+    // Wrap status check, quantity validation, and update in a single transaction to prevent TOCTOU races
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const current = await tx.transferRequest.findUnique({
+        where: { id },
+        include: { items: { include: { inventoryItem: true } } },
       });
-
-      if (!inventoryItem || inventoryItem.quantity < item.quantity) {
+      if (!current || current.status !== RequestStatus.PENDING) {
         throw new BadRequestException(
-          `Insufficient quantity for item ${item.inventoryItem.name}. Transfer cannot be approved.`
+          `Transfer request is not pending. Current status: ${current?.status ?? 'unknown'}`
         );
       }
-    }
 
-    const updated = await this.prisma.transferRequest.update({
-      where: { id },
-      data: {
-        status: RequestStatus.APPROVED,
-        approvedById,
-        approvedAt: new Date(),
-      },
-      include: this.includeFull,
+      for (const item of current.items) {
+        const inventoryItem = await tx.inventoryItem.findUnique({
+          where: { id: item.inventoryItemId },
+        });
+        if (!inventoryItem || inventoryItem.quantity < item.quantity) {
+          throw new BadRequestException(
+            `Insufficient quantity for item ${item.inventoryItem.name}. Transfer cannot be approved.`
+          );
+        }
+      }
+
+      return tx.transferRequest.update({
+        where: { id },
+        data: {
+          status: RequestStatus.APPROVED,
+          approvedById,
+          approvedAt: new Date(),
+        },
+        include: this.includeFull,
+      });
     });
 
     await this.auditService.log({
@@ -286,81 +294,7 @@ export class TransferRequestsService {
           `Cannot confirm receipt. Transfer is in ${current?.status ?? 'unknown'} status.`
         );
       }
-
-      // Re-validate quantities inside the transaction to prevent negative stock
-      // in case another operation decremented inventory since the request was approved.
-      for (const item of request.items) {
-        const current = await tx.inventoryItem.findUnique({ where: { id: item.inventoryItemId } });
-        if (!current || current.quantity < item.quantity) {
-          throw new BadRequestException(
-            `Insufficient quantity for item: ${item.inventoryItem.name}. Available: ${current?.quantity ?? 0}, Required: ${item.quantity}`
-          );
-        }
-      }
-
-      // Decrement source quantities in parallel
-      await Promise.all(
-        request.items.map((item) =>
-          tx.inventoryItem.update({
-            where: { id: item.inventoryItemId },
-            data: { quantity: { decrement: item.quantity } },
-          }),
-        ),
-      );
-
-      // Find existing items at destination in parallel
-      const existingInDestItems = await Promise.all(
-        request.items.map((item) =>
-          tx.inventoryItem.findFirst({
-            where: {
-              warehouseId: request.destinationWarehouseId,
-              name: item.inventoryItem.name,
-              category: item.inventoryItem.category,
-              sku: item.inventoryItem.sku,
-            },
-          }),
-        ),
-      );
-
-      // Increment or create destination items in parallel
-      await Promise.all(
-        request.items.map((item, index) => {
-          const existingInDest = existingInDestItems[index];
-          if (existingInDest) {
-            return tx.inventoryItem.update({
-              where: { id: existingInDest.id },
-              data: { quantity: { increment: item.quantity } },
-            });
-          } else {
-            return tx.inventoryItem.create({
-              data: {
-                name: item.inventoryItem.name,
-                description: item.inventoryItem.description,
-                quantity: item.quantity,
-                minQuantity: item.inventoryItem.minQuantity,
-                category: item.inventoryItem.category,
-                price: item.inventoryItem.price,
-                currency: item.inventoryItem.currency,
-                sku: item.inventoryItem.sku ? `${item.inventoryItem.sku}-${request.destinationWarehouseId.slice(0, 4)}` : null,
-                warehouseId: request.destinationWarehouseId,
-                supplierId: item.inventoryItem.supplierId,
-                itemType: item.inventoryItem.itemType,
-              },
-            });
-          }
-        }),
-      );
-
-      // Update transfer request status within the same transaction
-      return tx.transferRequest.update({
-        where: { id: request.id },
-        data: {
-          status: RequestStatus.COMPLETED,
-          receivedAt: new Date(),
-          receivedById: userId,
-        },
-        include: this.includeFull,
-      });
+      return this.applyInventoryTransfer(tx, request, userId);
     });
 
     await this.auditService.log({
@@ -474,80 +408,7 @@ export class TransferRequestsService {
           `Transfer request must be in SENT status to confirm receipt. Current status: ${current?.status ?? 'unknown'}`
         );
       }
-
-      // Re-validate quantities inside the transaction to prevent negative stock
-      // in case another operation decremented inventory since the request was approved.
-      for (const item of request.items) {
-        const current = await tx.inventoryItem.findUnique({ where: { id: item.inventoryItemId } });
-        if (!current || current.quantity < item.quantity) {
-          throw new BadRequestException(
-            `Insufficient quantity for item: ${item.inventoryItem.name}. Available: ${current?.quantity ?? 0}, Required: ${item.quantity}`
-          );
-        }
-      }
-
-      // Decrement source quantities in parallel
-      await Promise.all(
-        request.items.map((item) =>
-          tx.inventoryItem.update({
-            where: { id: item.inventoryItemId },
-            data: { quantity: { decrement: item.quantity } },
-          }),
-        ),
-      );
-
-      // Find existing items at destination in parallel
-      const existingInDestItems = await Promise.all(
-        request.items.map((item) =>
-          tx.inventoryItem.findFirst({
-            where: {
-              warehouseId: request.destinationWarehouseId,
-              name: item.inventoryItem.name,
-              category: item.inventoryItem.category,
-              sku: item.inventoryItem.sku,
-            },
-          }),
-        ),
-      );
-
-      // Increment or create destination items in parallel
-      await Promise.all(
-        request.items.map((item, index) => {
-          const existingInDest = existingInDestItems[index];
-          if (existingInDest) {
-            return tx.inventoryItem.update({
-              where: { id: existingInDest.id },
-              data: { quantity: { increment: item.quantity } },
-            });
-          } else {
-            return tx.inventoryItem.create({
-              data: {
-                name: item.inventoryItem.name,
-                description: item.inventoryItem.description,
-                quantity: item.quantity,
-                minQuantity: item.inventoryItem.minQuantity,
-                category: item.inventoryItem.category,
-                price: item.inventoryItem.price,
-                currency: item.inventoryItem.currency,
-                sku: item.inventoryItem.sku ? `${item.inventoryItem.sku}-${request.destinationWarehouseId.slice(0, 4)}` : null,
-                warehouseId: request.destinationWarehouseId,
-                supplierId: item.inventoryItem.supplierId,
-                itemType: item.inventoryItem.itemType,
-              },
-            });
-          }
-        }),
-      );
-
-      return tx.transferRequest.update({
-        where: { id },
-        data: {
-          status: RequestStatus.COMPLETED,
-          receivedAt: new Date(),
-          receivedById: completedById,
-        },
-        include: this.includeFull,
-      });
+      return this.applyInventoryTransfer(tx, request, completedById);
     });
 
     await this.auditService.log({
@@ -561,6 +422,110 @@ export class TransferRequestsService {
     return updated;
   }
 
+  /**
+   * Apply inventory transfer: validate quantities, decrement source, increment/create destination,
+   * and mark the transfer request as COMPLETED. Must be called inside a $transaction.
+   */
+  private async applyInventoryTransfer(
+    tx: Prisma.TransactionClient,
+    request: {
+      id: string;
+      destinationWarehouseId: string;
+      items: Array<{
+        inventoryItemId: string;
+        quantity: number;
+        inventoryItem: {
+          name: string;
+          description: string | null;
+          quantity: number;
+          minQuantity: number;
+          category: string | null;
+          price: number | null;
+          currency: string | null;
+          sku: string | null;
+          supplierId: string | null;
+          itemType: string;
+        };
+      }>;
+    },
+    receivedById: string,
+  ): Promise<any> {
+    // Re-validate quantities inside the transaction to prevent negative stock
+    // in case another operation decremented inventory since the request was approved.
+    for (const item of request.items) {
+      const currentItem = await tx.inventoryItem.findUnique({ where: { id: item.inventoryItemId } });
+      if (!currentItem || currentItem.quantity < item.quantity) {
+        throw new BadRequestException(
+          `Insufficient quantity for item: ${item.inventoryItem.name}. Available: ${currentItem?.quantity ?? 0}, Required: ${item.quantity}`
+        );
+      }
+    }
+
+    // Decrement source quantities in parallel
+    await Promise.all(
+      request.items.map((item) =>
+        tx.inventoryItem.update({
+          where: { id: item.inventoryItemId },
+          data: { quantity: { decrement: item.quantity } },
+        }),
+      ),
+    );
+
+    // Find existing items at destination in parallel
+    const existingInDestItems = await Promise.all(
+      request.items.map((item) =>
+        tx.inventoryItem.findFirst({
+          where: {
+            warehouseId: request.destinationWarehouseId,
+            name: item.inventoryItem.name,
+            category: item.inventoryItem.category,
+            sku: item.inventoryItem.sku,
+          },
+        }),
+      ),
+    );
+
+    // Increment or create destination items in parallel
+    await Promise.all(
+      request.items.map((item, index) => {
+        const existingInDest = existingInDestItems[index];
+        if (existingInDest) {
+          return tx.inventoryItem.update({
+            where: { id: existingInDest.id },
+            data: { quantity: { increment: item.quantity } },
+          });
+        } else {
+          return tx.inventoryItem.create({
+            data: {
+              name: item.inventoryItem.name,
+              description: item.inventoryItem.description,
+              quantity: item.quantity,
+              minQuantity: item.inventoryItem.minQuantity,
+              category: item.inventoryItem.category,
+              price: item.inventoryItem.price,
+              currency: item.inventoryItem.currency,
+              sku: item.inventoryItem.sku ? `${item.inventoryItem.sku}-${request.destinationWarehouseId.slice(0, 4)}` : null,
+              warehouseId: request.destinationWarehouseId,
+              supplierId: item.inventoryItem.supplierId,
+              itemType: item.inventoryItem.itemType,
+            },
+          });
+        }
+      }),
+    );
+
+    // Update transfer request status within the same transaction
+    return tx.transferRequest.update({
+      where: { id: request.id },
+      data: {
+        status: RequestStatus.COMPLETED,
+        receivedAt: new Date(),
+        receivedById,
+      },
+      include: this.includeFull,
+    });
+  }
+
   async cancel(id: string, cancelledById: string, userWarehouseIds?: string[] | null) {
     const request = await this.findOne(id);
     if (userWarehouseIds != null) {
@@ -570,14 +535,19 @@ export class TransferRequestsService {
       if (!hasAccess) throw new ForbiddenException('You do not have access to the involved warehouses');
     }
 
-    if (request.status === RequestStatus.COMPLETED || request.status === RequestStatus.REJECTED) {
-      throw new BadRequestException(`Cannot cancel a transfer request in ${request.status} status`);
-    }
-
-    const updated = await this.prisma.transferRequest.update({
-      where: { id },
-      data: { status: RequestStatus.CANCELLED },
-      include: this.includeFull,
+    // Wrap status check and update in a single transaction to prevent TOCTOU races
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const current = await tx.transferRequest.findUnique({ where: { id }, select: { status: true } });
+      if (!current || current.status === RequestStatus.COMPLETED || current.status === RequestStatus.REJECTED) {
+        throw new BadRequestException(
+          `Cannot cancel a transfer request in ${current?.status ?? 'unknown'} status`
+        );
+      }
+      return tx.transferRequest.update({
+        where: { id },
+        data: { status: RequestStatus.CANCELLED },
+        include: this.includeFull,
+      });
     });
 
     await this.auditService.log({
