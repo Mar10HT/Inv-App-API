@@ -22,12 +22,14 @@ Handles authentication, stock operations, multi-warehouse logistics, and reporti
 - **Authentication** — JWT with HttpOnly cookies, CSRF protection, strong password policy
 - **Inventory CRUD** — Paginated responses, advanced filtering, bulk operations, soft deletes
 - **Warehouse Logistics** — Transfer requests with approval flow, stock reconciliation, inventory counts
-- **Loan Management** — Due dates, automatic overdue detection, multi-item support
+- **Loan Management** — Due dates, automatic overdue detection, multi-item support, **manual confirmation endpoints** (no QR required)
+- **Transfer Confirmations** — QR-based and **manual confirmation workflows**, atomically-safe inventory application with sequential updates
 - **Reports** — Excel and PDF export, inventory value and status analytics
 - **Audit Trail** — Full activity logging with user, action, and change tracking
 - **Stock Alerts** — Scheduled cron jobs for low stock and overdue loan notifications
 - **Permissions** — Granular RBAC: 46 permissions across 14 modules, 5 seeded roles, in-memory cache (60s TTL)
-- **Security** — Rate limiting, input validation, Helmet headers, CSRF protection
+- **Security** — Rate limiting, input validation, Helmet headers, CSRF protection, warehouse-level access control
+- **Transaction Safety** — Race condition prevention with sequential inventory updates and TOCTOU guards
 
 ## Tech Stack
 
@@ -69,11 +71,11 @@ Swagger documentation is available at [`/api/docs`](http://localhost:3000/api/do
 | Suppliers | 5 | CRUD |
 | Categories | 5 | CRUD |
 | Transactions | 5 | Stock movements |
-| Loans | 14 | Lending workflow, QR scan/confirm, overdue check |
+| Loans | 14 | Lending workflow, QR + **manual confirm** (no QR), overdue check |
 | Alerts | 10 | Stock alerts, resolve, trigger check |
 | Reports | 8 | Excel/PDF export per module |
 | Scheduled Reports | 5 | Cron-based report scheduling |
-| Transfers | 13 | Approval workflow, QR scan/confirm |
+| Transfers | 13 | Approval workflow, QR + **manual confirm**, atomically-safe inventory sync |
 | Discharge Requests | 8 | Public form + admin review |
 | Stock Take | 7 | Reconciliation, variance report |
 | Audit | 3 | Activity logs |
@@ -144,8 +146,20 @@ See [Deployment Guide](./context/DEPLOYMENT-GUIDE.md) and [Production Checklist]
 
 ## Documentation
 
-| | |
-|---|---|
+### Architecture & Design (Codemaps)
+
+| Codemap | Coverage | Purpose |
+|---------|----------|---------|
+| **[Index](./docs/CODEMAPS/INDEX.md)** | Full codebase | Overview, architecture diagram, data flows |
+| **[Auth & RBAC](./docs/CODEMAPS/auth-rbac.md)** | `src/auth/`, `src/permissions/` | JWT, 46 granular permissions, caching, warehouse access control |
+| **[Inventory](./docs/CODEMAPS/inventory.md)** | `src/inventory/` | CRUD, bulk operations, soft deletes, filtering, Excel import/export |
+| **[Loans & Transfers](./docs/CODEMAPS/loans-transfers.md)** | `src/loans/`, `src/transfer-requests/` | **Manual confirmation endpoints**, QR workflows, transaction safety, sequential updates |
+| **[Seed Data](./docs/CODEMAPS/seed-data.md)** | `scripts/seed-data.ts` | Dev database seeding, 300+ realistic items, transfers, loans |
+
+### Guides & References
+
+| Document | Topic |
+|----------|-------|
 | [Changelog](./CHANGELOG.md) | Version history |
 | [Deployment Guide](./context/DEPLOYMENT-GUIDE.md) | Production setup |
 | [Railway Deploy](./context/RAILWAY-DEPLOY.md) | Railway hosting |
