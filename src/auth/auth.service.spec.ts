@@ -3,6 +3,9 @@ import { JwtService } from '@nestjs/jwt';
 import { UnauthorizedException, ConflictException, BadRequestException } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { UsersService } from '../users/users.service';
+import { PrismaService } from '../prisma/prisma.service';
+import { EmailService } from '../email/email.service';
+import { WarehouseAccessService } from '../common/warehouse-access/warehouse-access.service';
 import * as bcrypt from 'bcryptjs';
 
 // Mock bcrypt
@@ -46,11 +49,48 @@ describe('AuthService', () => {
       sign: jest.fn(),
     };
 
+    const mockPrismaService = {
+      loginAttempt: {
+        count: jest.fn().mockResolvedValue(0),
+        create: jest.fn().mockResolvedValue({}),
+        deleteMany: jest.fn().mockResolvedValue({}),
+      },
+      user: {
+        findUnique: jest.fn().mockResolvedValue(null),
+      },
+      refreshToken: {
+        create: jest.fn().mockResolvedValue({ token: 'mock-refresh-token' }),
+        findFirst: jest.fn().mockResolvedValue(null),
+        findUnique: jest.fn().mockResolvedValue(null),
+        deleteMany: jest.fn().mockResolvedValue({}),
+        updateMany: jest.fn().mockResolvedValue({}),
+        update: jest.fn().mockResolvedValue({}),
+      },
+      passwordResetToken: {
+        create: jest.fn().mockResolvedValue({}),
+        findFirst: jest.fn().mockResolvedValue(null),
+        update: jest.fn().mockResolvedValue({}),
+      },
+    };
+
+    const mockEmailService = {
+      sendWelcomeEmail: jest.fn().mockResolvedValue(undefined),
+      sendPasswordResetEmail: jest.fn().mockResolvedValue(undefined),
+      sendPasswordChangedEmail: jest.fn().mockResolvedValue(undefined),
+    };
+
+    const mockWarehouseAccessService = {
+      getAccessibleWarehouseIds: jest.fn().mockResolvedValue([]),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AuthService,
         { provide: UsersService, useValue: mockUsersService },
         { provide: JwtService, useValue: mockJwtService },
+        { provide: PrismaService, useValue: mockPrismaService },
+        { provide: EmailService, useValue: mockEmailService },
+        { provide: WarehouseAccessService, useValue: mockWarehouseAccessService },
       ],
     }).compile();
 
@@ -74,15 +114,18 @@ describe('AuthService', () => {
         password: 'password123',
       });
 
-      expect(result).toEqual({
+      expect(result).toMatchObject({
         access_token: 'jwt-token-123',
         user: {
           id: mockUser.id,
           email: mockUser.email,
           name: mockUser.name,
           role: mockUser.role,
+          warehouseIds: [],
+          permissionsVersion: mockUser.permissionsVersion,
         },
       });
+      expect(result.refresh_token).toBeDefined();
       expect(usersService.findByEmail).toHaveBeenCalledWith('test@example.com');
       expect(bcrypt.compare).toHaveBeenCalledWith('password123', mockUser.password);
     });
@@ -118,10 +161,11 @@ describe('AuthService', () => {
         name: 'New User',
       });
 
-      expect(result).toEqual({
+      expect(result).toMatchObject({
         access_token: 'jwt-token-new',
         user: newUser,
       });
+      expect(result.refresh_token).toBeDefined();
       expect(usersService.create).toHaveBeenCalled();
     });
 
