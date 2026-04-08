@@ -29,6 +29,9 @@ model User {
   emailNotifications Boolean @default(true)
   lowStockAlerts     Boolean @default(true)
 
+  // Mobile push notifications
+  expoPushToken      String?   @unique
+
   // Relations
   inventoryItems   InventoryItem[]      @relation("CreatedItems")
   assignedItems    InventoryItem[]      @relation("AssignedItems")

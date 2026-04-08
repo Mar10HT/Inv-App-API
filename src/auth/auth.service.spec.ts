@@ -26,6 +26,7 @@ describe('AuthService', () => {
     permissionsVersion: 0,
     emailNotifications: true,
     lowStockAlerts: true,
+    expoPushToken: null,
     createdAt: new Date(),
     updatedAt: new Date(),
     deletedAt: null,
