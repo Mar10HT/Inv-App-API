@@ -17,18 +17,27 @@ interface ExpoPushTicket {
 }
 
 const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
+const FETCH_TIMEOUT_MS = 10_000;
 
 @Injectable()
 export class PushNotificationsService {
   private readonly logger = new Logger(PushNotificationsService.name);
 
-  async send(messages: ExpoPushMessage[]): Promise<void> {
-    if (messages.length === 0) return;
+  /**
+   * Send push notifications in batches of 100 (Expo API limit).
+   * Returns an array of stale tokens that reported DeviceNotRegistered
+   * so the caller can clean them from the database.
+   */
+  async send(messages: ExpoPushMessage[]): Promise<string[]> {
+    if (messages.length === 0) return [];
 
-    // Expo accepts up to 100 messages per request
+    const staleTokens: string[] = [];
     const chunks = this.chunk(messages, 100);
 
     for (const chunk of chunks) {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+
       try {
         const res = await fetch(EXPO_PUSH_URL, {
           method: 'POST',
@@ -37,7 +46,10 @@ export class PushNotificationsService {
             Accept: 'application/json',
           },
           body: JSON.stringify(chunk),
+          signal: controller.signal,
         });
+
+        clearTimeout(timeout);
 
         if (!res.ok) {
           this.logger.error(`Expo push API error: ${res.status} ${res.statusText}`);
@@ -45,18 +57,28 @@ export class PushNotificationsService {
         }
 
         const { data }: { data: ExpoPushTicket[] } = await res.json();
-        for (const ticket of data) {
+        data.forEach((ticket, i) => {
           if (ticket.status === 'error') {
             this.logger.warn(`Push ticket error: ${ticket.message} (${ticket.details?.error})`);
+            if (ticket.details?.error === 'DeviceNotRegistered') {
+              staleTokens.push(chunk[i].to);
+            }
           }
-        }
+        });
       } catch (err) {
-        this.logger.error('Failed to send push notifications', err);
+        clearTimeout(timeout);
+        if ((err as Error).name === 'AbortError') {
+          this.logger.error(`Expo push API timed out after ${FETCH_TIMEOUT_MS}ms`);
+        } else {
+          this.logger.error('Failed to send push notifications', err);
+        }
       }
     }
+
+    return staleTokens;
   }
 
-  async sendOne(message: ExpoPushMessage): Promise<void> {
+  async sendOne(message: ExpoPushMessage): Promise<string[]> {
     return this.send([message]);
   }
 

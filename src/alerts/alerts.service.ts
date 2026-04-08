@@ -73,7 +73,7 @@ export class AlertsService {
           this.logger.log(`Alert created for item ${item.name} (${item.id}): ${alertType}`);
 
           // Send push notification (fire-and-forget)
-          this.sendAlertPushNotification(alertType, item.name, item.warehouse?.name).catch(() => {});
+          this.sendAlertPushNotification(alertType, item.id, item.warehouseId, item.name, item.warehouse?.name).catch(() => {});
         } else if (existingAlert.type !== AlertType.OUT_OF_STOCK && item.quantity === 0) {
           // Update existing alert if item went from LOW_STOCK to OUT_OF_STOCK
           await this.prisma.stockAlert.update({
@@ -332,15 +332,23 @@ export class AlertsService {
 
   private async sendAlertPushNotification(
     type: AlertType,
+    itemId: string,
+    warehouseId: string,
     itemName: string,
     warehouseName?: string,
   ): Promise<void> {
-    // Fetch all users with a registered push token
+    // Only notify users who have access to the warehouse where the alert originated
     const users = await this.prisma.user.findMany({
       where: {
         deletedAt: null,
         expoPushToken: { not: null },
         lowStockAlerts: true,
+        OR: [
+          // Users with unrestricted access (null warehouseIds means all warehouses)
+          { warehouseAccess: { none: {} } },
+          // Users explicitly granted access to this warehouse
+          { warehouseAccess: { some: { warehouseId } } },
+        ],
       },
       select: { expoPushToken: true },
     });
@@ -351,18 +359,25 @@ export class AlertsService {
 
     if (tokens.length === 0) return;
 
-    const body = warehouseName
-      ? `${itemName} · ${warehouseName}`
-      : itemName;
+    const body = warehouseName ? `${itemName} · ${warehouseName}` : itemName;
 
-    await this.pushNotifications.send(
+    const staleTokens = await this.pushNotifications.send(
       tokens.map((to) => ({
         to,
         title: ALERT_PUSH_TITLE[type],
         body,
         sound: 'default' as const,
-        data: { type, screen: 'alerts' },
+        data: { type, itemId, screen: 'alerts' },
       })),
     );
+
+    // Clean up tokens that Expo reported as DeviceNotRegistered
+    if (staleTokens.length > 0) {
+      await this.prisma.user.updateMany({
+        where: { expoPushToken: { in: staleTokens } },
+        data: { expoPushToken: null },
+      });
+      this.logger.log(`Cleared ${staleTokens.length} stale push token(s)`);
+    }
   }
 }
