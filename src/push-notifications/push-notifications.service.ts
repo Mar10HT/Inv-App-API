@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 
-interface ExpoPushMessage {
+export interface ExpoPushMessage {
   to: string;
   title: string;
   body: string;
@@ -34,6 +34,8 @@ export class PushNotificationsService {
     const staleTokens: string[] = [];
     const chunks = this.chunk(messages, 100);
 
+    // Chunks are sent sequentially (not in parallel) to stay within Expo's rate limits.
+    // With typical inventory deployments (hundreds of users) this is fast enough.
     for (const chunk of chunks) {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
@@ -56,7 +58,12 @@ export class PushNotificationsService {
           continue;
         }
 
-        const { data }: { data: ExpoPushTicket[] } = await res.json();
+        const json = await res.json();
+        if (!Array.isArray(json?.data)) {
+          this.logger.error(`Unexpected Expo push API response shape: ${JSON.stringify(json)}`);
+          continue;
+        }
+        const data: ExpoPushTicket[] = json.data;
         data.forEach((ticket, i) => {
           if (ticket.status === 'error') {
             this.logger.warn(`Push ticket error: ${ticket.message} (${ticket.details?.error})`);

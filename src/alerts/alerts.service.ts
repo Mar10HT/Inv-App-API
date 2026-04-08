@@ -44,14 +44,25 @@ export class AlertsService {
 
       let alertsCreated = 0;
 
+      // Pre-load all unresolved alerts for these items in one query to avoid N+1
+      const existingStockAlerts = await this.prisma.stockAlert.findMany({
+        where: {
+          itemId: { in: lowStockItems.map((i) => i.id) },
+          resolvedAt: null,
+        },
+        select: { id: true, itemId: true, type: true },
+      });
+      // Keep first occurrence per itemId — guards against duplicate unresolved alerts in DB
+      const existingStockAlertByItemId = new Map<string, typeof existingStockAlerts[0]>();
+      for (const a of existingStockAlerts) {
+        if (!existingStockAlertByItemId.has(a.itemId)) {
+          existingStockAlertByItemId.set(a.itemId, a);
+        }
+      }
+
       for (const item of lowStockItems) {
         // Check if there's already an unresolved alert for this item
-        const existingAlert = await this.prisma.stockAlert.findFirst({
-          where: {
-            itemId: item.id,
-            resolvedAt: null,
-          },
-        });
+        const existingAlert = existingStockAlertByItemId.get(item.id);
 
         if (!existingAlert) {
           // Create new alert
@@ -73,7 +84,7 @@ export class AlertsService {
           this.logger.log(`Alert created for item ${item.name} (${item.id}): ${alertType}`);
 
           // Send push notification (fire-and-forget)
-          this.sendAlertPushNotification(alertType, item.id, item.warehouseId, item.name, item.warehouse?.name).catch(() => {});
+          this.sendAlertPushNotification(alertType, item.id, item.warehouseId, item.name, item.warehouse?.name).catch((err) => this.logger.error('Failed to send alert push notification', err));
         } else if (existingAlert.type !== AlertType.OUT_OF_STOCK && item.quantity === 0) {
           // Update existing alert if item went from LOW_STOCK to OUT_OF_STOCK
           await this.prisma.stockAlert.update({
@@ -104,15 +115,20 @@ export class AlertsService {
         },
       });
 
+      // Pre-load all unresolved EXPIRING_SOON alerts for these items in one query
+      const existingExpiryAlerts = await this.prisma.stockAlert.findMany({
+        where: {
+          itemId: { in: expiringItems.map((i) => i.id) },
+          type: AlertType.EXPIRING_SOON,
+          resolvedAt: null,
+        },
+        select: { id: true, itemId: true },
+      });
+      const existingExpiryAlertItemIds = new Set(existingExpiryAlerts.map((a) => a.itemId));
+
       for (const item of expiringItems) {
         // Check if there's already an unresolved EXPIRING_SOON alert
-        const existingAlert = await this.prisma.stockAlert.findFirst({
-          where: {
-            itemId: item.id,
-            type: AlertType.EXPIRING_SOON,
-            resolvedAt: null,
-          },
-        });
+        const existingAlert = existingExpiryAlertItemIds.has(item.id);
 
         if (!existingAlert) {
           await this.prisma.stockAlert.create({
@@ -126,6 +142,9 @@ export class AlertsService {
 
           alertsCreated++;
           this.logger.log(`Expiring soon alert created for item ${item.name} (${item.id})`);
+
+          this.sendAlertPushNotification(AlertType.EXPIRING_SOON, item.id, item.warehouseId, item.name, item.warehouse?.name)
+            .catch((err) => this.logger.error('Failed to send expiring soon push notification', err));
         }
       }
 

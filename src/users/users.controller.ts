@@ -12,6 +12,7 @@ import {
   ValidationPipe,
   UseGuards,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { UsersService } from './users.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
@@ -62,11 +63,12 @@ export class UsersController {
   // Register or clear the Expo push token for the current user (no special permission needed)
   @Patch('push-token')
   @HttpCode(HttpStatus.NO_CONTENT)
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
   updatePushToken(
     @CurrentUser() user: AuthenticatedUser,
     @Body(ValidationPipe) dto: UpdatePushTokenDto,
   ) {
-    return this.usersService.updatePushToken(user.userId, dto.token ?? null);
+    return this.usersService.updatePushToken(user.userId, dto.token);
   }
 
   @Get(':id')

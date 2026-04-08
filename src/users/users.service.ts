@@ -272,9 +272,26 @@ export class UsersService {
   }
 
   async updatePushToken(userId: string, token: string | null): Promise<void> {
-    await this.prisma.user.update({
-      where: { id: userId },
-      data: { expoPushToken: token },
-    });
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        // If registering a new token, atomically clear it from any other user first
+        // (handles device transfers and app reinstalls)
+        if (token !== null) {
+          await tx.user.updateMany({
+            where: { expoPushToken: token, NOT: { id: userId } },
+            data: { expoPushToken: null },
+          });
+        }
+        await tx.user.update({
+          where: { id: userId },
+          data: { expoPushToken: token },
+        });
+      });
+    } catch (error) {
+      if (error.code === 'P2025') {
+        throw new NotFoundException(`User with ID ${userId} not found`);
+      }
+      throw error;
+    }
   }
 }

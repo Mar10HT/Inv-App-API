@@ -1,12 +1,14 @@
-import { IsString, IsOptional, Matches, ValidateIf } from 'class-validator';
+import { IsDefined, IsString, Matches, ValidateIf } from 'class-validator';
 
 export class UpdatePushTokenDto {
-  // Allow null to clear the token; only validate the format when a string is provided
+  // Required field: pass a valid Expo token to register, or null to clear.
+  // Omitting the field entirely is rejected — use null to explicitly unregister.
+  // @IsDefined rejects undefined while still allowing null.
+  @IsDefined({ message: 'token is required' })
   @ValidateIf((o: UpdatePushTokenDto) => o.token !== null)
-  @IsOptional()
   @IsString()
   @Matches(/^ExponentPushToken\[[a-zA-Z0-9\-_]+\]$/, {
     message: 'token must be a valid Expo push token (ExponentPushToken[...])',
   })
-  token?: string | null;
+  token: string | null;
 }
