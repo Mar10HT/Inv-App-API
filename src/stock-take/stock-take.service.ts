@@ -3,7 +3,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { CreateStockTakeDto, UpdateStockTakeItemDto } from './dto/create-stock-take.dto';
 import { StockTakeStatus } from '@prisma/client';
-import { PaginationDto } from '../common/dto/pagination.dto';
+import { PaginationDto, parsePagination, buildPaginationMeta } from '../common/dto';
 
 @Injectable()
 export class StockTakeService {
@@ -80,10 +80,7 @@ export class StockTakeService {
   }
 
   async findAll(pagination?: PaginationDto, status?: StockTakeStatus) {
-    const page = pagination?.page || 1;
-    const limit = pagination?.limit || 10;
-    const skip = (page - 1) * limit;
-
+    const { page, limit, skip } = parsePagination(pagination);
     const where = status ? { status } : {};
 
     const [stockTakes, total] = await Promise.all([
@@ -102,15 +99,7 @@ export class StockTakeService {
       this.prisma.stockTake.count({ where }),
     ]);
 
-    return {
-      data: stockTakes,
-      meta: {
-        total,
-        page,
-        limit,
-        totalPages: Math.ceil(total / limit),
-      },
-    };
+    return { data: stockTakes, meta: buildPaginationMeta(total, page, limit) };
   }
 
   async findOne(id: string) {

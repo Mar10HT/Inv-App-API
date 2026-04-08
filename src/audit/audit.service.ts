@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 
 export type AuditAction = 'CREATE' | 'UPDATE' | 'DELETE' | 'RESTORE' | 'LOGIN' | 'LOGOUT' | 'PASSWORD_CHANGE' | 'ACCESS';
@@ -9,11 +10,11 @@ export interface AuditLogData {
   entityId: string;
   userId?: string;
   changes?: {
-    before?: any;
-    after?: any;
+    before?: Record<string, unknown>;
+    after?: Record<string, unknown>;
     fields?: string[];
   };
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 @Injectable()
@@ -57,7 +58,7 @@ export class AuditService {
     const limit = options?.limit || 50;
     const offset = options?.offset || 0;
 
-    const where: any = {};
+    const where: Prisma.AuditLogWhereInput = {};
     if (options?.action) {
       where.action = options.action;
     }

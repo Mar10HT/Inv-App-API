@@ -3,7 +3,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { EmailService } from '../email/email.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
-import { PaginationDto, PaginatedResult } from '../common/dto';
+import { PaginationDto, PaginatedResult, parsePagination, buildPaginationMeta } from '../common/dto';
 import * as bcrypt from 'bcryptjs';
 
 @Injectable()
@@ -59,43 +59,21 @@ export class UsersService {
     }
   }
 
-  async findAll(pagination?: PaginationDto): Promise<PaginatedResult<any>> {
-    const page = pagination?.page || 1;
-    const limit = pagination?.limit || 10;
-    const skip = (page - 1) * limit;
+  async findAll(pagination?: PaginationDto): Promise<PaginatedResult<unknown>> {
+    const { page, limit, skip } = parsePagination(pagination);
 
     const [data, total] = await Promise.all([
       this.prisma.user.findMany({
-        where: {
-          deletedAt: null, // Exclude soft-deleted users
-        },
+        where: { deletedAt: null },
         skip,
         take: limit,
-        orderBy: {
-          createdAt: pagination?.sortOrder || 'desc',
-        },
+        orderBy: { createdAt: pagination?.sortOrder || 'desc' },
         select: this.userSelect,
       }),
-      this.prisma.user.count({
-        where: {
-          deletedAt: null,
-        },
-      }),
+      this.prisma.user.count({ where: { deletedAt: null } }),
     ]);
 
-    const totalPages = Math.ceil(total / limit);
-
-    return {
-      data,
-      meta: {
-        total,
-        page,
-        limit,
-        totalPages,
-        hasNextPage: page < totalPages,
-        hasPrevPage: page > 1,
-      },
-    };
+    return { data, meta: buildPaginationMeta(total, page, limit) };
   }
 
   async findOne(id: string) {

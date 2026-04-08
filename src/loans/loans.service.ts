@@ -8,7 +8,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { QrService } from '../qr/qr.service';
 import { CreateLoanDto } from './dto/create-loan.dto';
 import { UpdateLoanDto, ReturnLoanDto, LoanStatus } from './dto/update-loan.dto';
-import { PaginationDto, PaginatedResult } from '../common/dto';
+import { PaginationDto, PaginatedResult, parsePagination, buildPaginationMeta } from '../common/dto';
 import { EventsService } from '../events/events.service';
 import { AuditService } from '../audit/audit.service';
 import { warehouseFilterMultiField } from '../common/warehouse-access/warehouse-filter.util';
@@ -509,14 +509,12 @@ export class LoansService {
     return updated;
   }
 
-  async findAll(pagination?: PaginationDto, warehouseIds?: string[] | null, status?: string): Promise<PaginatedResult<any>> {
-    const page = pagination?.page || 1;
-    const limit = pagination?.limit || 10;
-    const skip = (page - 1) * limit;
+  async findAll(pagination?: PaginationDto, warehouseIds?: string[] | null, status?: string): Promise<PaginatedResult<unknown>> {
+    const { page, limit, skip } = parsePagination(pagination);
 
     const where = {
       ...warehouseFilterMultiField(warehouseIds, ['sourceWarehouseId', 'destinationWarehouseId']),
-      ...(status ? { status: status as any } : {}),
+      ...(status ? { status: status as LoanStatus } : {}),
     };
 
     const [data, total] = await Promise.all([
@@ -525,24 +523,12 @@ export class LoansService {
         skip,
         take: limit,
         orderBy: { loanDate: pagination?.sortOrder || 'desc' },
-        include: this.loanIncludeLight, // Use light include for faster list loading
+        include: this.loanIncludeLight,
       }),
       this.prisma.loan.count({ where }),
     ]);
 
-    const totalPages = Math.ceil(total / limit);
-
-    return {
-      data,
-      meta: {
-        total,
-        page,
-        limit,
-        totalPages,
-        hasNextPage: page < totalPages,
-        hasPrevPage: page > 1,
-      },
-    };
+    return { data, meta: buildPaginationMeta(total, page, limit) };
   }
 
   async findActive(warehouseIds?: string[] | null) {
@@ -550,7 +536,7 @@ export class LoansService {
 
     return this.prisma.loan.findMany({
       where: {
-        status: { in: ['PENDING', 'SENT', 'RECEIVED', 'RETURN_PENDING', 'OVERDUE'] as any },
+        status: { in: ['PENDING', 'SENT', 'RECEIVED', 'RETURN_PENDING', 'OVERDUE'] as LoanStatus[] },
         ...wFilter,
       },
       orderBy: { loanDate: 'desc' },

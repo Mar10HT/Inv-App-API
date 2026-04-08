@@ -5,7 +5,7 @@ export interface EventPayload {
   entity: string;
   action: 'created' | 'updated' | 'deleted' | 'bulk_updated' | 'bulk_deleted' | 'imported';
   entityId?: string;
-  data?: any;
+  data?: Record<string, unknown>;
 }
 
 @Injectable()
@@ -25,7 +25,7 @@ export class EventsService {
   }
 
   // Convenience methods for common events
-  emitInventoryChange(action: EventPayload['action'], entityId?: string, data?: any): void {
+  emitInventoryChange(action: EventPayload['action'], entityId?: string, data?: Record<string, unknown>): void {
     this.broadcast('inventory:change', {
       entity: 'inventory',
       action,
@@ -34,7 +34,7 @@ export class EventsService {
     });
   }
 
-  emitLoanChange(action: EventPayload['action'], entityId?: string, data?: any): void {
+  emitLoanChange(action: EventPayload['action'], entityId?: string, data?: Record<string, unknown>): void {
     this.broadcast('loan:change', {
       entity: 'loan',
       action,
@@ -43,7 +43,7 @@ export class EventsService {
     });
   }
 
-  emitTransactionChange(action: EventPayload['action'], entityId?: string, data?: any): void {
+  emitTransactionChange(action: EventPayload['action'], entityId?: string, data?: Record<string, unknown>): void {
     this.broadcast('transaction:change', {
       entity: 'transaction',
       action,
@@ -52,7 +52,7 @@ export class EventsService {
     });
   }
 
-  emitAlertChange(action: EventPayload['action'], entityId?: string, data?: any): void {
+  emitAlertChange(action: EventPayload['action'], entityId?: string, data?: Record<string, unknown>): void {
     this.broadcast('alert:change', {
       entity: 'alert',
       action,

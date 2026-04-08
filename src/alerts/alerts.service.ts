@@ -4,7 +4,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { EventsService } from '../events/events.service';
 import { PushNotificationsService } from '../push-notifications/push-notifications.service';
 import { AlertType, InventoryStatus } from '@prisma/client';
-import { PaginationDto } from '../common/dto/pagination.dto';
+import { PaginationDto, parsePagination, buildPaginationMeta } from '../common/dto';
 
 const ALERT_PUSH_TITLE: Record<AlertType, string> = {
   LOW_STOCK: '⚠️ Stock bajo',
@@ -176,43 +176,26 @@ export class AlertsService {
   }
 
   async findAll(pagination?: PaginationDto) {
-    const page = pagination?.page || 1;
-    const limit = pagination?.limit || 10;
-    const skip = (page - 1) * limit;
+    const { page, limit, skip } = parsePagination(pagination);
+    const alertInclude = { item: { include: { warehouse: true } } };
 
     const [alerts, total] = await Promise.all([
       this.prisma.stockAlert.findMany({
         skip,
         take: limit,
         orderBy: { createdAt: 'desc' },
-        include: {
-          item: {
-            include: {
-              warehouse: true,
-            },
-          },
-        },
+        include: alertInclude,
       }),
       this.prisma.stockAlert.count(),
     ]);
 
-    return {
-      data: alerts,
-      meta: {
-        total,
-        page,
-        limit,
-        totalPages: Math.ceil(total / limit),
-      },
-    };
+    return { data: alerts, meta: buildPaginationMeta(total, page, limit) };
   }
 
   async findActive(pagination?: PaginationDto) {
-    const page = pagination?.page || 1;
-    const limit = pagination?.limit || 10;
-    const skip = (page - 1) * limit;
-
+    const { page, limit, skip } = parsePagination(pagination);
     const where = { resolvedAt: null };
+    const alertInclude = { item: { include: { warehouse: true } } };
 
     const [alerts, total] = await Promise.all([
       this.prisma.stockAlert.findMany({
@@ -220,34 +203,18 @@ export class AlertsService {
         skip,
         take: limit,
         orderBy: { createdAt: 'desc' },
-        include: {
-          item: {
-            include: {
-              warehouse: true,
-            },
-          },
-        },
+        include: alertInclude,
       }),
       this.prisma.stockAlert.count({ where }),
     ]);
 
-    return {
-      data: alerts,
-      meta: {
-        total,
-        page,
-        limit,
-        totalPages: Math.ceil(total / limit),
-      },
-    };
+    return { data: alerts, meta: buildPaginationMeta(total, page, limit) };
   }
 
   async findByType(type: AlertType, pagination?: PaginationDto) {
-    const page = pagination?.page || 1;
-    const limit = pagination?.limit || 10;
-    const skip = (page - 1) * limit;
-
+    const { page, limit, skip } = parsePagination(pagination);
     const where = { type, resolvedAt: null };
+    const alertInclude = { item: { include: { warehouse: true } } };
 
     const [alerts, total] = await Promise.all([
       this.prisma.stockAlert.findMany({
@@ -255,26 +222,12 @@ export class AlertsService {
         skip,
         take: limit,
         orderBy: { createdAt: 'desc' },
-        include: {
-          item: {
-            include: {
-              warehouse: true,
-            },
-          },
-        },
+        include: alertInclude,
       }),
       this.prisma.stockAlert.count({ where }),
     ]);
 
-    return {
-      data: alerts,
-      meta: {
-        total,
-        page,
-        limit,
-        totalPages: Math.ceil(total / limit),
-      },
-    };
+    return { data: alerts, meta: buildPaginationMeta(total, page, limit) };
   }
 
   async findOne(id: string) {

@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { PaginationDto, PaginatedResult } from '../dto';
 
@@ -28,8 +29,8 @@ export abstract class BaseRepository<
       return await this.model.create({
         data: createDto,
       });
-    } catch (error: any) {
-      if (error.code === 'P2002') {
+    } catch (error: unknown) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
         throw new ConflictException(
           `${this.options.modelName} with this value already exists`,
         );
@@ -99,16 +100,10 @@ export abstract class BaseRepository<
         where: { id },
         data: updateDto,
       });
-    } catch (error: any) {
-      if (error.code === 'P2002') {
-        throw new ConflictException(
-          `${this.options.modelName} with this value already exists`,
-        );
-      }
-      if (error.code === 'P2025') {
-        throw new NotFoundException(
-          `${this.options.modelName} with ID ${id} not found`,
-        );
+    } catch (error: unknown) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError) {
+        if (error.code === 'P2002') throw new ConflictException(`${this.options.modelName} with this value already exists`);
+        if (error.code === 'P2025') throw new NotFoundException(`${this.options.modelName} with ID ${id} not found`);
       }
       throw error;
     }
@@ -119,17 +114,15 @@ export abstract class BaseRepository<
       await this.model.delete({
         where: { id },
       });
-    } catch (error: any) {
-      if (error.code === 'P2025') {
-        throw new NotFoundException(
-          `${this.options.modelName} with ID ${id} not found`,
-        );
+    } catch (error: unknown) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
+        throw new NotFoundException(`${this.options.modelName} with ID ${id} not found`);
       }
       throw error;
     }
   }
 
-  async count(where?: Record<string, any>): Promise<number> {
+  async count(where?: Record<string, unknown>): Promise<number> {
     return this.model.count({ where });
   }
 }

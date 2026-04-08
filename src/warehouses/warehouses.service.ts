@@ -1,8 +1,9 @@
 import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateWarehouseDto } from './dto/create-warehouse.dto';
 import { UpdateWarehouseDto } from './dto/update-warehouse.dto';
-import { PaginationDto, PaginatedResult } from '../common/dto';
+import { PaginationDto, PaginatedResult, parsePagination, buildPaginationMeta } from '../common/dto';
 import { warehouseFilter } from '../common/warehouse-access/warehouse-filter.util';
 
 @Injectable()
@@ -14,8 +15,8 @@ export class WarehousesService {
       return await this.prisma.warehouse.create({
         data: createDto,
       });
-    } catch (error: any) {
-      if (error.code === 'P2002') {
+    } catch (error: unknown) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
         throw new ConflictException('Warehouse with this value already exists');
       }
       throw error;
@@ -25,11 +26,8 @@ export class WarehousesService {
   async findAll(
     pagination?: PaginationDto,
     warehouseIds?: string[] | null,
-  ): Promise<PaginatedResult<any>> {
-    const page = pagination?.page || 1;
-    const limit = pagination?.limit || 10;
-    const skip = (page - 1) * limit;
-
+  ): Promise<PaginatedResult<unknown>> {
+    const { page, limit, skip } = parsePagination(pagination);
     const where = warehouseFilter(warehouseIds, 'id');
 
     const [data, total] = await Promise.all([
@@ -52,19 +50,7 @@ export class WarehousesService {
       this.prisma.warehouse.count({ where }),
     ]);
 
-    const totalPages = Math.ceil(total / limit);
-
-    return {
-      data,
-      meta: {
-        total,
-        page,
-        limit,
-        totalPages,
-        hasNextPage: page < totalPages,
-        hasPrevPage: page > 1,
-      },
-    };
+    return { data, meta: buildPaginationMeta(total, page, limit) };
   }
 
   async findOne(id: string) {
@@ -96,12 +82,10 @@ export class WarehousesService {
         where: { id },
         data: updateDto,
       });
-    } catch (error: any) {
-      if (error.code === 'P2002') {
-        throw new ConflictException('Warehouse with this value already exists');
-      }
-      if (error.code === 'P2025') {
-        throw new NotFoundException(`Warehouse with ID ${id} not found`);
+    } catch (error: unknown) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError) {
+        if (error.code === 'P2002') throw new ConflictException('Warehouse with this value already exists');
+        if (error.code === 'P2025') throw new NotFoundException(`Warehouse with ID ${id} not found`);
       }
       throw error;
     }
@@ -112,15 +96,15 @@ export class WarehousesService {
       await this.prisma.warehouse.delete({
         where: { id },
       });
-    } catch (error: any) {
-      if (error.code === 'P2025') {
+    } catch (error: unknown) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
         throw new NotFoundException(`Warehouse with ID ${id} not found`);
       }
       throw error;
     }
   }
 
-  async count(where?: Record<string, any>): Promise<number> {
+  async count(where?: Prisma.WarehouseWhereInput): Promise<number> {
     return this.prisma.warehouse.count({ where });
   }
 }

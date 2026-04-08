@@ -4,7 +4,7 @@ import { AuditService } from '../audit/audit.service';
 import { QrService } from '../qr/qr.service';
 import { CreateTransferRequestDto } from './dto/create-transfer-request.dto';
 import { Prisma, RequestStatus } from '@prisma/client';
-import { PaginationDto } from '../common/dto/pagination.dto';
+import { PaginationDto, parsePagination, buildPaginationMeta } from '../common/dto';
 import { warehouseFilterMultiField } from '../common/warehouse-access/warehouse-filter.util';
 
 @Injectable()
@@ -116,9 +116,7 @@ export class TransferRequestsService {
   }
 
   async findAll(pagination?: PaginationDto, status?: RequestStatus, warehouseIds?: string[] | null) {
-    const page = pagination?.page || 1;
-    const limit = pagination?.limit || 10;
-    const skip = (page - 1) * limit;
+    const { page, limit, skip } = parsePagination(pagination);
 
     const where: any = {
       ...(status ? { status } : {}),
@@ -136,15 +134,7 @@ export class TransferRequestsService {
       this.prisma.transferRequest.count({ where }),
     ]);
 
-    return {
-      data: requests,
-      meta: {
-        total,
-        page,
-        limit,
-        totalPages: Math.ceil(total / limit),
-      },
-    };
+    return { data: requests, meta: buildPaginationMeta(total, page, limit) };
   }
 
   async findPending(pagination?: PaginationDto, warehouseIds?: string[] | null) {

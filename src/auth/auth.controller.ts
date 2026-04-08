@@ -200,37 +200,6 @@ export class AuthController {
     return { message: 'Logged out successfully' };
   }
 
-  /**
-   * Debug endpoint to check environment and cookie configuration.
-   * Only available in non-production environments. Requires authentication.
-   */
-  @Get('debug-env')
-  @UseGuards(JwtAuthGuard)
-  debugEnv(@Request() req: ExpressRequest) {
-    if (process.env.NODE_ENV === 'production') {
-      return { message: 'Not available in production' };
-    }
-
-    return {
-      NODE_ENV: process.env.NODE_ENV,
-      cookieConfig: {
-        secure: false,
-        sameSite: 'strict',
-      },
-      cors: {
-        CORS_ORIGIN: process.env.CORS_ORIGIN,
-      },
-      request: {
-        origin: req.headers.origin,
-        host: req.headers.host,
-        hasCookies: !!req.cookies,
-        cookieNames: req.cookies ? Object.keys(req.cookies) : [],
-        hasAccessToken: !!req.cookies?.access_token,
-        hasRefreshToken: !!req.cookies?.refresh_token,
-      },
-    };
-  }
-
   @Post('forgot-password')
   @HttpCode(HttpStatus.OK)
   @Throttle({ default: { limit: 3, ttl: 60000 } })

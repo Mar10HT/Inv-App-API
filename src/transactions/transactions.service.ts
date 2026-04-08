@@ -2,7 +2,7 @@ import { Injectable, NotFoundException, BadRequestException } from '@nestjs/comm
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateTransactionDto, TransactionType } from './dto/create-transaction.dto';
 import { UpdateTransactionDto } from './dto/update-transaction.dto';
-import { PaginationDto, PaginatedResult } from '../common/dto';
+import { PaginationDto, PaginatedResult, parsePagination, buildPaginationMeta } from '../common/dto';
 import { EventsService } from '../events/events.service';
 import { warehouseFilterMultiField } from '../common/warehouse-access/warehouse-filter.util';
 
@@ -65,11 +65,8 @@ export class TransactionsService {
     return result;
   }
 
-  async findAll(pagination?: PaginationDto, warehouseIds?: string[] | null): Promise<PaginatedResult<any>> {
-    const page = pagination?.page || 1;
-    const limit = pagination?.limit || 10;
-    const skip = (page - 1) * limit;
-
+  async findAll(pagination?: PaginationDto, warehouseIds?: string[] | null): Promise<PaginatedResult<unknown>> {
+    const { page, limit, skip } = parsePagination(pagination);
     const where = warehouseFilterMultiField(warehouseIds, ['sourceWarehouseId', 'destinationWarehouseId']);
 
     const [data, total] = await Promise.all([
@@ -77,42 +74,18 @@ export class TransactionsService {
         where,
         skip,
         take: limit,
-        orderBy: {
-          date: pagination?.sortOrder || 'desc',
-        },
+        orderBy: { date: pagination?.sortOrder || 'desc' },
         include: {
-          items: {
-            include: {
-              inventoryItem: true,
-            },
-          },
+          items: { include: { inventoryItem: true } },
           sourceWarehouse: true,
           destinationWarehouse: true,
-          user: {
-            select: {
-              id: true,
-              email: true,
-              name: true,
-            },
-          },
+          user: { select: { id: true, email: true, name: true } },
         },
       }),
       this.prisma.transaction.count({ where }),
     ]);
 
-    const totalPages = Math.ceil(total / limit);
-
-    return {
-      data,
-      meta: {
-        total,
-        page,
-        limit,
-        totalPages,
-        hasNextPage: page < totalPages,
-        hasPrevPage: page > 1,
-      },
-    };
+    return { data, meta: buildPaginationMeta(total, page, limit) };
   }
 
   async findRecent(limit: number = 10, warehouseIds?: string[] | null) {
