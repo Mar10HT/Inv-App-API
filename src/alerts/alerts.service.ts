@@ -2,8 +2,15 @@ import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
 import { EventsService } from '../events/events.service';
+import { PushNotificationsService } from '../push-notifications/push-notifications.service';
 import { AlertType, InventoryStatus } from '@prisma/client';
 import { PaginationDto } from '../common/dto/pagination.dto';
+
+const ALERT_PUSH_TITLE: Record<AlertType, string> = {
+  LOW_STOCK: '⚠️ Stock bajo',
+  OUT_OF_STOCK: '🔴 Sin stock',
+  EXPIRING_SOON: '⏰ Por vencer',
+};
 
 @Injectable()
 export class AlertsService {
@@ -12,6 +19,7 @@ export class AlertsService {
   constructor(
     private prisma: PrismaService,
     private eventsService: EventsService,
+    private pushNotifications: PushNotificationsService,
   ) {}
 
   // Run every 6 hours to check for low stock
@@ -63,6 +71,9 @@ export class AlertsService {
           this.eventsService.emitAlertChange('created', newAlert.id, { type: alertType, itemName: item.name });
           alertsCreated++;
           this.logger.log(`Alert created for item ${item.name} (${item.id}): ${alertType}`);
+
+          // Send push notification (fire-and-forget)
+          this.sendAlertPushNotification(alertType, item.name, item.warehouse?.name).catch(() => {});
         } else if (existingAlert.type !== AlertType.OUT_OF_STOCK && item.quantity === 0) {
           // Update existing alert if item went from LOW_STOCK to OUT_OF_STOCK
           await this.prisma.stockAlert.update({
@@ -317,5 +328,41 @@ export class AlertsService {
   async triggerCheck() {
     await this.checkLowStock();
     return { message: 'Low stock check triggered successfully' };
+  }
+
+  private async sendAlertPushNotification(
+    type: AlertType,
+    itemName: string,
+    warehouseName?: string,
+  ): Promise<void> {
+    // Fetch all users with a registered push token
+    const users = await this.prisma.user.findMany({
+      where: {
+        deletedAt: null,
+        expoPushToken: { not: null },
+        lowStockAlerts: true,
+      },
+      select: { expoPushToken: true },
+    });
+
+    const tokens = users
+      .map((u) => u.expoPushToken)
+      .filter((t): t is string => t !== null);
+
+    if (tokens.length === 0) return;
+
+    const body = warehouseName
+      ? `${itemName} · ${warehouseName}`
+      : itemName;
+
+    await this.pushNotifications.send(
+      tokens.map((to) => ({
+        to,
+        title: ALERT_PUSH_TITLE[type],
+        body,
+        sound: 'default' as const,
+        data: { type, screen: 'alerts' },
+      })),
+    );
   }
 }

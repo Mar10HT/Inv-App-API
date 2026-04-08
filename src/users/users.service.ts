@@ -270,4 +270,11 @@ export class UsersService {
       },
     });
   }
+
+  async updatePushToken(userId: string, token: string | null): Promise<void> {
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { expoPushToken: token },
+    });
+  }
 }

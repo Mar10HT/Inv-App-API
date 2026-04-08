@@ -17,6 +17,7 @@ import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { AssignWarehousesDto } from './dto/assign-warehouses.dto';
 import { UpdatePreferencesDto } from './dto/update-preferences.dto';
+import { UpdatePushTokenDto } from './dto/update-push-token.dto';
 import { PaginationDto } from '../common/dto';
 import { JwtAuthGuard, PermissionsGuard } from '../auth/guards';
 import { Permissions, CurrentUser } from '../auth/decorators';
@@ -56,6 +57,16 @@ export class UsersController {
     @Body(ValidationPipe) prefs: UpdatePreferencesDto,
   ) {
     return this.usersService.updatePreferences(user.userId, prefs);
+  }
+
+  // Register or clear the Expo push token for the current user (no special permission needed)
+  @Patch('push-token')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  updatePushToken(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body(ValidationPipe) dto: UpdatePushTokenDto,
+  ) {
+    return this.usersService.updatePushToken(user.userId, dto.token ?? null);
   }
 
   @Get(':id')
