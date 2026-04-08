@@ -76,6 +76,8 @@ export class AlertsService {
               type: alertType,
               threshold: item.minQuantity,
               currentQty: item.quantity,
+              notified: true,
+              notifiedAt: new Date(),
             },
           });
 
@@ -137,6 +139,8 @@ export class AlertsService {
               type: AlertType.EXPIRING_SOON,
               threshold: item.minQuantity,
               currentQty: item.quantity,
+              notified: true,
+              notifiedAt: new Date(),
             },
           });
 
