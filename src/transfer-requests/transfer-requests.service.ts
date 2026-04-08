@@ -439,7 +439,7 @@ export class TransferRequestsService {
       }>;
     },
     receivedById: string,
-  ): Promise<any> {
+  ) {
     // Re-validate quantities inside the transaction to prevent negative stock
     // in case another operation decremented inventory since the request was approved.
     for (const item of request.items) {
@@ -479,8 +479,7 @@ export class TransferRequestsService {
           data: { quantity: { increment: item.quantity } },
         });
       } else {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        await (tx.inventoryItem.create as any)({
+        await tx.inventoryItem.create({
           data: {
             name: item.inventoryItem.name,
             description: item.inventoryItem.description,
@@ -492,7 +491,7 @@ export class TransferRequestsService {
             sku: item.inventoryItem.sku ? `${item.inventoryItem.sku}-${request.destinationWarehouseId.slice(0, 4)}` : null,
             warehouseId: request.destinationWarehouseId,
             supplierId: item.inventoryItem.supplierId,
-            itemType: item.inventoryItem.itemType,
+            itemType: item.inventoryItem.itemType as ItemType,
           },
         });
       }

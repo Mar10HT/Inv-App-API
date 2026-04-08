@@ -14,7 +14,7 @@ import {
   BulkImportDto,
   BulkOperationResultDto,
 } from './dto/bulk-operations.dto';
-import { InventoryItem, InventoryStatus, ItemType } from '@prisma/client';
+import { InventoryItem, InventoryStatus, ItemType, Prisma } from '@prisma/client';
 import { EventsService } from '../events/events.service';
 import { SearchService } from '../common/search/search.service';
 import { warehouseFilter } from '../common/warehouse-access/warehouse-filter.util';
@@ -188,7 +188,7 @@ export class InventoryService {
     const skip = (page - 1) * limit;
 
     // Build where clause - always exclude soft-deleted items
-    const where: any = {
+    const where: Prisma.InventoryItemWhereInput = {
       deletedAt: null,
       ...warehouseFilter(warehouseIds),
     };
@@ -239,10 +239,9 @@ export class InventoryService {
     }
 
     // Build orderBy
-    const orderBy: any = {};
     const sortBy = filters?.sortBy || 'createdAt';
     const sortOrder = filters?.sortOrder || 'desc';
-    orderBy[sortBy] = sortOrder;
+    const orderBy: Record<string, 'asc' | 'desc'> = { [sortBy]: sortOrder };
 
     const [items, total] = await Promise.all([
       this.prisma.inventoryItem.findMany({
