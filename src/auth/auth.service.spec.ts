@@ -68,7 +68,6 @@ describe('AuthService', () => {
       },
       passwordResetToken: {
         create: jest.fn().mockResolvedValue({}),
-        findFirst: jest.fn().mockResolvedValue(null),
         update: jest.fn().mockResolvedValue({}),
       },
     };
@@ -149,8 +148,10 @@ describe('AuthService', () => {
   });
 
   describe('register', () => {
-    it('should create a new user and return access token', async () => {
-      const newUser = { ...mockUser, id: 'new-user-123' };
+    it('should create a new user and return access token without password', async () => {
+      // UsersService.create strips the password before returning — mock matches that contract
+      const { password: _pwd, ...userWithoutPassword } = mockUser;
+      const newUser = { ...userWithoutPassword, id: 'new-user-123' };
       usersService.findByEmail.mockResolvedValue(null);
       usersService.create.mockResolvedValue(newUser);
       jwtService.sign.mockReturnValue('jwt-token-new');
@@ -166,6 +167,7 @@ describe('AuthService', () => {
         user: newUser,
       });
       expect(result.refresh_token).toBeDefined();
+      expect(result.user).not.toHaveProperty('password');
       expect(usersService.create).toHaveBeenCalled();
     });
 
@@ -184,8 +186,7 @@ describe('AuthService', () => {
 
   describe('validateUser', () => {
     it('should return user data for valid user id', async () => {
-      const userWithoutPassword = { ...mockUser };
-      delete (userWithoutPassword as any).password;
+      const { password: _pwd, ...userWithoutPassword } = mockUser;
       usersService.findOne.mockResolvedValue(userWithoutPassword);
 
       const result = await service.validateUser('user-123');

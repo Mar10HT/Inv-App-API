@@ -180,9 +180,11 @@ export class StockTakeService {
       );
     }
 
-    // Apply inventory changes if requested (atomic transaction)
-    if (applyChanges) {
-      await this.prisma.$transaction(async (tx) => {
+    // Apply inventory changes and mark as COMPLETED in one atomic transaction.
+    // The stockTake.update is always the last step inside the transaction so that
+    // the status only changes if all preceding writes succeed.
+    const updated = await this.prisma.$transaction(async (tx) => {
+      if (applyChanges) {
         for (const stockItem of stockTake.items) {
           if (stockItem.variance !== 0 && stockItem.countedQty !== null) {
             await tx.inventoryItem.update({
@@ -193,9 +195,28 @@ export class StockTakeService {
             });
           }
         }
-      });
+      }
 
-      // Audit logs outside transaction (non-critical)
+      return tx.stockTake.update({
+        where: { id },
+        data: {
+          status: StockTakeStatus.COMPLETED,
+          completedById,
+          completedAt: new Date(),
+        },
+        include: {
+          warehouse: true,
+          startedBy: { select: { id: true, name: true, email: true } },
+          completedBy: { select: { id: true, name: true, email: true } },
+          items: {
+            include: { item: true },
+          },
+        },
+      });
+    });
+
+    // Audit logs are non-critical and run outside the transaction intentionally
+    if (applyChanges) {
       for (const stockItem of stockTake.items) {
         if (stockItem.variance !== 0 && stockItem.countedQty !== null) {
           await this.auditService.log({
@@ -214,23 +235,6 @@ export class StockTakeService {
         }
       }
     }
-
-    const updated = await this.prisma.stockTake.update({
-      where: { id },
-      data: {
-        status: StockTakeStatus.COMPLETED,
-        completedById,
-        completedAt: new Date(),
-      },
-      include: {
-        warehouse: true,
-        startedBy: { select: { id: true, name: true, email: true } },
-        completedBy: { select: { id: true, name: true, email: true } },
-        items: {
-          include: { item: true },
-        },
-      },
-    });
 
     await this.auditService.log({
       action: 'UPDATE',

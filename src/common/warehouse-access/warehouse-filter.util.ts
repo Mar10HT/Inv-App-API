@@ -6,7 +6,7 @@ export function warehouseFilter(
   warehouseIds: string[] | null,
   field = 'warehouseId',
 ): Record<string, any> {
-  if (warehouseIds === null) return {};
+  if (warehouseIds == null) return {};
   return { [field]: { in: warehouseIds } };
 }
 
@@ -19,7 +19,7 @@ export function warehouseFilterMultiField(
   warehouseIds: string[] | null,
   fields: string[],
 ): Record<string, any> {
-  if (warehouseIds === null) return {};
+  if (warehouseIds == null) return {};
   return {
     OR: fields.map((field) => ({ [field]: { in: warehouseIds } })),
   };

@@ -47,8 +47,10 @@ describe('AlertsService', () => {
         findMany: jest.fn(),
         create: jest.fn(),
         update: jest.fn(),
-        updateMany: jest.fn(),
-        count: jest.fn(),
+        // updateMany must return { count: N } — the service reads resolvedAlerts.count
+        updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+        // count must return a number — the service performs arithmetic on the result
+        count: jest.fn().mockResolvedValue(0),
       },
     };
 
@@ -58,7 +60,7 @@ describe('AlertsService', () => {
     };
 
     const mockPushNotificationsService = {
-      sendToAll: jest.fn().mockResolvedValue(undefined),
+      send: jest.fn().mockResolvedValue([]),
     };
 
     const module: TestingModule = await Test.createTestingModule({

@@ -4,7 +4,7 @@ import { AuditService } from '../audit/audit.service';
 import { QrService } from '../qr/qr.service';
 import { CreateDischargeRequestDto } from './dto/create-discharge-request.dto';
 import { FilterDischargeRequestDto } from './dto/filter-discharge-request.dto';
-import { DischargeRequestStatus } from '@prisma/client';
+import { DischargeRequestStatus, Prisma } from '@prisma/client';
 import { warehouseFilter } from '../common/warehouse-access/warehouse-filter.util';
 
 @Injectable()
@@ -76,7 +76,7 @@ export class DischargeRequestsService {
 
     // Create N discharge requests in a transaction (one per warehouse)
     const createdRequests = await this.prisma.$transaction(async (tx) => {
-      const requests: any[] = [];
+      const requests: Awaited<ReturnType<typeof this.prisma.dischargeRequest.create>>[] = [];
 
       for (const [warehouseId, items] of groupedByWarehouse) {
         const request = await tx.dischargeRequest.create({
@@ -157,15 +157,11 @@ export class DischargeRequestsService {
     const limit = filters.limit || 10;
     const skip = (page - 1) * limit;
 
-    const where: any = {
+    const where: Prisma.DischargeRequestWhereInput = {
       ...warehouseFilter(warehouseIds),
+      ...(filters.status ? { status: filters.status } : {}),
+      ...(filters.warehouseId ? { warehouseId: filters.warehouseId } : {}),
     };
-    if (filters.status) {
-      where.status = filters.status;
-    }
-    if (filters.warehouseId) {
-      where.warehouseId = filters.warehouseId;
-    }
 
     const [requests, total] = await Promise.all([
       this.prisma.dischargeRequest.findMany({
@@ -287,15 +283,28 @@ export class DischargeRequestsService {
       );
     }
 
-    const updated = await this.prisma.dischargeRequest.update({
-      where: { id },
-      data: {
-        status: DischargeRequestStatus.REJECTED,
-        resolvedById,
-        resolvedAt: new Date(),
-        rejectedReason: reason,
-      },
-      include: this.includeFull,
+    // Wrap status check and update in a single transaction to prevent TOCTOU races
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const current = await tx.dischargeRequest.findUnique({ where: { id } });
+      if (!current) {
+        throw new NotFoundException('Discharge request not found');
+      }
+      if (current.status !== DischargeRequestStatus.PENDING) {
+        throw new BadRequestException(
+          `Discharge request is not pending. Current status: ${current.status}`,
+        );
+      }
+
+      return tx.dischargeRequest.update({
+        where: { id },
+        data: {
+          status: DischargeRequestStatus.REJECTED,
+          resolvedById,
+          resolvedAt: new Date(),
+          rejectedReason: reason,
+        },
+        include: this.includeFull,
+      });
     });
 
     await this.auditService.log({

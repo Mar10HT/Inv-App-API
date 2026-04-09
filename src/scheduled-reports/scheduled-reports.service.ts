@@ -49,10 +49,10 @@ export class ScheduledReportsService {
   async update(id: string, dto: UpdateScheduledReportDto, userId: string): Promise<ScheduledReport> {
     await this.findOne(id, userId);
 
-    const data: any = { ...dto };
-    if (dto.frequency) {
-      data.nextSendAt = this.computeNextSendAt(dto.frequency);
-    }
+    const data = {
+      ...dto,
+      ...(dto.frequency ? { nextSendAt: this.computeNextSendAt(dto.frequency) } : {}),
+    };
 
     return this.prisma.scheduledReport.update({ where: { id }, data });
   }

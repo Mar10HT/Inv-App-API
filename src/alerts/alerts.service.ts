@@ -15,6 +15,8 @@ const ALERT_PUSH_TITLE: Record<AlertType, string> = {
 @Injectable()
 export class AlertsService {
   private readonly logger = new Logger(AlertsService.name);
+  // In-process lock to prevent overlapping cron runs on the same instance.
+  private isCheckRunning = false;
 
   constructor(
     private prisma: PrismaService,
@@ -25,6 +27,12 @@ export class AlertsService {
   // Run every 6 hours to check for low stock
   @Cron(CronExpression.EVERY_6_HOURS)
   async checkLowStock() {
+    if (this.isCheckRunning) {
+      this.logger.warn('Low stock check already running, skipping...');
+      return;
+    }
+    this.isCheckRunning = true;
+
     this.logger.log('Running low stock check...');
 
     try {
@@ -172,6 +180,8 @@ export class AlertsService {
       this.logger.log(`Low stock check complete. Created: ${alertsCreated}, Resolved: ${resolvedAlerts.count}`);
     } catch (error) {
       this.logger.error('Error during low stock check:', error);
+    } finally {
+      this.isCheckRunning = false;
     }
   }
 

@@ -33,12 +33,13 @@ export class AuditService {
     });
   }
 
-  async getLogsForEntity(entity: string, entityId: string) {
+  async getLogsForEntity(entity: string, entityId: string, limit: number = 100) {
     return this.prisma.auditLog.findMany({
       where: {
         entity,
         entityId,
       },
+      take: limit,
       orderBy: {
         createdAt: 'desc',
       },

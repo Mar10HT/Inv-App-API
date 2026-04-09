@@ -4,11 +4,12 @@ import {
   BadRequestException,
   ForbiddenException,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { QrService } from '../qr/qr.service';
 import { CreateLoanDto } from './dto/create-loan.dto';
 import { UpdateLoanDto, ReturnLoanDto, LoanStatus } from './dto/update-loan.dto';
-import { PaginationDto, PaginatedResult, parsePagination, buildPaginationMeta } from '../common/dto';
+import { PaginationDto, PaginatedResult, parsePagination, buildPaginationMeta, parseSortOrder } from '../common/dto';
 import { EventsService } from '../events/events.service';
 import { AuditService } from '../audit/audit.service';
 import { warehouseFilterMultiField } from '../common/warehouse-access/warehouse-filter.util';
@@ -522,7 +523,7 @@ export class LoansService {
         where,
         skip,
         take: limit,
-        orderBy: { loanDate: pagination?.sortOrder || 'desc' },
+        orderBy: { loanDate: parseSortOrder(pagination?.sortOrder) },
         include: this.loanIncludeLight,
       }),
       this.prisma.loan.count({ where }),
@@ -614,8 +615,8 @@ export class LoansService {
         },
         include: this.loanInclude,
       });
-    } catch (error) {
-      if (error.code === 'P2025') {
+    } catch (error: unknown) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
         throw new NotFoundException('Loan not found');
       }
       throw error;
@@ -690,8 +691,8 @@ export class LoansService {
       await this.prisma.loan.delete({
         where: { id },
       });
-    } catch (error) {
-      if (error.code === 'P2025') {
+    } catch (error: unknown) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
         throw new NotFoundException('Loan not found');
       }
       throw error;

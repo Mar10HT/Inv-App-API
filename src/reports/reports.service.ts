@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { FilterInventoryDto } from '../inventory/dto/filter-inventory.dto';
 import { warehouseFilter, warehouseFilterMultiField } from '../common/warehouse-access/warehouse-filter.util';
@@ -197,9 +198,12 @@ export class ReportsService {
     await this.applyWorkbookMeta(workbook, this.t('inventoryReport', locale));
     const worksheet = workbook.addWorksheet(this.t('wsInventory', locale));
 
-    const where: any = { deletedAt: null, ...warehouseFilter(warehouseIds) };
-    if (filters?.category)   where.category    = filters.category;
-    if (filters?.status)     where.status      = filters.status;
+    const where: Prisma.InventoryItemWhereInput = {
+      deletedAt: null,
+      ...warehouseFilter(warehouseIds),
+      ...(filters?.category ? { category: filters.category } : {}),
+      ...(filters?.status   ? { status: filters.status }     : {}),
+    };
     if (filters?.warehouseId) where.warehouseId = filters.warehouseId;
 
     const items = await this.prisma.inventoryItem.findMany({
@@ -278,10 +282,13 @@ export class ReportsService {
   ): Promise<Buffer> {
     const PDFDocument = (await import('pdfkit')).default;
 
-    const where: any = { deletedAt: null, ...warehouseFilter(warehouseIds) };
-    if (filters?.category)    where.category    = filters.category;
-    if (filters?.status)      where.status      = filters.status;
-    if (filters?.warehouseId) where.warehouseId = filters.warehouseId;
+    const where: Prisma.InventoryItemWhereInput = {
+      deletedAt: null,
+      ...warehouseFilter(warehouseIds),
+      ...(filters?.category    ? { category:    filters.category }    : {}),
+      ...(filters?.status      ? { status:      filters.status }      : {}),
+      ...(filters?.warehouseId ? { warehouseId: filters.warehouseId } : {}),
+    };
 
     const items = await this.prisma.inventoryItem.findMany({
       where,
@@ -419,14 +426,15 @@ export class ReportsService {
     await this.applyWorkbookMeta(workbook, this.t('wsTransactions', locale));
     const worksheet = workbook.addWorksheet(this.t('wsTransactions', locale));
 
-    const where: any = {
+    const where: Prisma.TransactionWhereInput = {
       ...warehouseFilterMultiField(warehouseIds, ['sourceWarehouseId', 'destinationWarehouseId']),
+      ...(startDate || endDate ? {
+        date: {
+          ...(startDate ? { gte: startDate } : {}),
+          ...(endDate   ? { lte: endDate }   : {}),
+        },
+      } : {}),
     };
-    if (startDate || endDate) {
-      where.date = {};
-      if (startDate) where.date.gte = startDate;
-      if (endDate)   where.date.lte = endDate;
-    }
 
     const transactions = await this.prisma.transaction.findMany({
       where,
@@ -552,13 +560,9 @@ export class ReportsService {
     await this.applyWorkbookMeta(workbook, this.t('wsTransfers', locale));
     const worksheet = workbook.addWorksheet(this.t('wsTransfers', locale));
 
-    const where: any = {};
-    if (warehouseIds && warehouseIds.length > 0) {
-      where.OR = [
-        { sourceWarehouseId: { in: warehouseIds } },
-        { destinationWarehouseId: { in: warehouseIds } },
-      ];
-    }
+    const where: Prisma.TransferRequestWhereInput = warehouseIds?.length
+      ? { OR: [{ sourceWarehouseId: { in: warehouseIds } }, { destinationWarehouseId: { in: warehouseIds } }] }
+      : {};
 
     const transfers = await this.prisma.transferRequest.findMany({
       where,
@@ -620,10 +624,9 @@ export class ReportsService {
     const workbook = new ExcelJS.Workbook();
     await this.applyWorkbookMeta(workbook, this.t('wsStockTakes', locale));
 
-    const where: any = {};
-    if (warehouseIds && warehouseIds.length > 0) {
-      where.warehouseId = { in: warehouseIds };
-    }
+    const where: Prisma.StockTakeWhereInput = warehouseIds?.length
+      ? { warehouseId: { in: warehouseIds } }
+      : {};
 
     const stockTakes = await this.prisma.stockTake.findMany({
       where,
@@ -720,10 +723,9 @@ export class ReportsService {
     await this.applyWorkbookMeta(workbook, this.t('wsDischarges', locale));
     const worksheet = workbook.addWorksheet(this.t('wsDischarges', locale));
 
-    const where: any = {};
-    if (warehouseIds && warehouseIds.length > 0) {
-      where.warehouseId = { in: warehouseIds };
-    }
+    const where: Prisma.DischargeRequestWhereInput = warehouseIds?.length
+      ? { warehouseId: { in: warehouseIds } }
+      : {};
 
     const discharges = await this.prisma.dischargeRequest.findMany({
       where,

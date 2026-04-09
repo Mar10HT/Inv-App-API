@@ -80,7 +80,12 @@ async function bootstrap() {
   //   - login: no privileged action on behalf of an authenticated user
   //   - refresh: protected by the opaque refresh token value itself
   const csrfService = app.get(CsrfService);
-  const CSRF_EXEMPT_PATHS = ['/api/auth/login', '/api/auth/refresh'];
+  const CSRF_EXEMPT_PATHS = [
+    '/api/auth/login',
+    '/api/auth/refresh',
+    '/api/auth/register',
+    '/api/auth/forgot-password',
+  ];
   app.use((req, res, next) => {
     const authHeader = req.headers.authorization as string | undefined;
     if (authHeader?.startsWith('Bearer ')) {

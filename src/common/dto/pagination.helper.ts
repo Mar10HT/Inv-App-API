@@ -11,10 +11,18 @@ export interface PaginationParams {
  * Centralizes the `|| 1` / `|| 10` defaults used across all list endpoints.
  */
 export function parsePagination(pagination?: PaginationDto): PaginationParams {
-  const page = pagination?.page || 1;
-  const limit = pagination?.limit || 10;
+  const page = Math.max(1, pagination?.page ?? 1);
+  const limit = Math.min(100, Math.max(1, pagination?.limit ?? 10));
   const skip = (page - 1) * limit;
   return { page, limit, skip };
+}
+
+/**
+ * Normalizes an optional sortOrder string to a valid Prisma order direction.
+ * Accepts only 'asc'; everything else (including arbitrary strings or undefined) falls back to 'desc'.
+ */
+export function parseSortOrder(value?: string): 'asc' | 'desc' {
+  return value === 'asc' ? 'asc' : 'desc';
 }
 
 /**

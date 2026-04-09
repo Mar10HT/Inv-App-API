@@ -74,10 +74,6 @@ export class InventoryService {
       if (!createInventoryDto.serviceTag && !createInventoryDto.serialNumber) {
         throw new BadRequestException('UNIQUE items must have either serviceTag or serialNumber');
       }
-      if (createInventoryDto.assignedToUserId) {
-        // Set assignedAt timestamp when assigning
-        createInventoryDto['assignedAt'] = new Date();
-      }
     }
 
     // Validate BULK item requirements
@@ -139,6 +135,9 @@ export class InventoryService {
         ...createInventoryDto,
         itemType,
         status,
+        ...(itemType === ItemType.UNIQUE && createInventoryDto.assignedToUserId
+          ? { assignedAt: new Date() }
+          : {}),
       },
       include: {
         createdBy: {
@@ -477,7 +476,7 @@ export class InventoryService {
       lowStock,
       outOfStock,
       inUse,
-      items,
+      totalValueResult,
       categoryStats,
       warehousesWithCounts,
     ] = await Promise.all([
@@ -486,10 +485,24 @@ export class InventoryService {
       this.prisma.inventoryItem.count({ where: { status: InventoryStatus.LOW_STOCK, deletedAt: null, ...wFilter } }),
       this.prisma.inventoryItem.count({ where: { status: InventoryStatus.OUT_OF_STOCK, deletedAt: null, ...wFilter } }),
       this.prisma.inventoryItem.count({ where: { status: InventoryStatus.IN_USE, deletedAt: null, ...wFilter } }),
-      this.prisma.inventoryItem.findMany({
-        where: { deletedAt: null, ...wFilter },
-        select: { price: true, quantity: true }
-      }),
+      // Compute SUM(price * quantity) in the DB to avoid loading all rows into memory.
+      // Prisma cannot express price * quantity natively, so a raw query is used here.
+      // warehouseIds === undefined means the value was never passed (admin global view),
+      // warehouseIds === null means unrestricted access (no warehouse filter applied).
+      warehouseIds != null && warehouseIds !== undefined && warehouseIds.length > 0
+        ? this.prisma.$queryRaw<[{ total: number }]>`
+            SELECT COALESCE(SUM(price * quantity), 0) AS total
+            FROM inventory_items
+            WHERE deleted_at IS NULL
+              AND price IS NOT NULL
+              AND warehouse_id IN (${Prisma.join(warehouseIds)})
+          `
+        : this.prisma.$queryRaw<[{ total: number }]>`
+            SELECT COALESCE(SUM(price * quantity), 0) AS total
+            FROM inventory_items
+            WHERE deleted_at IS NULL
+              AND price IS NOT NULL
+          `,
       this.prisma.inventoryItem.groupBy({
         by: ['category'],
         where: { deletedAt: null, ...wFilter },
@@ -512,9 +525,7 @@ export class InventoryService {
       }),
     ]);
 
-    const totalValue = items.reduce((sum, item) => {
-      return sum + (item.price || 0) * item.quantity;
-    }, 0);
+    const totalValue = parseFloat(String((totalValueResult as [{ total: unknown }])[0]?.total ?? 0));
 
     // No need for extra query - warehouse counts are already included
     const locationStats = warehousesWithCounts.map(warehouse => ({
@@ -536,8 +547,10 @@ export class InventoryService {
       locations: locationStats,
     };
 
-    // Cache the stats for 60 seconds
-    await this.cacheManager.set(this.CACHE_KEYS.STATS, stats, 60000);
+    // Cache the stats for 60 seconds (only for unrestricted/global access)
+    if (warehouseIds == null) {
+      await this.cacheManager.set(this.CACHE_KEYS.STATS, stats, 60000);
+    }
 
     return stats;
   }
@@ -581,7 +594,7 @@ export class InventoryService {
       select: { category: true },
       orderBy: { category: 'asc' },
     });
-    const result = categories.map(c => c.category);
+    const result = categories.map(c => c.category).filter((c): c is string => c !== null);
 
     // Cache for 5 minutes
     await this.cacheManager.set(cacheKey, result, 300000);
@@ -614,13 +627,13 @@ export class InventoryService {
     return result;
   }
 
-  // Cache invalidation method
+  // Cache invalidation method.
+  // Uses reset() to clear all keys because getCategories and getLocations write
+  // scoped keys per warehouse combination (e.g. inventory:categories:wh1,wh2)
+  // that cannot be enumerated cheaply. reset() is safe here: the cache is
+  // in-memory and short-lived (60s stats, 5m categories/locations).
   async invalidateCache(): Promise<void> {
-    await Promise.all([
-      this.cacheManager.del(this.CACHE_KEYS.STATS),
-      this.cacheManager.del(this.CACHE_KEYS.CATEGORIES),
-      this.cacheManager.del(this.CACHE_KEYS.LOCATIONS),
-    ]);
+    await this.cacheManager.reset();
   }
 
   // Bulk Operations

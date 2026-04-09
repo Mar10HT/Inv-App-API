@@ -92,7 +92,7 @@ export class TransferRequestsController {
     @Param('id') id: string,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.transferRequestsService.sendTransfer(id, user.warehouseIds);
+    return this.transferRequestsService.sendTransfer(id, user.userId, user.warehouseIds);
   }
 
   @Post('confirm-receipt')

@@ -65,21 +65,18 @@ describe('TransferRequestsService', () => {
     ],
   };
 
-  const createMockTx = () => ({
-    inventoryItem: {
+  beforeEach(async () => {
+    // inventoryItem tx mock — standalone, used for confirmReceipt / complete flows
+    const mockTxInventoryItem = {
       update: jest.fn().mockResolvedValue(mockInventoryItem),
+      findUnique: jest.fn().mockResolvedValue(mockInventoryItem),
       findFirst: jest.fn().mockResolvedValue(null),
       create: jest.fn().mockResolvedValue({ ...mockInventoryItem, warehouseId: 'wh-dst' }),
-    },
-    transferRequest: {
-      update: jest.fn().mockResolvedValue({ ...mockTransferRequest, status: RequestStatus.COMPLETED }),
-    },
-  });
+    };
 
-  beforeEach(async () => {
     const mockPrismaService = {
       warehouse: { findUnique: jest.fn() },
-      inventoryItem: { findUnique: jest.fn() },
+      inventoryItem: { findUnique: jest.fn(), findMany: jest.fn() },
       transferRequest: {
         create: jest.fn(),
         findMany: jest.fn(),
@@ -88,7 +85,19 @@ describe('TransferRequestsService', () => {
         update: jest.fn(),
         count: jest.fn(),
       },
-      $transaction: jest.fn().mockImplementation(async (fn) => fn(createMockTx())),
+      // Default $transaction delegates transferRequest ops to the outer mock so per-test
+      // setup on prisma.transferRequest.findUnique/update flows into the transaction.
+      $transaction: jest.fn().mockImplementation(async (fn) =>
+        fn({
+          inventoryItem: mockTxInventoryItem,
+          transferRequest: {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            findUnique: (...args: any[]) => (mockPrismaService.transferRequest.findUnique as jest.Mock)(...args),
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            update: (...args: any[]) => (mockPrismaService.transferRequest.update as jest.Mock)(...args),
+          },
+        }),
+      ),
     };
 
     const mockAuditService = { log: jest.fn().mockResolvedValue(undefined) };
@@ -130,7 +139,7 @@ describe('TransferRequestsService', () => {
       (prisma.warehouse.findUnique as jest.Mock)
         .mockResolvedValueOnce(mockSourceWarehouse)
         .mockResolvedValueOnce(mockDestWarehouse);
-      (prisma.inventoryItem.findUnique as jest.Mock).mockResolvedValue(mockInventoryItem);
+      (prisma.inventoryItem.findMany as jest.Mock).mockResolvedValue([mockInventoryItem]);
       (prisma.transferRequest.create as jest.Mock).mockResolvedValue(mockTransferRequest);
 
       const result = await service.create(dto, 'user-1');
@@ -173,7 +182,8 @@ describe('TransferRequestsService', () => {
       (prisma.warehouse.findUnique as jest.Mock)
         .mockResolvedValueOnce(mockSourceWarehouse)
         .mockResolvedValueOnce(mockDestWarehouse);
-      (prisma.inventoryItem.findUnique as jest.Mock).mockResolvedValue(null);
+      // findMany returns empty array — item not found in batch results
+      (prisma.inventoryItem.findMany as jest.Mock).mockResolvedValue([]);
 
       await expect(service.create(dto, 'user-1')).rejects.toThrow(NotFoundException);
     });
@@ -182,10 +192,10 @@ describe('TransferRequestsService', () => {
       (prisma.warehouse.findUnique as jest.Mock)
         .mockResolvedValueOnce(mockSourceWarehouse)
         .mockResolvedValueOnce(mockDestWarehouse);
-      (prisma.inventoryItem.findUnique as jest.Mock).mockResolvedValue({
+      (prisma.inventoryItem.findMany as jest.Mock).mockResolvedValue([{
         ...mockInventoryItem,
         warehouseId: 'other-wh',
-      });
+      }]);
 
       await expect(service.create(dto, 'user-1')).rejects.toThrow(BadRequestException);
     });
@@ -194,10 +204,10 @@ describe('TransferRequestsService', () => {
       (prisma.warehouse.findUnique as jest.Mock)
         .mockResolvedValueOnce(mockSourceWarehouse)
         .mockResolvedValueOnce(mockDestWarehouse);
-      (prisma.inventoryItem.findUnique as jest.Mock).mockResolvedValue({
+      (prisma.inventoryItem.findMany as jest.Mock).mockResolvedValue([{
         ...mockInventoryItem,
         quantity: 2,
-      });
+      }]);
 
       const dtoOverRequest = { ...dto, items: [{ inventoryItemId: 'item-1', quantity: 10 }] };
 
@@ -249,8 +259,9 @@ describe('TransferRequestsService', () => {
   describe('approve', () => {
     it('approves a pending transfer request', async () => {
       const approvedRequest = { ...mockTransferRequest, status: RequestStatus.APPROVED, approvedById: 'user-2' };
+      // Both findOne (pre-tx) and tx.transferRequest.findUnique (TOCTOU re-check) use the same mock.
+      // tx.transferRequest.update (via delegating global mock) returns approvedRequest.
       (prisma.transferRequest.findUnique as jest.Mock).mockResolvedValue(mockTransferRequest);
-      (prisma.inventoryItem.findUnique as jest.Mock).mockResolvedValue(mockInventoryItem);
       (prisma.transferRequest.update as jest.Mock).mockResolvedValue(approvedRequest);
 
       const result = await service.approve('tr-1', 'user-2');
@@ -262,8 +273,9 @@ describe('TransferRequestsService', () => {
     });
 
     it('throws BadRequestException when request is not PENDING', async () => {
-      const approvedRequest = { ...mockTransferRequest, status: RequestStatus.APPROVED };
-      (prisma.transferRequest.findUnique as jest.Mock).mockResolvedValue(approvedRequest);
+      const alreadyApproved = { ...mockTransferRequest, status: RequestStatus.APPROVED };
+      // Both findOne and tx TOCTOU re-check see non-PENDING — throws before update.
+      (prisma.transferRequest.findUnique as jest.Mock).mockResolvedValue(alreadyApproved);
 
       await expect(service.approve('tr-1', 'user-2')).rejects.toThrow(BadRequestException);
     });
@@ -276,7 +288,7 @@ describe('TransferRequestsService', () => {
       (prisma.transferRequest.findUnique as jest.Mock).mockResolvedValue(approvedRequest);
       (prisma.transferRequest.update as jest.Mock).mockResolvedValue(sentRequest);
 
-      const result = await service.sendTransfer('tr-1');
+      const result = await service.sendTransfer('tr-1', 'user-1');
 
       expect(result.status).toBe(RequestStatus.SENT);
       expect(result.qrCodeDataUrl).toBe('data:image/png;base64,QR');
@@ -286,14 +298,18 @@ describe('TransferRequestsService', () => {
     it('throws BadRequestException when request is not APPROVED', async () => {
       (prisma.transferRequest.findUnique as jest.Mock).mockResolvedValue(mockTransferRequest);
 
-      await expect(service.sendTransfer('tr-1')).rejects.toThrow(BadRequestException);
+      await expect(service.sendTransfer('tr-1', 'user-1')).rejects.toThrow(BadRequestException);
     });
   });
 
   describe('confirmReceipt', () => {
     it('completes transfer when valid QR code is scanned', async () => {
       const sentRequest = { ...mockTransferRequest, status: RequestStatus.SENT, sendQrCode: 'QR-CODE-123' };
+      const completedRequest = { ...sentRequest, status: RequestStatus.COMPLETED };
+      // findFirst: initial lookup by QR code; findUnique: TOCTOU re-check inside tx
       (prisma.transferRequest.findFirst as jest.Mock).mockResolvedValue(sentRequest);
+      (prisma.transferRequest.findUnique as jest.Mock).mockResolvedValue(sentRequest);
+      (prisma.transferRequest.update as jest.Mock).mockResolvedValue(completedRequest);
 
       const result = await service.confirmReceipt('QR-CODE-123', 'user-2');
 
@@ -311,7 +327,9 @@ describe('TransferRequestsService', () => {
 
     it('throws BadRequestException when transfer is not in SENT status', async () => {
       const approvedRequest = { ...mockTransferRequest, status: RequestStatus.APPROVED, sendQrCode: 'QR-CODE-123' };
+      // findFirst: initial lookup; findUnique: TOCTOU re-check sees non-SENT status → throws
       (prisma.transferRequest.findFirst as jest.Mock).mockResolvedValue(approvedRequest);
+      (prisma.transferRequest.findUnique as jest.Mock).mockResolvedValue(approvedRequest);
 
       await expect(service.confirmReceipt('QR-CODE-123', 'user-2')).rejects.toThrow(BadRequestException);
     });
@@ -384,8 +402,12 @@ describe('TransferRequestsService', () => {
   describe('processQrCode', () => {
     it('confirms receipt when QR code type is TRANSFER', async () => {
       const sentRequest = { ...mockTransferRequest, status: RequestStatus.SENT, sendQrCode: 'QR-CODE-123' };
+      const completedRequest = { ...sentRequest, status: RequestStatus.COMPLETED };
       (qrService.parseQrData as jest.Mock).mockReturnValue({ type: 'TRANSFER', id: 'tr-1', code: 'QR-CODE-123' });
+      // findFirst: lookup by QR code; findUnique: TOCTOU re-check inside tx
       (prisma.transferRequest.findFirst as jest.Mock).mockResolvedValue(sentRequest);
+      (prisma.transferRequest.findUnique as jest.Mock).mockResolvedValue(sentRequest);
+      (prisma.transferRequest.update as jest.Mock).mockResolvedValue(completedRequest);
 
       const result = await service.processQrCode('{"type":"TRANSFER","id":"tr-1","code":"QR-CODE-123"}', 'user-2');
 

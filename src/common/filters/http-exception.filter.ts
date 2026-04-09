@@ -6,7 +6,13 @@ import {
   HttpStatus,
   LoggerService,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { Request, Response } from 'express';
+
+interface HttpExceptionBody {
+  message?: string | string[];
+  error?: string;
+}
 
 @Catch()
 export class GlobalExceptionFilter implements ExceptionFilter {
@@ -26,11 +32,17 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       const exceptionResponse = exception.getResponse();
 
       if (typeof exceptionResponse === 'object') {
-        message = (exceptionResponse as any).message || exception.message;
-        error = (exceptionResponse as any).error || 'Error';
+        const body = exceptionResponse as HttpExceptionBody;
+        message = body.message || exception.message;
+        error = body.error || 'Error';
       } else {
         message = exceptionResponse as string;
       }
+    } else if (exception instanceof Prisma.PrismaClientKnownRequestError) {
+      const prismaError = this.handlePrismaError(exception);
+      status = prismaError.status;
+      message = prismaError.message;
+      error = prismaError.error;
     } else if (exception instanceof Error) {
       message = exception.message;
 
@@ -39,12 +51,6 @@ export class GlobalExceptionFilter implements ExceptionFilter {
         status = HttpStatus.FORBIDDEN;
         message = 'Invalid or missing CSRF token';
         error = 'Forbidden';
-      // Handle Prisma errors
-      } else if ((exception as any).code) {
-        const prismaError = this.handlePrismaError(exception as any);
-        status = prismaError.status;
-        message = prismaError.message;
-        error = prismaError.error;
       }
     }
 
@@ -63,7 +69,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     });
   }
 
-  private handlePrismaError(error: any): { status: number; message: string; error: string } {
+  private handlePrismaError(error: Prisma.PrismaClientKnownRequestError): { status: number; message: string; error: string } {
     switch (error.code) {
       case 'P2002':
         return {

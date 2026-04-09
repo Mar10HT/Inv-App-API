@@ -54,7 +54,21 @@ export class AuthService {
     });
 
     if (recentFailedAttempts >= this.MAX_LOGIN_ATTEMPTS) {
-      const remainingMinutes = Math.ceil(this.LOCKOUT_DURATION_MS / 60000);
+      // Find the oldest attempt within the lockout window to compute actual remaining time
+      const oldestAttempt = await this.prisma.loginAttempt.findFirst({
+        where: {
+          email: email.toLowerCase(),
+          success: false,
+          createdAt: { gte: lockoutTime },
+        },
+        orderBy: { createdAt: 'asc' },
+      });
+
+      const unlockAtMs = oldestAttempt
+        ? oldestAttempt.createdAt.getTime() + this.LOCKOUT_DURATION_MS
+        : Date.now() + this.LOCKOUT_DURATION_MS;
+
+      const remainingMinutes = Math.ceil((unlockAtMs - Date.now()) / 60000);
       throw new ForbiddenException(
         `Account temporarily locked due to too many failed attempts. Try again in ${remainingMinutes} minutes.`,
       );
@@ -285,18 +299,28 @@ export class AuthService {
       throw new BadRequestException('Reset token has expired');
     }
 
-    // Hash and update password
+    // Hash password before the transaction to keep the transaction short
     const hashedPassword = await bcrypt.hash(newPassword, 10);
-    await this.usersService.updatePassword(resetToken.userId, hashedPassword);
 
-    // Mark token as used
-    await this.prisma.passwordResetToken.update({
-      where: { id: resetToken.id },
-      data: { used: true },
+    // Atomically: update password, mark token used, and revoke refresh tokens.
+    // If any step fails, all are rolled back — preventing partial state (e.g.,
+    // token marked used but refresh tokens still alive).
+    await this.prisma.$transaction(async (tx) => {
+      await tx.user.update({
+        where: { id: resetToken.userId },
+        data: { password: hashedPassword },
+      });
+
+      await tx.passwordResetToken.update({
+        where: { id: resetToken.id },
+        data: { used: true },
+      });
+
+      await tx.refreshToken.updateMany({
+        where: { userId: resetToken.userId, revoked: false },
+        data: { revoked: true },
+      });
     });
-
-    // Revoke all refresh tokens for security
-    await this.revokeAllUserRefreshTokens(resetToken.userId);
 
     // Send confirmation email
     this.emailService

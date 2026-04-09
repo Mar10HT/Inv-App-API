@@ -3,7 +3,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { QrService } from '../qr/qr.service';
 import { CreateTransferRequestDto } from './dto/create-transfer-request.dto';
-import { Prisma, RequestStatus } from '@prisma/client';
+import { Prisma, RequestStatus, ItemType } from '@prisma/client';
 import { PaginationDto, parsePagination, buildPaginationMeta } from '../common/dto';
 import { warehouseFilterMultiField } from '../common/warehouse-access/warehouse-filter.util';
 
@@ -68,10 +68,15 @@ export class TransferRequestsService {
       throw new BadRequestException('Destination warehouse is inactive');
     }
 
+    // Batch-fetch all requested items in one query to avoid N+1
+    const requestedIds = dto.items.map((i) => i.inventoryItemId);
+    const foundItems = await this.prisma.inventoryItem.findMany({
+      where: { id: { in: requestedIds } },
+    });
+    const inventoryMap = new Map(foundItems.map((fi) => [fi.id, fi]));
+
     for (const item of dto.items) {
-      const inventoryItem = await this.prisma.inventoryItem.findUnique({
-        where: { id: item.inventoryItemId },
-      });
+      const inventoryItem = inventoryMap.get(item.inventoryItemId);
 
       if (!inventoryItem) {
         throw new NotFoundException('Inventory item not found');
@@ -118,7 +123,7 @@ export class TransferRequestsService {
   async findAll(pagination?: PaginationDto, status?: RequestStatus, warehouseIds?: string[] | null) {
     const { page, limit, skip } = parsePagination(pagination);
 
-    const where: any = {
+    const where: Prisma.TransferRequestWhereInput = {
       ...(status ? { status } : {}),
       ...warehouseFilterMultiField(warehouseIds, ['sourceWarehouseId', 'destinationWarehouseId']),
     };
@@ -213,7 +218,7 @@ export class TransferRequestsService {
   /**
    * Send transfer - generates QR code for receipt confirmation
    */
-  async sendTransfer(id: string, userWarehouseIds?: string[] | null) {
+  async sendTransfer(id: string, userId: string, userWarehouseIds?: string[] | null) {
     const request = await this.findOne(id);
     if (userWarehouseIds != null) {
       const hasAccess =
@@ -250,7 +255,7 @@ export class TransferRequestsService {
       action: 'UPDATE',
       entity: 'TransferRequest',
       entityId: id,
-      userId: request.approvedById || request.requestedById,
+      userId, // The user who performed the send action — NOT the approver or requester
       changes: { status: 'SENT', qrGenerated: true },
     });
 
@@ -345,19 +350,28 @@ export class TransferRequestsService {
       if (!hasAccess) throw new ForbiddenException('You do not have access to the involved warehouses');
     }
 
-    if (request.status !== RequestStatus.PENDING) {
-      throw new BadRequestException(`Transfer request is not pending. Current status: ${request.status}`);
-    }
+    // Wrap status check and update in a single transaction to prevent TOCTOU races
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const current = await tx.transferRequest.findUnique({
+        where: { id },
+        select: { status: true },
+      });
+      if (!current || current.status !== RequestStatus.PENDING) {
+        throw new BadRequestException(
+          `Transfer request is not pending. Current status: ${current?.status ?? 'unknown'}`,
+        );
+      }
 
-    const updated = await this.prisma.transferRequest.update({
-      where: { id },
-      data: {
-        status: RequestStatus.REJECTED,
-        approvedById: rejectedById,
-        rejectedAt: new Date(),
-        rejectedReason: reason,
-      },
-      include: this.includeFull,
+      return tx.transferRequest.update({
+        where: { id },
+        data: {
+          status: RequestStatus.REJECTED,
+          approvedById: rejectedById,
+          rejectedAt: new Date(),
+          rejectedReason: reason,
+        },
+        include: this.includeFull,
+      });
     });
 
     await this.auditService.log({
