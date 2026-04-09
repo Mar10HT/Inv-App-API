@@ -1,9 +1,10 @@
 import { Injectable, NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { EmailService } from '../email/email.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
-import { PaginationDto, PaginatedResult } from '../common/dto';
+import { PaginationDto, PaginatedResult, parsePagination, buildPaginationMeta, parseSortOrder } from '../common/dto';
 import * as bcrypt from 'bcryptjs';
 
 @Injectable()
@@ -51,51 +52,29 @@ export class UsersService {
       // Remove password from response
       const { password, ...result } = user;
       return result;
-    } catch (error) {
-      if (error.code === 'P2002') {
+    } catch (error: unknown) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
         throw new ConflictException('User with this email already exists');
       }
       throw error;
     }
   }
 
-  async findAll(pagination?: PaginationDto): Promise<PaginatedResult<any>> {
-    const page = pagination?.page || 1;
-    const limit = pagination?.limit || 10;
-    const skip = (page - 1) * limit;
+  async findAll(pagination?: PaginationDto): Promise<PaginatedResult<unknown>> {
+    const { page, limit, skip } = parsePagination(pagination);
 
     const [data, total] = await Promise.all([
       this.prisma.user.findMany({
-        where: {
-          deletedAt: null, // Exclude soft-deleted users
-        },
+        where: { deletedAt: null },
         skip,
         take: limit,
-        orderBy: {
-          createdAt: pagination?.sortOrder || 'desc',
-        },
+        orderBy: { createdAt: parseSortOrder(pagination?.sortOrder) },
         select: this.userSelect,
       }),
-      this.prisma.user.count({
-        where: {
-          deletedAt: null,
-        },
-      }),
+      this.prisma.user.count({ where: { deletedAt: null } }),
     ]);
 
-    const totalPages = Math.ceil(total / limit);
-
-    return {
-      data,
-      meta: {
-        total,
-        page,
-        limit,
-        totalPages,
-        hasNextPage: page < totalPages,
-        hasPrevPage: page > 1,
-      },
-    };
+    return { data, meta: buildPaginationMeta(total, page, limit) };
   }
 
   async findOne(id: string) {
@@ -152,12 +131,10 @@ export class UsersService {
       });
 
       return user;
-    } catch (error) {
-      if (error.code === 'P2002') {
-        throw new ConflictException('User with this email already exists');
-      }
-      if (error.code === 'P2025') {
-        throw new NotFoundException(`User with ID ${id} not found`);
+    } catch (error: unknown) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError) {
+        if (error.code === 'P2002') throw new ConflictException('User with this email already exists');
+        if (error.code === 'P2025') throw new NotFoundException(`User with ID ${id} not found`);
       }
       throw error;
     }
@@ -170,8 +147,8 @@ export class UsersService {
         where: { id },
         data: { deletedAt: new Date() },
       });
-    } catch (error) {
-      if (error.code === 'P2025') {
+    } catch (error: unknown) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
         throw new NotFoundException(`User with ID ${id} not found`);
       }
       throw error;
@@ -232,18 +209,30 @@ export class UsersService {
           lowStockAlerts: true,
         },
       });
-    } catch (error) {
-      if (error.code === 'P2025') {
+    } catch (error: unknown) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
         throw new NotFoundException(`User with ID ${userId} not found`);
       }
       throw error;
     }
   }
 
-  // Method to find user by email (for auth)
+  // Method to find user by email (for auth).
+  // INTENTIONALLY includes password so AuthService can run bcrypt.compare().
+  // This is the only method that returns the hash — all other read paths use userSelect.
   async findByEmail(email: string) {
     return this.prisma.user.findUnique({
       where: { email },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        role: true,
+        roleId: true,
+        createdAt: true,
+        updatedAt: true,
+        password: true, // Required for authentication — do NOT remove
+      },
     });
   }
 
@@ -287,8 +276,8 @@ export class UsersService {
           data: { expoPushToken: token },
         });
       });
-    } catch (error) {
-      if (error.code === 'P2025') {
+    } catch (error: unknown) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
         throw new NotFoundException(`User with ID ${userId} not found`);
       }
       throw error;

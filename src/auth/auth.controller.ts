@@ -17,6 +17,16 @@ import { ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import type { Response as ExpressResponse, Request as ExpressRequest } from 'express';
 import { AuthService } from './auth.service';
+
+// Shape of the JWT payload attached to req.user by JwtAuthGuard
+interface JwtUser {
+  userId: string;
+  email: string;
+  role: string;
+}
+
+// Express Request extended with the decoded JWT payload
+type AuthenticatedRequest = ExpressRequest & { user: JwtUser };
 import { CsrfService } from '../csrf/csrf.service';
 import { UsersService } from '../users/users.service';
 import { LoginDto } from './dto/login.dto';
@@ -63,6 +73,20 @@ export class AuthController {
     const ip = req.ip || req.socket.remoteAddress || 'unknown';
     const result = await this.authService.login(loginDto, ip);
 
+    // Mobile clients (React Native / Expo) send X-Client-Type: mobile and manage
+    // tokens in secure storage. Web clients use httpOnly cookies to prevent XSS theft.
+    const isMobile = req.headers['x-client-type'] === 'mobile';
+
+    if (isMobile) {
+      // Return tokens in body for mobile — they handle storage themselves.
+      return {
+        user: result.user,
+        expires_in: 900,
+        access_token: result.access_token,
+        refresh_token: result.refresh_token,
+      };
+    }
+
     const isProduction = process.env.NODE_ENV === 'production';
     const cookieOptions = {
       httpOnly: true,
@@ -87,12 +111,10 @@ export class AuthController {
       path: '/api/auth', // Only sent to auth endpoints
     });
 
+    // Web clients: tokens are in httpOnly cookies — do NOT include them in the body.
     return {
       user: result.user,
-      expires_in: 900, // 15 minutes in seconds
-      // Tokens included for non-cookie clients (mobile apps)
-      access_token: result.access_token,
-      refresh_token: result.refresh_token,
+      expires_in: 900,
     };
   }
 
@@ -102,8 +124,23 @@ export class AuthController {
   async register(
     @Body(ValidationPipe) registerDto: RegisterDto,
     @Response({ passthrough: true }) res: ExpressResponse,
+    @Request() req: ExpressRequest,
   ) {
     const result = await this.authService.register(registerDto);
+
+    // Mobile clients (React Native / Expo) send X-Client-Type: mobile and manage
+    // tokens in secure storage. Web clients use httpOnly cookies to prevent XSS theft.
+    const isMobile = req.headers['x-client-type'] === 'mobile';
+
+    if (isMobile) {
+      // Return tokens in body for mobile — they handle storage themselves.
+      return {
+        user: result.user,
+        expires_in: 900,
+        access_token: result.access_token,
+        refresh_token: result.refresh_token,
+      };
+    }
 
     const isProduction = process.env.NODE_ENV === 'production';
     const cookieOptions = {
@@ -146,6 +183,18 @@ export class AuthController {
 
     const result = await this.authService.refreshAccessToken(refreshToken);
 
+    // Mobile clients send X-Client-Type: mobile — return tokens in body only.
+    const isMobile = req.headers['x-client-type'] === 'mobile';
+
+    if (isMobile) {
+      return {
+        user: result.user,
+        expires_in: 900,
+        access_token: result.access_token,
+        refresh_token: result.refresh_token,
+      };
+    }
+
     const isProduction = process.env.NODE_ENV === 'production';
     const cookieOptions = {
       httpOnly: true,
@@ -164,12 +213,10 @@ export class AuthController {
       path: '/api/auth',
     });
 
+    // Web clients: tokens are in httpOnly cookies — do NOT include them in the body.
     return {
       user: result.user,
       expires_in: 900,
-      // Tokens included for non-cookie clients (mobile apps)
-      access_token: result.access_token,
-      refresh_token: result.refresh_token,
     };
   }
 
@@ -200,45 +247,16 @@ export class AuthController {
     return { message: 'Logged out successfully' };
   }
 
-  /**
-   * Debug endpoint to check environment and cookie configuration.
-   * Only available in non-production environments. Requires authentication.
-   */
-  @Get('debug-env')
-  @UseGuards(JwtAuthGuard)
-  debugEnv(@Request() req: ExpressRequest) {
-    if (process.env.NODE_ENV === 'production') {
-      return { message: 'Not available in production' };
-    }
-
-    return {
-      NODE_ENV: process.env.NODE_ENV,
-      cookieConfig: {
-        secure: false,
-        sameSite: 'strict',
-      },
-      cors: {
-        CORS_ORIGIN: process.env.CORS_ORIGIN,
-      },
-      request: {
-        origin: req.headers.origin,
-        host: req.headers.host,
-        hasCookies: !!req.cookies,
-        cookieNames: req.cookies ? Object.keys(req.cookies) : [],
-        hasAccessToken: !!req.cookies?.access_token,
-        hasRefreshToken: !!req.cookies?.refresh_token,
-      },
-    };
-  }
-
   @Post('forgot-password')
   @HttpCode(HttpStatus.OK)
   @Throttle({ default: { limit: 3, ttl: 60000 } })
   async forgotPassword(@Body(ValidationPipe) dto: ForgotPasswordDto) {
     const token = await this.authService.createPasswordResetToken(dto.email);
 
-    if (token && process.env.NODE_ENV !== 'production') {
-      // Only in development: return token for testing
+    // Expose the raw token ONLY when NODE_ENV is exactly 'development' — never on
+    // staging or production. A deploy environment MUST set NODE_ENV to 'production'
+    // or 'staging'; 'development' is only valid for local dev servers.
+    if (token && process.env.NODE_ENV === 'development') {
       return {
         message: 'If an account exists with this email, a reset link has been sent.',
         _dev_token: token,
@@ -309,7 +327,7 @@ export class AuthController {
    */
   @Get('me')
   @UseGuards(JwtAuthGuard)
-  async getMe(@Request() req) {
+  async getMe(@Request() req: AuthenticatedRequest) {
     const userId: string = req.user.userId;
     const [user, { permissions, version: permissionsVersion }] = await Promise.all([
       this.authService.validateUser(userId),
@@ -330,7 +348,7 @@ export class AuthController {
 
   @Get('profile')
   @UseGuards(JwtAuthGuard)
-  async getProfile(@Request() req) {
+  async getProfile(@Request() req: AuthenticatedRequest) {
     return this.authService.validateUser(req.user.userId);
   }
 
@@ -338,7 +356,7 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @UseGuards(JwtAuthGuard)
   async updateProfile(
-    @Request() req,
+    @Request() req: AuthenticatedRequest,
     @Body(ValidationPipe) updateProfileDto: UpdateProfileDto,
   ) {
     return this.authService.updateProfile(req.user.userId, updateProfileDto);
@@ -348,7 +366,7 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @UseGuards(JwtAuthGuard)
   async changePassword(
-    @Request() req,
+    @Request() req: AuthenticatedRequest,
     @Body(ValidationPipe) changePasswordDto: ChangePasswordDto,
   ) {
     return this.authService.changePassword(req.user.userId, changePasswordDto);

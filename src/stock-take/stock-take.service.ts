@@ -3,7 +3,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { CreateStockTakeDto, UpdateStockTakeItemDto } from './dto/create-stock-take.dto';
 import { StockTakeStatus } from '@prisma/client';
-import { PaginationDto } from '../common/dto/pagination.dto';
+import { PaginationDto, parsePagination, buildPaginationMeta } from '../common/dto';
 
 @Injectable()
 export class StockTakeService {
@@ -80,10 +80,7 @@ export class StockTakeService {
   }
 
   async findAll(pagination?: PaginationDto, status?: StockTakeStatus) {
-    const page = pagination?.page || 1;
-    const limit = pagination?.limit || 10;
-    const skip = (page - 1) * limit;
-
+    const { page, limit, skip } = parsePagination(pagination);
     const where = status ? { status } : {};
 
     const [stockTakes, total] = await Promise.all([
@@ -102,15 +99,7 @@ export class StockTakeService {
       this.prisma.stockTake.count({ where }),
     ]);
 
-    return {
-      data: stockTakes,
-      meta: {
-        total,
-        page,
-        limit,
-        totalPages: Math.ceil(total / limit),
-      },
-    };
+    return { data: stockTakes, meta: buildPaginationMeta(total, page, limit) };
   }
 
   async findOne(id: string) {
@@ -191,9 +180,11 @@ export class StockTakeService {
       );
     }
 
-    // Apply inventory changes if requested (atomic transaction)
-    if (applyChanges) {
-      await this.prisma.$transaction(async (tx) => {
+    // Apply inventory changes and mark as COMPLETED in one atomic transaction.
+    // The stockTake.update is always the last step inside the transaction so that
+    // the status only changes if all preceding writes succeed.
+    const updated = await this.prisma.$transaction(async (tx) => {
+      if (applyChanges) {
         for (const stockItem of stockTake.items) {
           if (stockItem.variance !== 0 && stockItem.countedQty !== null) {
             await tx.inventoryItem.update({
@@ -204,9 +195,28 @@ export class StockTakeService {
             });
           }
         }
-      });
+      }
 
-      // Audit logs outside transaction (non-critical)
+      return tx.stockTake.update({
+        where: { id },
+        data: {
+          status: StockTakeStatus.COMPLETED,
+          completedById,
+          completedAt: new Date(),
+        },
+        include: {
+          warehouse: true,
+          startedBy: { select: { id: true, name: true, email: true } },
+          completedBy: { select: { id: true, name: true, email: true } },
+          items: {
+            include: { item: true },
+          },
+        },
+      });
+    });
+
+    // Audit logs are non-critical and run outside the transaction intentionally
+    if (applyChanges) {
       for (const stockItem of stockTake.items) {
         if (stockItem.variance !== 0 && stockItem.countedQty !== null) {
           await this.auditService.log({
@@ -225,23 +235,6 @@ export class StockTakeService {
         }
       }
     }
-
-    const updated = await this.prisma.stockTake.update({
-      where: { id },
-      data: {
-        status: StockTakeStatus.COMPLETED,
-        completedById,
-        completedAt: new Date(),
-      },
-      include: {
-        warehouse: true,
-        startedBy: { select: { id: true, name: true, email: true } },
-        completedBy: { select: { id: true, name: true, email: true } },
-        items: {
-          include: { item: true },
-        },
-      },
-    });
 
     await this.auditService.log({
       action: 'UPDATE',

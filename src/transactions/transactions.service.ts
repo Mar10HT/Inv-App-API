@@ -1,8 +1,9 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { CreateTransactionDto, TransactionType } from './dto/create-transaction.dto';
+import { CreateTransactionDto, TransactionItemDto, TransactionType } from './dto/create-transaction.dto';
 import { UpdateTransactionDto } from './dto/update-transaction.dto';
-import { PaginationDto, PaginatedResult } from '../common/dto';
+import { PaginationDto, PaginatedResult, parsePagination, buildPaginationMeta, parseSortOrder } from '../common/dto';
 import { EventsService } from '../events/events.service';
 import { warehouseFilterMultiField } from '../common/warehouse-access/warehouse-filter.util';
 
@@ -65,11 +66,8 @@ export class TransactionsService {
     return result;
   }
 
-  async findAll(pagination?: PaginationDto, warehouseIds?: string[] | null): Promise<PaginatedResult<any>> {
-    const page = pagination?.page || 1;
-    const limit = pagination?.limit || 10;
-    const skip = (page - 1) * limit;
-
+  async findAll(pagination?: PaginationDto, warehouseIds?: string[] | null): Promise<PaginatedResult<unknown>> {
+    const { page, limit, skip } = parsePagination(pagination);
     const where = warehouseFilterMultiField(warehouseIds, ['sourceWarehouseId', 'destinationWarehouseId']);
 
     const [data, total] = await Promise.all([
@@ -77,42 +75,18 @@ export class TransactionsService {
         where,
         skip,
         take: limit,
-        orderBy: {
-          date: pagination?.sortOrder || 'desc',
-        },
+        orderBy: { date: parseSortOrder(pagination?.sortOrder) },
         include: {
-          items: {
-            include: {
-              inventoryItem: true,
-            },
-          },
+          items: { include: { inventoryItem: true } },
           sourceWarehouse: true,
           destinationWarehouse: true,
-          user: {
-            select: {
-              id: true,
-              email: true,
-              name: true,
-            },
-          },
+          user: { select: { id: true, email: true, name: true } },
         },
       }),
       this.prisma.transaction.count({ where }),
     ]);
 
-    const totalPages = Math.ceil(total / limit);
-
-    return {
-      data,
-      meta: {
-        total,
-        page,
-        limit,
-        totalPages,
-        hasNextPage: page < totalPages,
-        hasPrevPage: page > 1,
-      },
-    };
+    return { data, meta: buildPaginationMeta(total, page, limit) };
   }
 
   async findRecent(limit: number = 10, warehouseIds?: string[] | null) {
@@ -193,8 +167,8 @@ export class TransactionsService {
           },
         },
       });
-    } catch (error) {
-      if (error.code === 'P2025') {
+    } catch (error: unknown) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
         throw new NotFoundException(`Transaction with ID ${id} not found`);
       }
       throw error;
@@ -207,8 +181,8 @@ export class TransactionsService {
       await this.prisma.transaction.delete({
         where: { id },
       });
-    } catch (error) {
-      if (error.code === 'P2025') {
+    } catch (error: unknown) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
         throw new NotFoundException(`Transaction with ID ${id} not found`);
       }
       throw error;
@@ -232,27 +206,34 @@ export class TransactionsService {
     }
   }
 
-  private async validateItems(items: any[]) {
-    for (const item of items) {
-      const exists = await this.prisma.inventoryItem.findUnique({
-        where: { id: item.inventoryItemId },
-      });
+  private async validateItems(items: TransactionItemDto[]) {
+    const ids = items.map((i) => i.inventoryItemId);
+    const found = await this.prisma.inventoryItem.findMany({
+      where: { id: { in: ids } },
+      select: { id: true },
+    });
 
-      if (!exists) {
-        throw new NotFoundException(`Inventory item with ID ${item.inventoryItemId} not found`);
-      }
+    if (found.length !== ids.length) {
+      const foundIds = new Set(found.map((f) => f.id));
+      const missingId = ids.find((id) => !foundIds.has(id));
+      throw new NotFoundException(`Inventory item with ID ${missingId} not found`);
     }
   }
 
   private async updateInventoryQuantitiesInTx(
-    tx: any,
-    items: any[],
+    tx: Prisma.TransactionClient,
+    items: TransactionItemDto[],
     type: TransactionType,
   ) {
+    // Batch-fetch all items in a single query to avoid N+1 inside the transaction
+    const ids = items.map((i) => i.inventoryItemId);
+    const fetchedItems = await tx.inventoryItem.findMany({
+      where: { id: { in: ids } },
+    });
+    const itemMap = new Map(fetchedItems.map((fi) => [fi.id, fi]));
+
     for (const item of items) {
-      const currentItem = await tx.inventoryItem.findUnique({
-        where: { id: item.inventoryItemId },
-      });
+      const currentItem = itemMap.get(item.inventoryItemId);
 
       if (!currentItem) continue;
 

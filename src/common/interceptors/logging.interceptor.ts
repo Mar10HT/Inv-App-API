@@ -9,17 +9,21 @@ import { Observable } from 'rxjs';
 import { tap } from 'rxjs/operators';
 import { Request, Response } from 'express';
 
+interface AuthenticatedRequest extends Request {
+  user?: { userId: string };
+}
+
 @Injectable()
 export class LoggingInterceptor implements NestInterceptor {
   constructor(private readonly logger: LoggerService) {}
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<any> {
-    const request = context.switchToHttp().getRequest<Request>();
+    const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
     const response = context.switchToHttp().getResponse<Response>();
     const { method, url, body, query, params } = request;
     const userAgent = request.get('user-agent') || '';
     const ip = request.ip || request.connection.remoteAddress;
-    const userId = (request as any).user?.userId || 'anonymous';
+    const userId = request.user?.userId || 'anonymous';
 
     const startTime = Date.now();
     const sanitizedBody = this.sanitizeBody(body);
@@ -51,7 +55,7 @@ export class LoggingInterceptor implements NestInterceptor {
     );
   }
 
-  private sanitizeBody(body: any): any {
+  private sanitizeBody(body: Record<string, unknown>): Record<string, unknown> {
     if (!body) return undefined;
 
     const sanitized = { ...body };
