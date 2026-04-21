@@ -8,6 +8,6 @@ cmds = [
   "find / -name 'libssl.so.3' 2>/dev/null | head -5",
   "OPENSSL_DIR=$(find / -name 'libssl.so.3' -exec dirname {} \\; 2>/dev/null | head -1) && echo \"OpenSSL dir: $OPENSSL_DIR\" && echo $OPENSSL_DIR > /etc/ld.so.conf.d/openssl3.conf && ldconfig",
   "bun install --frozen-lockfile",
-  "bunx prisma generate --schema=./prisma/schema.prod.prisma",
+  "bunx prisma generate",
   "bun run build"
 ]

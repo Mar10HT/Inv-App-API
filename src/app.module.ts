@@ -34,6 +34,9 @@ import { WarehouseAccessModule } from './common/warehouse-access/warehouse-acces
 import { WarehouseAccessInterceptor } from './common/warehouse-access/warehouse-access.interceptor';
 import { ScheduledReportsModule } from './scheduled-reports/scheduled-reports.module';
 import { RolesModule } from './roles/roles.module';
+import { ClsModule } from 'nestjs-cls';
+import { TenantModule } from './tenant/tenant.module';
+import { OrganizationsModule } from './organizations/organizations.module';
 
 @Module({
   imports: [
@@ -57,6 +60,13 @@ import { RolesModule } from './roles/roles.module';
         // Admin seed — required in production if DB is empty
         ADMIN_EMAIL: Joi.string().email().optional(),
         ADMIN_PASSWORD: Joi.string().min(12).optional(),
+        // Multi-tenant (Phase 0 — off by default)
+        MULTI_TENANT_ENABLED: Joi.boolean().default(false),
+        TENANT_WAREHOUSE_CACHE_TTL_MS: Joi.number().integer().min(0).default(45000),
+        TENANT_WAREHOUSE_CACHE_MAX: Joi.number().integer().min(1).default(5000),
+        SUPER_ADMIN_IMPERSONATION_MAX_MIN: Joi.number().integer().min(1).default(30),
+        DEFAULT_ORG_SLUG: Joi.string().default('ON'),
+        DEFAULT_ORG_NAME: Joi.string().default('Olancho Net'),
       }),
       validationOptions: {
         abortEarly: false, // Report all missing vars at once
@@ -82,6 +92,12 @@ import { RolesModule } from './roles/roles.module';
       },
     ]),
     ScheduleModule.forRoot(),
+    ClsModule.forRoot({
+      global: true,
+      middleware: { mount: true },
+    }),
+    TenantModule,
+    OrganizationsModule,
     // Cache configuration: 60 seconds TTL, max 100 items
     CacheModule.register({
       isGlobal: true,
