@@ -1,5 +1,4 @@
 import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { PaginationDto, PaginatedResult, parsePagination, buildPaginationMeta } from '../dto';
 
@@ -8,6 +7,19 @@ export interface BaseRepositoryOptions {
   defaultOrderBy?: Record<string, 'asc' | 'desc'>;
   findAllInclude?: Record<string, unknown>;
   findOneInclude?: Record<string, unknown>;
+}
+
+function getPrismaErrorCode(error: unknown): string | null {
+  if (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    typeof (error as { code: unknown }).code === 'string' &&
+    /^P\d{4}$/.test((error as { code: string }).code)
+  ) {
+    return (error as { code: string }).code;
+  }
+  return null;
 }
 
 @Injectable()
@@ -30,7 +42,7 @@ export abstract class BaseRepository<
         data: createDto,
       });
     } catch (error: unknown) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+      if (getPrismaErrorCode(error) === 'P2002') {
         throw new ConflictException(
           `${this.options.modelName} with this value already exists`,
         );
@@ -87,10 +99,9 @@ export abstract class BaseRepository<
         data: updateDto,
       });
     } catch (error: unknown) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError) {
-        if (error.code === 'P2002') throw new ConflictException(`${this.options.modelName} with this value already exists`);
-        if (error.code === 'P2025') throw new NotFoundException(`${this.options.modelName} with ID ${id} not found`);
-      }
+      const code = getPrismaErrorCode(error);
+      if (code === 'P2002') throw new ConflictException(`${this.options.modelName} with this value already exists`);
+      if (code === 'P2025') throw new NotFoundException(`${this.options.modelName} with ID ${id} not found`);
       throw error;
     }
   }
@@ -101,7 +112,7 @@ export abstract class BaseRepository<
         where: { id },
       });
     } catch (error: unknown) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
+      if (getPrismaErrorCode(error) === 'P2025') {
         throw new NotFoundException(`${this.options.modelName} with ID ${id} not found`);
       }
       throw error;

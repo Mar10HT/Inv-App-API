@@ -4,8 +4,8 @@ import {
   BadRequestException,
   ForbiddenException,
 } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { getPrismaErrorCode } from '../common/prisma-error.util';
 import { QrService } from '../qr/qr.service';
 import { CreateLoanDto } from './dto/create-loan.dto';
 import { UpdateLoanDto, ReturnLoanDto, LoanStatus } from './dto/update-loan.dto';
@@ -616,7 +616,7 @@ export class LoansService {
         include: this.loanInclude,
       });
     } catch (error: unknown) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
+      if (getPrismaErrorCode(error) === 'P2025') {
         throw new NotFoundException('Loan not found');
       }
       throw error;
@@ -692,7 +692,7 @@ export class LoansService {
         where: { id },
       });
     } catch (error: unknown) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
+      if (getPrismaErrorCode(error) === 'P2025') {
         throw new NotFoundException('Loan not found');
       }
       throw error;

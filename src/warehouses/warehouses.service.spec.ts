@@ -81,11 +81,11 @@ describe('WarehousesService', () => {
 
       expect(prisma.warehouse.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          include: {
+          include: expect.objectContaining({
             _count: {
               select: { inventoryItems: true },
             },
-          },
+          }),
         }),
       );
     });
@@ -154,7 +154,7 @@ describe('WarehousesService', () => {
     });
 
     it('should throw NotFoundException if warehouse does not exist', async () => {
-      (prisma.warehouse.update as jest.Mock).mockRejectedValue(new Error('Not found'));
+      (prisma.warehouse.update as jest.Mock).mockRejectedValue({ code: 'P2025' });
 
       await expect(
         service.update('nonexistent', { name: 'Test' }),
@@ -174,7 +174,7 @@ describe('WarehousesService', () => {
     });
 
     it('should throw NotFoundException if warehouse does not exist', async () => {
-      (prisma.warehouse.delete as jest.Mock).mockRejectedValue(new Error('Not found'));
+      (prisma.warehouse.delete as jest.Mock).mockRejectedValue({ code: 'P2025' });
 
       await expect(service.remove('nonexistent')).rejects.toThrow(NotFoundException);
     });

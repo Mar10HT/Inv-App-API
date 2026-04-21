@@ -123,6 +123,7 @@ describe('AuditService', () => {
           entityId: 'item-123',
         },
         orderBy: { createdAt: 'desc' },
+        take: 100,
         include: {
           user: {
             select: {

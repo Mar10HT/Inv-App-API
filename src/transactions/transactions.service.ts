@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { getPrismaErrorCode } from '../common/prisma-error.util';
 import { CreateTransactionDto, TransactionItemDto, TransactionType } from './dto/create-transaction.dto';
 import { UpdateTransactionDto } from './dto/update-transaction.dto';
 import { PaginationDto, PaginatedResult, parsePagination, buildPaginationMeta, parseSortOrder } from '../common/dto';
@@ -168,7 +169,7 @@ export class TransactionsService {
         },
       });
     } catch (error: unknown) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
+      if (getPrismaErrorCode(error) === 'P2025') {
         throw new NotFoundException(`Transaction with ID ${id} not found`);
       }
       throw error;
@@ -182,7 +183,7 @@ export class TransactionsService {
         where: { id },
       });
     } catch (error: unknown) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
+      if (getPrismaErrorCode(error) === 'P2025') {
         throw new NotFoundException(`Transaction with ID ${id} not found`);
       }
       throw error;

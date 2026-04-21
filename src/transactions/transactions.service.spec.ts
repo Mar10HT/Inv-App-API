@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { NotFoundException, BadRequestException } from '@nestjs/common';
 import { TransactionsService } from './transactions.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { EventsService } from '../events/events.service';
 
 describe('TransactionsService', () => {
   let service: TransactionsService;
@@ -19,6 +20,8 @@ describe('TransactionsService', () => {
     quantity: 100,
     minQuantity: 10,
     status: 'IN_STOCK',
+    itemType: 'BULK',
+    assignedToUserId: null,
   };
 
   const mockTransaction = {
@@ -48,7 +51,7 @@ describe('TransactionsService', () => {
       create: jest.fn(),
     },
     inventoryItem: {
-      findUnique: jest.fn(),
+      findMany: jest.fn(),
       update: jest.fn(),
     },
   };
@@ -65,15 +68,22 @@ describe('TransactionsService', () => {
       },
       inventoryItem: {
         findUnique: jest.fn(),
+        findMany: jest.fn(),
         update: jest.fn(),
       },
       $transaction: jest.fn((callback) => callback(mockTx)),
+    };
+
+    const mockEventsService = {
+      emitTransactionChange: jest.fn(),
+      emitInventoryChange: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         TransactionsService,
         { provide: PrismaService, useValue: mockPrismaService },
+        { provide: EventsService, useValue: mockEventsService },
       ],
     }).compile();
 
@@ -94,9 +104,9 @@ describe('TransactionsService', () => {
     };
 
     it('should create an IN transaction successfully', async () => {
-      (prisma.inventoryItem.findUnique as jest.Mock).mockResolvedValue(mockInventoryItem);
+      (prisma.inventoryItem.findMany as jest.Mock).mockResolvedValue([mockInventoryItem]);
       (mockTx.transaction.create as jest.Mock).mockResolvedValue(mockTransaction);
-      (mockTx.inventoryItem.findUnique as jest.Mock).mockResolvedValue(mockInventoryItem);
+      (mockTx.inventoryItem.findMany as jest.Mock).mockResolvedValue([mockInventoryItem]);
       (mockTx.inventoryItem.update as jest.Mock).mockResolvedValue({
         ...mockInventoryItem,
         quantity: 110,
@@ -140,7 +150,7 @@ describe('TransactionsService', () => {
     });
 
     it('should throw NotFoundException if inventory item does not exist', async () => {
-      (prisma.inventoryItem.findUnique as jest.Mock).mockResolvedValue(null);
+      (prisma.inventoryItem.findMany as jest.Mock).mockResolvedValue([]);
 
       await expect(service.create(createTransactionDto)).rejects.toThrow(NotFoundException);
     });
@@ -178,11 +188,13 @@ describe('TransactionsService', () => {
       const result = await service.findRecent();
 
       expect(result).toEqual(transactions);
-      expect(prisma.transaction.findMany).toHaveBeenCalledWith({
-        take: 10,
-        orderBy: { date: 'desc' },
-        include: expect.any(Object),
-      });
+      expect(prisma.transaction.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          take: 10,
+          orderBy: { date: 'desc' },
+          include: expect.any(Object),
+        }),
+      );
     });
 
     it('should return recent transactions with custom limit', async () => {
@@ -190,11 +202,13 @@ describe('TransactionsService', () => {
 
       await service.findRecent(5);
 
-      expect(prisma.transaction.findMany).toHaveBeenCalledWith({
-        take: 5,
-        orderBy: { date: 'desc' },
-        include: expect.any(Object),
-      });
+      expect(prisma.transaction.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          take: 5,
+          orderBy: { date: 'desc' },
+          include: expect.any(Object),
+        }),
+      );
     });
   });
 

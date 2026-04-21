@@ -5,6 +5,7 @@ import { CreateWarehouseDto } from './dto/create-warehouse.dto';
 import { UpdateWarehouseDto } from './dto/update-warehouse.dto';
 import { PaginationDto, PaginatedResult, parsePagination, buildPaginationMeta } from '../common/dto';
 import { warehouseFilter } from '../common/warehouse-access/warehouse-filter.util';
+import { getPrismaErrorCode } from '../common/prisma-error.util';
 
 @Injectable()
 export class WarehousesService {
@@ -16,7 +17,7 @@ export class WarehousesService {
         data: createDto,
       });
     } catch (error: unknown) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+      if (getPrismaErrorCode(error) === 'P2002') {
         throw new ConflictException('Warehouse with this value already exists');
       }
       throw error;
@@ -83,10 +84,9 @@ export class WarehousesService {
         data: updateDto,
       });
     } catch (error: unknown) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError) {
-        if (error.code === 'P2002') throw new ConflictException('Warehouse with this value already exists');
-        if (error.code === 'P2025') throw new NotFoundException(`Warehouse with ID ${id} not found`);
-      }
+      const code = getPrismaErrorCode(error);
+      if (code === 'P2002') throw new ConflictException('Warehouse with this value already exists');
+      if (code === 'P2025') throw new NotFoundException(`Warehouse with ID ${id} not found`);
       throw error;
     }
   }
@@ -97,7 +97,7 @@ export class WarehousesService {
         where: { id },
       });
     } catch (error: unknown) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
+      if (getPrismaErrorCode(error) === 'P2025') {
         throw new NotFoundException(`Warehouse with ID ${id} not found`);
       }
       throw error;

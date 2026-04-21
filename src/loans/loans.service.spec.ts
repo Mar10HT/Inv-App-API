@@ -1,7 +1,11 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { NotFoundException, BadRequestException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { LoansService } from './loans.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { QrService } from '../qr/qr.service';
+import { EventsService } from '../events/events.service';
+import { AuditService } from '../audit/audit.service';
 
 describe('LoansService', () => {
   let service: LoansService;
@@ -32,7 +36,7 @@ describe('LoansService', () => {
     quantity: 1,
     sourceWarehouseId: 'warehouse-123',
     destinationWarehouseId: 'warehouse-456',
-    status: 'ACTIVE',
+    status: 'PENDING',
     loanDate: new Date(),
     dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
     returnDate: null,
@@ -64,10 +68,27 @@ describe('LoansService', () => {
       },
     };
 
+    const mockQrService = {
+      generateCode: jest.fn(() => 'QR-CODE-123'),
+      generateQrDataUrl: jest.fn().mockResolvedValue('data:image/png;base64,FAKE'),
+      parseQrData: jest.fn(),
+    };
+
+    const mockEventsService = {
+      emitLoanChange: jest.fn(),
+    };
+
+    const mockAuditService = {
+      log: jest.fn().mockResolvedValue(undefined),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         LoansService,
         { provide: PrismaService, useValue: mockPrismaService },
+        { provide: QrService, useValue: mockQrService },
+        { provide: EventsService, useValue: mockEventsService },
+        { provide: AuditService, useValue: mockAuditService },
       ],
     }).compile();
 
@@ -86,7 +107,6 @@ describe('LoansService', () => {
       sourceWarehouseId: 'warehouse-123',
       destinationWarehouseId: 'warehouse-456',
       dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-      createdById: 'user-123',
     };
 
     it('should create a loan successfully', async () => {
@@ -97,7 +117,7 @@ describe('LoansService', () => {
         .mockResolvedValueOnce(mockDestWarehouse);
       (prisma.loan.create as jest.Mock).mockResolvedValue(mockLoan);
 
-      const result = await service.create(createLoanDto);
+      const result = await service.create(createLoanDto, 'user-123');
 
       expect(result).toEqual(mockLoan);
       expect(prisma.loan.create).toHaveBeenCalled();
@@ -105,17 +125,20 @@ describe('LoansService', () => {
 
     it('should throw BadRequestException if source and destination warehouses are the same', async () => {
       await expect(
-        service.create({
-          ...createLoanDto,
-          destinationWarehouseId: 'warehouse-123', // same as source
-        }),
+        service.create(
+          {
+            ...createLoanDto,
+            destinationWarehouseId: 'warehouse-123',
+          },
+          'user-123',
+        ),
       ).rejects.toThrow(BadRequestException);
     });
 
     it('should throw NotFoundException if inventory item does not exist', async () => {
       (prisma.inventoryItem.findUnique as jest.Mock).mockResolvedValue(null);
 
-      await expect(service.create(createLoanDto)).rejects.toThrow(NotFoundException);
+      await expect(service.create(createLoanDto, 'user-123')).rejects.toThrow(NotFoundException);
     });
 
     it('should throw BadRequestException if item does not belong to source warehouse', async () => {
@@ -124,14 +147,14 @@ describe('LoansService', () => {
         warehouseId: 'different-warehouse',
       });
 
-      await expect(service.create(createLoanDto)).rejects.toThrow(BadRequestException);
+      await expect(service.create(createLoanDto, 'user-123')).rejects.toThrow(BadRequestException);
     });
 
     it('should throw BadRequestException if item is already on loan', async () => {
       (prisma.inventoryItem.findUnique as jest.Mock).mockResolvedValue(mockInventoryItem);
       (prisma.loan.findFirst as jest.Mock).mockResolvedValue(mockLoan);
 
-      await expect(service.create(createLoanDto)).rejects.toThrow(BadRequestException);
+      await expect(service.create(createLoanDto, 'user-123')).rejects.toThrow(BadRequestException);
     });
 
     it('should throw NotFoundException if warehouse does not exist', async () => {
@@ -139,7 +162,7 @@ describe('LoansService', () => {
       (prisma.loan.findFirst as jest.Mock).mockResolvedValue(null);
       (prisma.warehouse.findUnique as jest.Mock).mockResolvedValue(null);
 
-      await expect(service.create(createLoanDto)).rejects.toThrow(NotFoundException);
+      await expect(service.create(createLoanDto, 'user-123')).rejects.toThrow(NotFoundException);
     });
   });
 
@@ -194,13 +217,15 @@ describe('LoansService', () => {
       const result = await service.findActive();
 
       expect(result).toHaveLength(2);
-      expect(prisma.loan.findMany).toHaveBeenCalledWith({
-        where: {
-          status: { in: ['ACTIVE', 'OVERDUE'] },
-        },
-        orderBy: { loanDate: 'desc' },
-        include: expect.any(Object),
-      });
+      expect(prisma.loan.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            status: { in: ['PENDING', 'SENT', 'RECEIVED', 'RETURN_PENDING', 'OVERDUE'] },
+          }),
+          orderBy: { loanDate: 'desc' },
+          include: expect.any(Object),
+        }),
+      );
     });
   });
 
@@ -264,7 +289,11 @@ describe('LoansService', () => {
     });
 
     it('should throw NotFoundException if loan does not exist', async () => {
-      (prisma.loan.delete as jest.Mock).mockRejectedValue({ code: 'P2025' });
+      const prismaError = new Prisma.PrismaClientKnownRequestError(
+        'Record not found',
+        { code: 'P2025', clientVersion: '6.19.0' },
+      );
+      (prisma.loan.delete as jest.Mock).mockRejectedValue(prismaError);
 
       await expect(service.remove('nonexistent')).rejects.toThrow(NotFoundException);
     });
@@ -273,18 +302,25 @@ describe('LoansService', () => {
   describe('getStats', () => {
     it('should return loan statistics', async () => {
       (prisma.loan.count as jest.Mock)
-        .mockResolvedValueOnce(10)  // totalActive
-        .mockResolvedValueOnce(3)   // totalOverdue
+        .mockResolvedValueOnce(2)   // totalPending
+        .mockResolvedValueOnce(3)   // totalSent
+        .mockResolvedValueOnce(4)   // totalReceived
+        .mockResolvedValueOnce(1)   // totalReturnPending
         .mockResolvedValueOnce(50)  // totalReturned
+        .mockResolvedValueOnce(3)   // totalOverdue
         .mockResolvedValueOnce(5);  // dueSoon
 
       const result = await service.getStats();
 
       expect(result).toEqual({
-        totalActive: 10,
-        totalOverdue: 3,
+        totalPending: 2,
+        totalSent: 3,
+        totalReceived: 4,
+        totalReturnPending: 1,
         totalReturned: 50,
+        totalOverdue: 3,
         dueSoon: 5,
+        totalActive: 10,
       });
     });
   });
@@ -313,15 +349,17 @@ describe('LoansService', () => {
 
       await service.checkOverdueLoans();
 
-      expect(prisma.loan.updateMany).toHaveBeenCalledWith({
-        where: {
-          status: 'ACTIVE',
-          dueDate: { lt: expect.any(Date) },
-        },
-        data: {
-          status: 'OVERDUE',
-        },
-      });
+      expect(prisma.loan.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            status: { in: ['SENT', 'RECEIVED'] },
+            dueDate: { lt: expect.any(Date) },
+          }),
+          data: {
+            status: 'OVERDUE',
+          },
+        }),
+      );
     });
   });
 
@@ -333,11 +371,13 @@ describe('LoansService', () => {
       const result = await service.findByItem('item-123');
 
       expect(result).toEqual(itemLoans);
-      expect(prisma.loan.findMany).toHaveBeenCalledWith({
-        where: { inventoryItemId: 'item-123' },
-        orderBy: { loanDate: 'desc' },
-        include: expect.any(Object),
-      });
+      expect(prisma.loan.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ inventoryItemId: 'item-123' }),
+          orderBy: { loanDate: 'desc' },
+          include: expect.any(Object),
+        }),
+      );
     });
   });
 
@@ -348,16 +388,18 @@ describe('LoansService', () => {
       const result = await service.findByWarehouse('warehouse-123');
 
       expect(result).toHaveLength(1);
-      expect(prisma.loan.findMany).toHaveBeenCalledWith({
-        where: {
-          OR: [
-            { sourceWarehouseId: 'warehouse-123' },
-            { destinationWarehouseId: 'warehouse-123' },
-          ],
-        },
-        orderBy: { loanDate: 'desc' },
-        include: expect.any(Object),
-      });
+      expect(prisma.loan.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            OR: [
+              { sourceWarehouseId: 'warehouse-123' },
+              { destinationWarehouseId: 'warehouse-123' },
+            ],
+          },
+          orderBy: { loanDate: 'desc' },
+          include: expect.any(Object),
+        }),
+      );
     });
   });
 });

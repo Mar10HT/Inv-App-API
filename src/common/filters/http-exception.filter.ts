@@ -6,12 +6,21 @@ import {
   HttpStatus,
   LoggerService,
 } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
 import { Request, Response } from 'express';
 
 interface HttpExceptionBody {
   message?: string | string[];
   error?: string;
+}
+
+function isPrismaKnownError(exception: unknown): exception is { code: string; message: string } {
+  return (
+    typeof exception === 'object' &&
+    exception !== null &&
+    'code' in exception &&
+    typeof (exception as { code: unknown }).code === 'string' &&
+    /^P\d{4}$/.test((exception as { code: string }).code)
+  );
 }
 
 @Catch()
@@ -38,8 +47,8 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       } else {
         message = exceptionResponse as string;
       }
-    } else if (exception instanceof Prisma.PrismaClientKnownRequestError) {
-      const prismaError = this.handlePrismaError(exception);
+    } else if (isPrismaKnownError(exception)) {
+      const prismaError = this.handlePrismaError(exception.code);
       status = prismaError.status;
       message = prismaError.message;
       error = prismaError.error;
@@ -69,8 +78,8 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     });
   }
 
-  private handlePrismaError(error: Prisma.PrismaClientKnownRequestError): { status: number; message: string; error: string } {
-    switch (error.code) {
+  private handlePrismaError(code: string): { status: number; message: string; error: string } {
+    switch (code) {
       case 'P2002':
         return {
           status: HttpStatus.CONFLICT,

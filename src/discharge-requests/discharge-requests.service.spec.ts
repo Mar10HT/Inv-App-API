@@ -63,7 +63,11 @@ describe('DischargeRequestsService', () => {
     const mockTransaction = jest.fn().mockImplementation(async (fn) => fn({
       dischargeRequest: {
         create: jest.fn().mockResolvedValue(mockRequest),
-        update: jest.fn().mockResolvedValue({ ...mockRequest, status: DischargeRequestStatus.COMPLETED }),
+        findUnique: jest.fn().mockResolvedValue(mockRequest),
+        update: jest.fn().mockImplementation((args) => Promise.resolve({
+          ...mockRequest,
+          ...(args?.data ?? {}),
+        })),
       },
       inventoryItem: {
         findFirst: jest.fn().mockResolvedValue(mockInventoryItem),

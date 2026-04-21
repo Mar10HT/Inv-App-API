@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { getPrismaErrorCode } from '../common/prisma-error.util';
 import { EmailService } from '../email/email.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
@@ -53,7 +53,7 @@ export class UsersService {
       const { password, ...result } = user;
       return result;
     } catch (error: unknown) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+      if (getPrismaErrorCode(error) === 'P2002') {
         throw new ConflictException('User with this email already exists');
       }
       throw error;
@@ -132,10 +132,9 @@ export class UsersService {
 
       return user;
     } catch (error: unknown) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError) {
-        if (error.code === 'P2002') throw new ConflictException('User with this email already exists');
-        if (error.code === 'P2025') throw new NotFoundException(`User with ID ${id} not found`);
-      }
+      const code = getPrismaErrorCode(error);
+      if (code === 'P2002') throw new ConflictException('User with this email already exists');
+      if (code === 'P2025') throw new NotFoundException(`User with ID ${id} not found`);
       throw error;
     }
   }
@@ -148,7 +147,7 @@ export class UsersService {
         data: { deletedAt: new Date() },
       });
     } catch (error: unknown) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
+      if (getPrismaErrorCode(error) === 'P2025') {
         throw new NotFoundException(`User with ID ${id} not found`);
       }
       throw error;
@@ -210,7 +209,7 @@ export class UsersService {
         },
       });
     } catch (error: unknown) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
+      if (getPrismaErrorCode(error) === 'P2025') {
         throw new NotFoundException(`User with ID ${userId} not found`);
       }
       throw error;
@@ -277,7 +276,7 @@ export class UsersService {
         });
       });
     } catch (error: unknown) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
+      if (getPrismaErrorCode(error) === 'P2025') {
         throw new NotFoundException(`User with ID ${userId} not found`);
       }
       throw error;

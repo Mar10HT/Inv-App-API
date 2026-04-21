@@ -69,6 +69,12 @@ describe('StockTakeService', () => {
       $transaction: jest.fn().mockImplementation(async (fn) =>
         fn({
           inventoryItem: { update: jest.fn().mockResolvedValue(mockInventoryItem) },
+          stockTake: {
+            update: jest.fn().mockImplementation((args) => Promise.resolve({
+              ...mockStockTake,
+              ...(args?.data ?? {}),
+            })),
+          },
         }),
       ),
     };
@@ -197,14 +203,12 @@ describe('StockTakeService', () => {
     };
 
     it('completes a stock take without applying changes', async () => {
-      const completedST = { ...countedST, status: StockTakeStatus.COMPLETED };
       (prisma.stockTake.findUnique as jest.Mock).mockResolvedValue(countedST);
-      (prisma.stockTake.update as jest.Mock).mockResolvedValue(completedST);
 
       const result = await service.complete('st-1', 'user-1', false);
 
       expect(result.status).toBe(StockTakeStatus.COMPLETED);
-      expect(prisma.$transaction).not.toHaveBeenCalled();
+      expect(prisma.$transaction).toHaveBeenCalled();
     });
 
     it('applies inventory changes when applyChanges=true', async () => {

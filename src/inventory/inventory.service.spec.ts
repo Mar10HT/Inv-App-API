@@ -1,8 +1,11 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { InventoryService } from './inventory.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
+import { EventsService } from '../events/events.service';
+import { SearchService } from '../common/search/search.service';
 import { InventoryStatus, ItemType, Currency } from '@prisma/client';
 
 describe('InventoryService', () => {
@@ -54,16 +57,18 @@ describe('InventoryService', () => {
     const mockPrismaService = {
       inventoryItem: {
         create: jest.fn(),
-        findMany: jest.fn(),
+        findMany: jest.fn().mockResolvedValue([]),
         findUnique: jest.fn(),
         findFirst: jest.fn(),
         update: jest.fn(),
-        count: jest.fn(),
-        groupBy: jest.fn(),
+        updateMany: jest.fn(),
+        count: jest.fn().mockResolvedValue(0),
+        groupBy: jest.fn().mockResolvedValue([]),
+        aggregate: jest.fn().mockResolvedValue({ _sum: { quantity: 0 }, _count: 0 }),
       },
       warehouse: {
         findUnique: jest.fn(),
-        findMany: jest.fn(),
+        findMany: jest.fn().mockResolvedValue([]),
       },
       supplier: {
         findUnique: jest.fn(),
@@ -71,10 +76,31 @@ describe('InventoryService', () => {
       user: {
         findUnique: jest.fn(),
       },
+      $queryRaw: jest.fn().mockResolvedValue([]),
+      $transaction: jest.fn().mockImplementation(async (arg) =>
+        Array.isArray(arg) ? Promise.all(arg) : arg({} as never),
+      ),
     };
 
     const mockAuditService = {
       log: jest.fn(),
+    };
+
+    const mockCacheManager = {
+      get: jest.fn(),
+      set: jest.fn(),
+      del: jest.fn(),
+      reset: jest.fn(),
+    };
+
+    const mockEventsService = {
+      emitInventoryChange: jest.fn(),
+    };
+
+    const mockSearchService = {
+      searchInventory: jest.fn().mockResolvedValue([]),
+      syncItem: jest.fn().mockResolvedValue(undefined),
+      removeItem: jest.fn().mockResolvedValue(undefined),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -82,6 +108,9 @@ describe('InventoryService', () => {
         InventoryService,
         { provide: PrismaService, useValue: mockPrismaService },
         { provide: AuditService, useValue: mockAuditService },
+        { provide: CACHE_MANAGER, useValue: mockCacheManager },
+        { provide: EventsService, useValue: mockEventsService },
+        { provide: SearchService, useValue: mockSearchService },
       ],
     }).compile();
 
@@ -364,8 +393,9 @@ describe('InventoryService', () => {
         ]);
 
       (prisma.warehouse.findMany as jest.Mock).mockResolvedValue([
-        { id: 'wh-1', name: 'Warehouse 1' },
+        { id: 'wh-1', name: 'Warehouse 1', _count: { inventoryItems: 60 } },
       ]);
+      (prisma.$queryRaw as jest.Mock).mockResolvedValue([{ total: 110 }]);
 
       const result = await service.getStats();
 
