@@ -13,7 +13,7 @@ datasource db {
 // User model for authentication
 model User {
   id        String    @id @default(cuid())
-  email     String    @unique
+  email     String
   password  String
   name      String?
   role      UserRole  @default(VIEWER)
@@ -64,6 +64,7 @@ model User {
   scheduledReports    ScheduledReport[]
   roleRef             Role?            @relation(fields: [roleId], references: [id])
 
+  @@index([email])
   @@index([deletedAt])
   @@index([roleId])
   @@map("users")
