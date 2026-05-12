@@ -27,6 +27,15 @@ export class UsersService {
 
   async create(createUserDto: CreateUserDto) {
     try {
+      // Check for existing active user with same email (soft-delete safe)
+      const existingActive = await this.prisma.user.findFirst({
+        where: { email: createUserDto.email, deletedAt: null },
+        select: { id: true },
+      });
+      if (existingActive) {
+        throw new ConflictException('User with this email already exists');
+      }
+
       // Hash password before storing
       const hashedPassword = await bcrypt.hash(createUserDto.password, 10);
 
@@ -221,8 +230,8 @@ export class UsersService {
   // INTENTIONALLY includes password so AuthService can run bcrypt.compare().
   // This is the only method that returns the hash — all other read paths use userSelect.
   async findByEmail(email: string) {
-    return this.prisma.user.findUnique({
-      where: { email },
+    return this.prisma.user.findFirst({
+      where: { email, deletedAt: null },
       select: {
         id: true,
         email: true,
