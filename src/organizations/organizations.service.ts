@@ -1,34 +1,88 @@
-import { Injectable, NotImplementedException } from '@nestjs/common';
+import {
+  Injectable,
+  ConflictException,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
+import { Prisma, OrganizationStatus } from '@prisma/client';
+import { PrismaService } from '../prisma/prisma.service';
 import { TenantFlagService } from '../tenant/tenant-flag.service';
 import { CreateOrganizationDto } from './dto/create-organization.dto';
 import { UpdateOrganizationDto } from './dto/update-organization.dto';
 
 /**
- * Skeleton for Phase 0. The Organization Prisma model, persistence, and tenant
- * scoping wiring land in Phase 1. All methods short-circuit on the feature flag
- * first, then throw NotImplemented until the model exists.
+ * Phase 1 implementation. Only SUPER_ADMIN can call any of these (enforced by
+ * SuperAdminGuard on the controller); we still call assertEnabled() so that
+ * accidental usage while MULTI_TENANT_ENABLED=false yields a 503 instead of
+ * touching the org table behind the feature flag.
  */
 @Injectable()
 export class OrganizationsService {
-  constructor(private readonly tenantFlag: TenantFlagService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly tenantFlag: TenantFlagService,
+  ) {}
 
-  async findAll(): Promise<never> {
+  async findAll() {
     this.tenantFlag.assertEnabled();
-    throw new NotImplementedException('OrganizationsService.findAll lands in Phase 1');
+    return this.prisma.organization.findMany({
+      orderBy: { createdAt: 'asc' },
+    });
   }
 
-  async findBySlug(_slug: string): Promise<never> {
+  async findBySlug(slug: string) {
     this.tenantFlag.assertEnabled();
-    throw new NotImplementedException('OrganizationsService.findBySlug lands in Phase 1');
+    const org = await this.prisma.organization.findUnique({ where: { slug } });
+    if (!org) {
+      throw new NotFoundException(`Organization with slug "${slug}" not found`);
+    }
+    return org;
   }
 
-  async create(_dto: CreateOrganizationDto): Promise<never> {
+  async create(dto: CreateOrganizationDto) {
     this.tenantFlag.assertEnabled();
-    throw new NotImplementedException('OrganizationsService.create lands in Phase 1');
+    try {
+      return await this.prisma.organization.create({
+        data: {
+          slug: dto.slug,
+          name: dto.name,
+          status: OrganizationStatus.ACTIVE,
+        },
+      });
+    } catch (error) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      ) {
+        throw new ConflictException(`Organization slug "${dto.slug}" already exists`);
+      }
+      throw error;
+    }
   }
 
-  async update(_id: string, _dto: UpdateOrganizationDto): Promise<never> {
+  async update(id: string, dto: UpdateOrganizationDto) {
     this.tenantFlag.assertEnabled();
-    throw new NotImplementedException('OrganizationsService.update lands in Phase 1');
+    if (!dto.slug && !dto.name) {
+      throw new BadRequestException('At least one field must be provided');
+    }
+    try {
+      return await this.prisma.organization.update({
+        where: { id },
+        data: {
+          ...(dto.slug ? { slug: dto.slug } : {}),
+          ...(dto.name ? { name: dto.name } : {}),
+        },
+      });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError) {
+        if (error.code === 'P2025') {
+          throw new NotFoundException(`Organization with id "${id}" not found`);
+        }
+        if (error.code === 'P2002') {
+          throw new ConflictException(`Organization slug "${dto.slug}" already exists`);
+        }
+      }
+      throw error;
+    }
   }
 }
