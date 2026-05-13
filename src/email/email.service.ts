@@ -22,7 +22,10 @@ export class EmailService {
   constructor(private configService: ConfigService) {
     this.fromEmail = this.configService.get<string>('SMTP_FROM_EMAIL', 'noreply@invapp.com');
     this.fromName = this.configService.get<string>('SMTP_FROM_NAME', 'InvApp');
-    this.appUrl = this.configService.get<string>('APP_URL', 'http://localhost:4200');
+    this.appUrl =
+      this.configService.get<string>('FRONTEND_URL') ||
+      this.configService.get<string>('APP_URL') ||
+      'http://localhost:4200';
 
     const smtpHost = this.configService.get<string>('SMTP_HOST');
     const smtpPort = this.configService.get<number>('SMTP_PORT');

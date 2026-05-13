@@ -338,10 +338,13 @@ export class DischargeRequestsService {
   }
 
   /**
-   * Generate QR code for the public request form URL
+   * Generate QR code for the public request form URL.
+   * FRONTEND_URL (or legacy APP_URL) must be set in production, otherwise the QR
+   * will point to localhost and be useless when scanned outside the dev machine.
    */
   async getRequestFormQr() {
-    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:4200';
+    const frontendUrl =
+      process.env.FRONTEND_URL || process.env.APP_URL || 'http://localhost:4200';
     const requestFormUrl = `${frontendUrl}/request`;
     const qrDataUrl = await this.qrService.generateUrlQrDataUrl(requestFormUrl);
     return { url: requestFormUrl, qrDataUrl };
