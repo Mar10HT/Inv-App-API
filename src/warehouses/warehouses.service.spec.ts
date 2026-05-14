@@ -19,7 +19,7 @@ describe('WarehousesService', () => {
   };
 
   beforeEach(async () => {
-    const mockPrismaService = {
+    const mockPrismaService: any = {
       warehouse: {
         create: jest.fn(),
         findMany: jest.fn(),
@@ -29,6 +29,10 @@ describe('WarehousesService', () => {
         count: jest.fn(),
       },
     };
+    // The tenant-aware Prisma extension is a structural no-op when
+    // MULTI_TENANT_ENABLED=false; in tests we just return the same mock so
+    // existing assertions on prisma.warehouse.X keep working unchanged.
+    mockPrismaService.tenant = () => mockPrismaService;
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [

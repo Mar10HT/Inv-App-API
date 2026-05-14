@@ -74,7 +74,7 @@ describe('TransferRequestsService', () => {
       create: jest.fn().mockResolvedValue({ ...mockInventoryItem, warehouseId: 'wh-dst' }),
     };
 
-    const mockPrismaService = {
+    const mockPrismaService: any = {
       warehouse: { findUnique: jest.fn() },
       inventoryItem: { findUnique: jest.fn(), findMany: jest.fn() },
       transferRequest: {
@@ -99,6 +99,7 @@ describe('TransferRequestsService', () => {
         }),
       ),
     };
+    mockPrismaService.tenant = () => mockPrismaService;
 
     const mockAuditService = { log: jest.fn().mockResolvedValue(undefined) };
 

@@ -20,7 +20,7 @@ describe('SuppliersService', () => {
   };
 
   beforeEach(async () => {
-    const mockPrismaService = {
+    const mockPrismaService: any = {
       supplier: {
         create: jest.fn(),
         findMany: jest.fn(),
@@ -30,6 +30,7 @@ describe('SuppliersService', () => {
         count: jest.fn(),
       },
     };
+    mockPrismaService.tenant = () => mockPrismaService;
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [

@@ -52,7 +52,9 @@ export class AlertsService {
 
       let alertsCreated = 0;
 
-      // Pre-load all unresolved alerts for these items in one query to avoid N+1
+      // Cron paths bypass the tenant extension (no CLS scope at this point;
+      // this scans across every org). Phase 7 will revisit whether each org
+      // gets its own scheduled run instead.
       const existingStockAlerts = await this.prisma.stockAlert.findMany({
         where: {
           itemId: { in: lowStockItems.map((i) => i.id) },
@@ -86,6 +88,9 @@ export class AlertsService {
               currentQty: item.quantity,
               notified: true,
               notifiedAt: new Date(),
+              // organizationId is required NOT NULL since Phase 1.5. Cron has
+              // no CLS scope, so derive from the item's warehouse (loaded above).
+              organizationId: item.organizationId,
             },
           });
 
@@ -149,6 +154,7 @@ export class AlertsService {
               currentQty: item.quantity,
               notified: true,
               notifiedAt: new Date(),
+              organizationId: item.organizationId,
             },
           });
 
@@ -190,13 +196,13 @@ export class AlertsService {
     const alertInclude = { item: { include: { warehouse: true } } };
 
     const [alerts, total] = await Promise.all([
-      this.prisma.stockAlert.findMany({
+      this.prisma.tenant().stockAlert.findMany({
         skip,
         take: limit,
         orderBy: { createdAt: 'desc' },
         include: alertInclude,
       }),
-      this.prisma.stockAlert.count(),
+      this.prisma.tenant().stockAlert.count(),
     ]);
 
     return { data: alerts, meta: buildPaginationMeta(total, page, limit) };
@@ -208,14 +214,14 @@ export class AlertsService {
     const alertInclude = { item: { include: { warehouse: true } } };
 
     const [alerts, total] = await Promise.all([
-      this.prisma.stockAlert.findMany({
+      this.prisma.tenant().stockAlert.findMany({
         where,
         skip,
         take: limit,
         orderBy: { createdAt: 'desc' },
         include: alertInclude,
       }),
-      this.prisma.stockAlert.count({ where }),
+      this.prisma.tenant().stockAlert.count({ where }),
     ]);
 
     return { data: alerts, meta: buildPaginationMeta(total, page, limit) };
@@ -227,21 +233,21 @@ export class AlertsService {
     const alertInclude = { item: { include: { warehouse: true } } };
 
     const [alerts, total] = await Promise.all([
-      this.prisma.stockAlert.findMany({
+      this.prisma.tenant().stockAlert.findMany({
         where,
         skip,
         take: limit,
         orderBy: { createdAt: 'desc' },
         include: alertInclude,
       }),
-      this.prisma.stockAlert.count({ where }),
+      this.prisma.tenant().stockAlert.count({ where }),
     ]);
 
     return { data: alerts, meta: buildPaginationMeta(total, page, limit) };
   }
 
   async findOne(id: string) {
-    const alert = await this.prisma.stockAlert.findUnique({
+    const alert = await this.prisma.tenant().stockAlert.findUnique({
       where: { id },
       include: {
         item: {
@@ -263,7 +269,7 @@ export class AlertsService {
   async markAsNotified(id: string) {
     const alert = await this.findOne(id);
 
-    return this.prisma.stockAlert.update({
+    return this.prisma.tenant().stockAlert.update({
       where: { id },
       data: {
         notified: true,
@@ -275,7 +281,7 @@ export class AlertsService {
   async resolve(id: string) {
     await this.findOne(id);
 
-    const updated = await this.prisma.stockAlert.update({
+    const updated = await this.prisma.tenant().stockAlert.update({
       where: { id },
       data: {
         resolvedAt: new Date(),
@@ -288,12 +294,12 @@ export class AlertsService {
 
   async getStats() {
     const [total, active, lowStock, outOfStock, expiringItems, notified] = await Promise.all([
-      this.prisma.stockAlert.count(),
-      this.prisma.stockAlert.count({ where: { resolvedAt: null } }),
-      this.prisma.stockAlert.count({ where: { type: AlertType.LOW_STOCK, resolvedAt: null } }),
-      this.prisma.stockAlert.count({ where: { type: AlertType.OUT_OF_STOCK, resolvedAt: null } }),
-      this.prisma.stockAlert.count({ where: { type: AlertType.EXPIRING_SOON, resolvedAt: null } }),
-      this.prisma.stockAlert.count({ where: { notified: true, resolvedAt: null } }),
+      this.prisma.tenant().stockAlert.count(),
+      this.prisma.tenant().stockAlert.count({ where: { resolvedAt: null } }),
+      this.prisma.tenant().stockAlert.count({ where: { type: AlertType.LOW_STOCK, resolvedAt: null } }),
+      this.prisma.tenant().stockAlert.count({ where: { type: AlertType.OUT_OF_STOCK, resolvedAt: null } }),
+      this.prisma.tenant().stockAlert.count({ where: { type: AlertType.EXPIRING_SOON, resolvedAt: null } }),
+      this.prisma.tenant().stockAlert.count({ where: { notified: true, resolvedAt: null } }),
     ]);
 
     return {

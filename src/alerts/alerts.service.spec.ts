@@ -37,7 +37,7 @@ describe('AlertsService', () => {
   };
 
   beforeEach(async () => {
-    const mockPrismaService = {
+    const mockPrismaService: any = {
       inventoryItem: {
         findMany: jest.fn(),
       },
@@ -53,6 +53,7 @@ describe('AlertsService', () => {
         count: jest.fn().mockResolvedValue(0),
       },
     };
+    mockPrismaService.tenant = () => mockPrismaService;
 
     const mockEventsService = {
       emitInventoryChange: jest.fn(),

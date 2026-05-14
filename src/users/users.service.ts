@@ -231,6 +231,7 @@ export class UsersService {
         createdAt: true,
         updatedAt: true,
         password: true, // Required for authentication — do NOT remove
+        permissionsVersion: true, // Required by AuthService.login response
       },
     });
   }
@@ -242,6 +243,7 @@ export class UsersService {
       select: {
         id: true,
         email: true,
+        name: true, // Used by changePassword to personalize the confirmation email
         password: true,
       },
     });

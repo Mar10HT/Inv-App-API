@@ -18,13 +18,14 @@ describe('AuditService', () => {
   };
 
   beforeEach(async () => {
-    const mockPrismaService = {
+    const mockPrismaService: any = {
       auditLog: {
         create: jest.fn(),
         findMany: jest.fn(),
         count: jest.fn(),
       },
     };
+    mockPrismaService.tenant = () => mockPrismaService;
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [

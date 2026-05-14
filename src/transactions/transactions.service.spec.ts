@@ -57,7 +57,7 @@ describe('TransactionsService', () => {
   };
 
   beforeEach(async () => {
-    const mockPrismaService = {
+    const mockPrismaService: any = {
       transaction: {
         create: jest.fn(),
         findMany: jest.fn(),
@@ -73,6 +73,7 @@ describe('TransactionsService', () => {
       },
       $transaction: jest.fn((callback) => callback(mockTx)),
     };
+    mockPrismaService.tenant = () => mockPrismaService;
 
     const mockEventsService = {
       emitTransactionChange: jest.fn(),

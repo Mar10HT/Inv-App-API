@@ -206,7 +206,7 @@ export class ReportsService {
     };
     if (filters?.warehouseId) where.warehouseId = filters.warehouseId;
 
-    const items = await this.prisma.inventoryItem.findMany({
+    const items = await this.prisma.tenant().inventoryItem.findMany({
       where,
       include: { warehouse: true, supplier: true },
       orderBy: { name: 'asc' },
@@ -290,7 +290,7 @@ export class ReportsService {
       ...(filters?.warehouseId ? { warehouseId: filters.warehouseId } : {}),
     };
 
-    const items = await this.prisma.inventoryItem.findMany({
+    const items = await this.prisma.tenant().inventoryItem.findMany({
       where,
       include: { warehouse: true, supplier: true },
       orderBy: { name: 'asc' },
@@ -363,7 +363,7 @@ export class ReportsService {
     await this.applyWorkbookMeta(workbook, this.t('wsLowStock', locale));
     const worksheet = workbook.addWorksheet(this.t('wsLowStock', locale));
 
-    const items = await this.prisma.inventoryItem.findMany({
+    const items = await this.prisma.tenant().inventoryItem.findMany({
       where: {
         deletedAt: null,
         ...warehouseFilter(warehouseIds),
@@ -436,7 +436,7 @@ export class ReportsService {
       } : {}),
     };
 
-    const transactions = await this.prisma.transaction.findMany({
+    const transactions = await this.prisma.tenant().transaction.findMany({
       where,
       include: {
         sourceWarehouse:      true,
@@ -496,7 +496,7 @@ export class ReportsService {
 
     const where = warehouseFilterMultiField(warehouseIds, ['sourceWarehouseId', 'destinationWarehouseId']);
 
-    const loans = await this.prisma.loan.findMany({
+    const loans = await this.prisma.tenant().loan.findMany({
       where,
       include: {
         inventoryItem:        true,
@@ -564,7 +564,7 @@ export class ReportsService {
       ? { OR: [{ sourceWarehouseId: { in: warehouseIds } }, { destinationWarehouseId: { in: warehouseIds } }] }
       : {};
 
-    const transfers = await this.prisma.transferRequest.findMany({
+    const transfers = await this.prisma.tenant().transferRequest.findMany({
       where,
       include: {
         sourceWarehouse:      true,
@@ -628,7 +628,7 @@ export class ReportsService {
       ? { warehouseId: { in: warehouseIds } }
       : {};
 
-    const stockTakes = await this.prisma.stockTake.findMany({
+    const stockTakes = await this.prisma.tenant().stockTake.findMany({
       where,
       include: {
         warehouse:   true,
@@ -727,7 +727,7 @@ export class ReportsService {
       ? { warehouseId: { in: warehouseIds } }
       : {};
 
-    const discharges = await this.prisma.dischargeRequest.findMany({
+    const discharges = await this.prisma.tenant().dischargeRequest.findMany({
       where,
       include: {
         warehouse:  true,

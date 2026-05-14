@@ -17,7 +17,7 @@ export class ScheduledReportsService {
   ) {}
 
   async create(dto: CreateScheduledReportDto, userId: string): Promise<ScheduledReport> {
-    return this.prisma.scheduledReport.create({
+    return this.prisma.tenant().scheduledReport.create({
       data: {
         userId,
         reportType: dto.reportType,
@@ -31,7 +31,7 @@ export class ScheduledReportsService {
   }
 
   async findAllForUser(userId: string): Promise<ScheduledReport[]> {
-    return this.prisma.scheduledReport.findMany({
+    return this.prisma.tenant().scheduledReport.findMany({
       where: { userId, deletedAt: null },
       include: { warehouse: { select: { name: true } } },
       orderBy: { createdAt: 'desc' },
@@ -39,7 +39,7 @@ export class ScheduledReportsService {
   }
 
   async findOne(id: string, userId: string): Promise<ScheduledReport> {
-    const report = await this.prisma.scheduledReport.findFirst({
+    const report = await this.prisma.tenant().scheduledReport.findFirst({
       where: { id, userId, deletedAt: null },
     });
     if (!report) throw new NotFoundException(`Scheduled report ${id} not found`);
@@ -54,12 +54,12 @@ export class ScheduledReportsService {
       ...(dto.frequency ? { nextSendAt: this.computeNextSendAt(dto.frequency) } : {}),
     };
 
-    return this.prisma.scheduledReport.update({ where: { id }, data });
+    return this.prisma.tenant().scheduledReport.update({ where: { id }, data });
   }
 
   async softDelete(id: string, userId: string): Promise<void> {
     await this.findOne(id, userId);
-    await this.prisma.scheduledReport.update({
+    await this.prisma.tenant().scheduledReport.update({
       where: { id },
       data: { deletedAt: new Date() },
     });
@@ -69,7 +69,7 @@ export class ScheduledReportsService {
     // findOne enforces ownership — throws 404 if report belongs to another user
     const report = await this.findOne(id, userId);
     await this.generateAndSend(report);
-    await this.prisma.scheduledReport.update({
+    await this.prisma.tenant().scheduledReport.update({
       where: { id },
       data: { lastSentAt: new Date() },
     });
@@ -77,6 +77,10 @@ export class ScheduledReportsService {
 
   @Cron('0 6 * * *')
   async runDailyCheck(): Promise<void> {
+    // Cron iterates scheduled reports across every org. Uses prisma directly
+    // to bypass the tenant extension — no CLS scope here. Phase 7 release may
+    // refactor this to per-org cron runs so the extension stays on, but for
+    // now a cross-org scan is the simplest correct behavior.
     const due = await this.prisma.scheduledReport.findMany({
       where: { isActive: true, deletedAt: null, nextSendAt: { lte: new Date() } },
     });

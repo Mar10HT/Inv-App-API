@@ -108,7 +108,7 @@ export class LoansService {
     }
 
     // Validate item exists and belongs to source warehouse
-    const item = await this.prisma.inventoryItem.findUnique({
+    const item = await this.prisma.tenant().inventoryItem.findUnique({
       where: { id: createLoanDto.inventoryItemId },
     });
 
@@ -123,7 +123,7 @@ export class LoansService {
     }
 
     // Check if item is already on loan (any active status)
-    const existingLoan = await this.prisma.loan.findFirst({
+    const existingLoan = await this.prisma.tenant().loan.findFirst({
       where: {
         inventoryItemId: createLoanDto.inventoryItemId,
         status: { in: ['PENDING', 'SENT', 'RECEIVED', 'RETURN_PENDING', 'OVERDUE'] },
@@ -135,10 +135,10 @@ export class LoansService {
     }
 
     // Validate warehouses exist
-    const sourceWarehouse = await this.prisma.warehouse.findUnique({
+    const sourceWarehouse = await this.prisma.tenant().warehouse.findUnique({
       where: { id: createLoanDto.sourceWarehouseId },
     });
-    const destinationWarehouse = await this.prisma.warehouse.findUnique({
+    const destinationWarehouse = await this.prisma.tenant().warehouse.findUnique({
       where: { id: createLoanDto.destinationWarehouseId },
     });
 
@@ -147,7 +147,7 @@ export class LoansService {
     }
 
     // Create the loan with PENDING status
-    const loan = await this.prisma.loan.create({
+    const loan = await this.prisma.tenant().loan.create({
       data: {
         inventoryItemId: createLoanDto.inventoryItemId,
         quantity: createLoanDto.quantity,
@@ -190,7 +190,7 @@ export class LoansService {
     // Generate unique QR code for send confirmation
     const sendQrCode = this.qrService.generateCode();
 
-    const updatedLoan = await this.prisma.loan.update({
+    const updatedLoan = await this.prisma.tenant().loan.update({
       where: { id },
       data: {
         status: 'SENT',
@@ -217,7 +217,7 @@ export class LoansService {
    * Confirm receipt of loan by scanning QR code
    */
   async confirmReceipt(qrCode: string, userId: string) {
-    const loan = await this.prisma.loan.findFirst({
+    const loan = await this.prisma.tenant().loan.findFirst({
       where: { sendQrCode: qrCode },
       include: this.loanInclude,
     });
@@ -227,7 +227,7 @@ export class LoansService {
     }
 
     // Status check + write in one transaction to prevent double-confirmation under concurrency
-    const updated = await this.prisma.$transaction(async (tx) => {
+    const updated = await this.prisma.tenant().$transaction(async (tx) => {
       const current = await tx.loan.findUnique({ where: { id: loan.id } });
       if (!current || current.status !== 'SENT') {
         throw new BadRequestException(
@@ -278,7 +278,7 @@ export class LoansService {
     // Generate unique QR code for return confirmation
     const returnQrCode = this.qrService.generateCode();
 
-    const updatedLoan = await this.prisma.loan.update({
+    const updatedLoan = await this.prisma.tenant().loan.update({
       where: { id },
       data: {
         status: 'RETURN_PENDING',
@@ -305,7 +305,7 @@ export class LoansService {
    * Confirm return of loan by scanning QR code
    */
   async confirmReturn(qrCode: string, userId: string) {
-    const loan = await this.prisma.loan.findFirst({
+    const loan = await this.prisma.tenant().loan.findFirst({
       where: { returnQrCode: qrCode },
       include: this.loanInclude,
     });
@@ -315,7 +315,7 @@ export class LoansService {
     }
 
     // Status check + write in one transaction to prevent double-confirmation under concurrency
-    const updated = await this.prisma.$transaction(async (tx) => {
+    const updated = await this.prisma.tenant().$transaction(async (tx) => {
       const current = await tx.loan.findUnique({ where: { id: loan.id } });
       if (!current || current.status !== 'RETURN_PENDING') {
         throw new BadRequestException(
@@ -420,7 +420,7 @@ export class LoansService {
     let previousStatus = 'unknown';
 
     // Status check + write in one transaction to prevent double-confirmation under concurrency
-    const updated = await this.prisma.$transaction(async (tx) => {
+    const updated = await this.prisma.tenant().$transaction(async (tx) => {
       const current = await tx.loan.findUnique({ where: { id } });
       if (!current || (current.status !== 'SENT' && current.status !== 'OVERDUE')) {
         throw new BadRequestException(
@@ -473,7 +473,7 @@ export class LoansService {
     let previousStatus = 'unknown';
 
     // Status check + write in one transaction to prevent double-confirmation under concurrency
-    const updated = await this.prisma.$transaction(async (tx) => {
+    const updated = await this.prisma.tenant().$transaction(async (tx) => {
       const current = await tx.loan.findUnique({ where: { id } });
       if (!current || (current.status !== 'RETURN_PENDING' && current.status !== 'OVERDUE')) {
         throw new BadRequestException(
@@ -519,14 +519,14 @@ export class LoansService {
     };
 
     const [data, total] = await Promise.all([
-      this.prisma.loan.findMany({
+      this.prisma.tenant().loan.findMany({
         where,
         skip,
         take: limit,
         orderBy: { loanDate: parseSortOrder(pagination?.sortOrder) },
         include: this.loanIncludeLight,
       }),
-      this.prisma.loan.count({ where }),
+      this.prisma.tenant().loan.count({ where }),
     ]);
 
     return { data, meta: buildPaginationMeta(total, page, limit) };
@@ -535,7 +535,7 @@ export class LoansService {
   async findActive(warehouseIds?: string[] | null) {
     const wFilter = warehouseFilterMultiField(warehouseIds, ['sourceWarehouseId', 'destinationWarehouseId']);
 
-    return this.prisma.loan.findMany({
+    return this.prisma.tenant().loan.findMany({
       where: {
         status: { in: ['PENDING', 'SENT', 'RECEIVED', 'RETURN_PENDING', 'OVERDUE'] as LoanStatus[] },
         ...wFilter,
@@ -546,7 +546,7 @@ export class LoansService {
   }
 
   async findOne(id: string, userWarehouseIds?: string[] | null) {
-    const loan = await this.prisma.loan.findUnique({
+    const loan = await this.prisma.tenant().loan.findUnique({
       where: { id },
       include: this.loanInclude,
     });
@@ -569,7 +569,7 @@ export class LoansService {
 
   async findByItem(inventoryItemId: string, userWarehouseIds?: string[] | null) {
     const wFilter = warehouseFilterMultiField(userWarehouseIds, ['sourceWarehouseId', 'destinationWarehouseId']);
-    return this.prisma.loan.findMany({
+    return this.prisma.tenant().loan.findMany({
       where: { inventoryItemId, ...wFilter },
       orderBy: { loanDate: 'desc' },
       include: this.loanIncludeLight,
@@ -580,7 +580,7 @@ export class LoansService {
     if (userWarehouseIds != null && !userWarehouseIds.includes(warehouseId)) {
       throw new ForbiddenException('You do not have access to this warehouse');
     }
-    return this.prisma.loan.findMany({
+    return this.prisma.tenant().loan.findMany({
       where: {
         OR: [
           { sourceWarehouseId: warehouseId },
@@ -605,7 +605,7 @@ export class LoansService {
     try {
       // Explicitly omit status to prevent state machine bypass via the generic update endpoint
       const { status: _omitted, ...safeFields } = updateLoanDto;
-      return await this.prisma.loan.update({
+      return await this.prisma.tenant().loan.update({
         where: { id },
         data: {
           ...safeFields,
@@ -650,7 +650,7 @@ export class LoansService {
       notes = notes ? `${notes}\n${returnLoanDto.notes}` : returnLoanDto.notes;
     }
 
-    return this.prisma.loan.update({
+    return this.prisma.tenant().loan.update({
       where: { id },
       data: {
         status: 'RETURNED',
@@ -673,7 +673,7 @@ export class LoansService {
     }
 
     // Wrap status check and update in a single transaction to prevent TOCTOU races
-    return this.prisma.$transaction(async (tx) => {
+    return this.prisma.tenant().$transaction(async (tx) => {
       const current = await tx.loan.findUnique({ where: { id } });
       if (!current || current.status === 'RETURNED' || current.status === 'CANCELLED') {
         throw new BadRequestException(`Cannot cancel loan in ${current?.status ?? 'unknown'} status`);
@@ -688,7 +688,7 @@ export class LoansService {
 
   async remove(id: string) {
     try {
-      await this.prisma.loan.delete({
+      await this.prisma.tenant().loan.delete({
         where: { id },
       });
     } catch (error: unknown) {
@@ -706,13 +706,13 @@ export class LoansService {
 
     const [totalPending, totalSent, totalReceived, totalReturnPending, totalReturned, totalOverdue, dueSoon] =
       await Promise.all([
-        this.prisma.loan.count({ where: { status: 'PENDING', ...wFilter } }),
-        this.prisma.loan.count({ where: { status: 'SENT', ...wFilter } }),
-        this.prisma.loan.count({ where: { status: 'RECEIVED', ...wFilter } }),
-        this.prisma.loan.count({ where: { status: 'RETURN_PENDING', ...wFilter } }),
-        this.prisma.loan.count({ where: { status: 'RETURNED', ...wFilter } }),
-        this.prisma.loan.count({ where: { status: 'OVERDUE', ...wFilter } }),
-        this.prisma.loan.count({
+        this.prisma.tenant().loan.count({ where: { status: 'PENDING', ...wFilter } }),
+        this.prisma.tenant().loan.count({ where: { status: 'SENT', ...wFilter } }),
+        this.prisma.tenant().loan.count({ where: { status: 'RECEIVED', ...wFilter } }),
+        this.prisma.tenant().loan.count({ where: { status: 'RETURN_PENDING', ...wFilter } }),
+        this.prisma.tenant().loan.count({ where: { status: 'RETURNED', ...wFilter } }),
+        this.prisma.tenant().loan.count({ where: { status: 'OVERDUE', ...wFilter } }),
+        this.prisma.tenant().loan.count({
           where: {
             status: { in: ['SENT', 'RECEIVED'] },
             dueDate: {
@@ -738,7 +738,7 @@ export class LoansService {
   }
 
   async isItemOnLoan(inventoryItemId: string): Promise<boolean> {
-    const activeLoan = await this.prisma.loan.findFirst({
+    const activeLoan = await this.prisma.tenant().loan.findFirst({
       where: {
         inventoryItemId,
         status: { in: ['PENDING', 'SENT', 'RECEIVED', 'RETURN_PENDING', 'OVERDUE'] },
@@ -752,7 +752,7 @@ export class LoansService {
     const now = new Date();
     const wFilter = warehouseFilterMultiField(userWarehouseIds, ['sourceWarehouseId', 'destinationWarehouseId']);
 
-    await this.prisma.loan.updateMany({
+    await this.prisma.tenant().loan.updateMany({
       where: {
         status: { in: ['SENT', 'RECEIVED'] },
         dueDate: { lt: now },

@@ -32,8 +32,20 @@ export abstract class BaseRepository<
 
   constructor(protected readonly prisma: PrismaService) {}
 
+  /**
+   * Tenant-aware Prisma model accessor.
+   *
+   * Routes through `prisma.tenant()` so any model in TENANT_SCOPED_MODELS gets
+   * automatic org filtering on findMany / count / create / updateMany /
+   * deleteMany. For models that are not tenant-scoped (User, Role, etc.) the
+   * extension is a structural no-op.
+   *
+   * Note: id-based findUnique / update / delete still trust the caller. Phase
+   * 6 hardening will tighten those by promoting to findFirst / updateMany /
+   * deleteMany with the merged org filter.
+   */
   protected get model(): any {
-    return (this.prisma as any)[this.options.modelName];
+    return (this.prisma.tenant() as any)[this.options.modelName];
   }
 
   async create(createDto: TCreate): Promise<TEntity> {

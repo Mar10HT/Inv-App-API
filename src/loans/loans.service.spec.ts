@@ -49,7 +49,7 @@ describe('LoansService', () => {
   };
 
   beforeEach(async () => {
-    const mockPrismaService = {
+    const mockPrismaService: any = {
       loan: {
         create: jest.fn(),
         findMany: jest.fn(),
@@ -67,6 +67,7 @@ describe('LoansService', () => {
         findUnique: jest.fn(),
       },
     };
+    mockPrismaService.tenant = () => mockPrismaService;
 
     const mockQrService = {
       generateCode: jest.fn(() => 'QR-CODE-123'),

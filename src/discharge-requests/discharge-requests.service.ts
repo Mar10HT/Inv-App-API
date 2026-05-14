@@ -38,6 +38,13 @@ export class DischargeRequestsService {
   /**
    * Create discharge request(s) from public form.
    * Receives a flat items array, groups by warehouse, creates N requests in a transaction.
+   *
+   * Public endpoint: no auth, no JWT, no tenant CLS context. Uses prisma
+   * directly (not prisma.tenant()) so the extension does not throw on a
+   * missing context. When MULTI_TENANT_ENABLED flips to true, this method
+   * must derive organizationId from each warehouse and pass it explicitly
+   * on the create — both for the request and each item — so the Phase 1.5
+   * trigger does not reject the insert. Tracked for Phase 7 release.
    */
   async createFromPublicForm(dto: CreateDischargeRequestDto) {
     // Validate all items exist and have sufficient quantity
@@ -164,14 +171,14 @@ export class DischargeRequestsService {
     };
 
     const [requests, total] = await Promise.all([
-      this.prisma.dischargeRequest.findMany({
+      this.prisma.tenant().dischargeRequest.findMany({
         where,
         skip,
         take: limit,
         orderBy: { createdAt: 'desc' },
         include: this.includeLight,
       }),
-      this.prisma.dischargeRequest.count({ where }),
+      this.prisma.tenant().dischargeRequest.count({ where }),
     ]);
 
     return {
@@ -189,7 +196,7 @@ export class DischargeRequestsService {
    * Find a single discharge request by ID
    */
   async findOne(id: string) {
-    const request = await this.prisma.dischargeRequest.findUnique({
+    const request = await this.prisma.tenant().dischargeRequest.findUnique({
       where: { id },
       include: this.includeFull,
     });
@@ -214,7 +221,7 @@ export class DischargeRequestsService {
     }
 
     // Validate and decrement inventory in a single transaction to prevent race conditions
-    const updated = await this.prisma.$transaction(async (tx) => {
+    const updated = await this.prisma.tenant().$transaction(async (tx) => {
       // Validate all items exist, are not soft-deleted, and have sufficient quantity
       const inventoryItems = await Promise.all(
         request.items.map((item) =>
@@ -284,7 +291,7 @@ export class DischargeRequestsService {
     }
 
     // Wrap status check and update in a single transaction to prevent TOCTOU races
-    const updated = await this.prisma.$transaction(async (tx) => {
+    const updated = await this.prisma.tenant().$transaction(async (tx) => {
       const current = await tx.dischargeRequest.findUnique({ where: { id } });
       if (!current) {
         throw new NotFoundException('Discharge request not found');
@@ -325,10 +332,10 @@ export class DischargeRequestsService {
     const wFilter = warehouseFilter(warehouseIds);
 
     const [total, pending, completed, rejected] = await Promise.all([
-      this.prisma.dischargeRequest.count({ where: { ...wFilter } }),
-      this.prisma.dischargeRequest.count({ where: { status: DischargeRequestStatus.PENDING, ...wFilter } }),
-      this.prisma.dischargeRequest.count({ where: { status: DischargeRequestStatus.COMPLETED, ...wFilter } }),
-      this.prisma.dischargeRequest.count({ where: { status: DischargeRequestStatus.REJECTED, ...wFilter } }),
+      this.prisma.tenant().dischargeRequest.count({ where: { ...wFilter } }),
+      this.prisma.tenant().dischargeRequest.count({ where: { status: DischargeRequestStatus.PENDING, ...wFilter } }),
+      this.prisma.tenant().dischargeRequest.count({ where: { status: DischargeRequestStatus.COMPLETED, ...wFilter } }),
+      this.prisma.tenant().dischargeRequest.count({ where: { status: DischargeRequestStatus.REJECTED, ...wFilter } }),
     ]);
 
     return {

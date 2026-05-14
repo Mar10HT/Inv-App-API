@@ -75,7 +75,7 @@ describe('DischargeRequestsService', () => {
       },
     }));
 
-    const mockPrismaService = {
+    const mockPrismaService: any = {
       inventoryItem: {
         findUnique: jest.fn(),
         findMany: jest.fn(),
@@ -88,6 +88,7 @@ describe('DischargeRequestsService', () => {
       },
       $transaction: mockTransaction,
     };
+    mockPrismaService.tenant = () => mockPrismaService;
 
     const mockAuditService = {
       log: jest.fn().mockResolvedValue(undefined),

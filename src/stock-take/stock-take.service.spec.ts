@@ -51,7 +51,7 @@ describe('StockTakeService', () => {
   };
 
   beforeEach(async () => {
-    const mockPrismaService = {
+    const mockPrismaService: any = {
       warehouse: { findUnique: jest.fn() },
       inventoryItem: { findMany: jest.fn(), update: jest.fn() },
       stockTake: {
@@ -78,6 +78,7 @@ describe('StockTakeService', () => {
         }),
       ),
     };
+    mockPrismaService.tenant = () => mockPrismaService;
 
     const mockAuditService = { log: jest.fn().mockResolvedValue(undefined) };
 

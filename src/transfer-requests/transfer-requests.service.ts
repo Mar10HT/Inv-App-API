@@ -46,14 +46,14 @@ export class TransferRequestsService {
       throw new BadRequestException('Source and destination warehouses must be different');
     }
 
-    const sourceWarehouse = await this.prisma.warehouse.findUnique({
+    const sourceWarehouse = await this.prisma.tenant().warehouse.findUnique({
       where: { id: dto.sourceWarehouseId },
     });
     if (!sourceWarehouse) {
       throw new NotFoundException('Source warehouse not found');
     }
 
-    const destWarehouse = await this.prisma.warehouse.findUnique({
+    const destWarehouse = await this.prisma.tenant().warehouse.findUnique({
       where: { id: dto.destinationWarehouseId },
     });
     if (!destWarehouse) {
@@ -70,7 +70,7 @@ export class TransferRequestsService {
 
     // Batch-fetch all requested items in one query to avoid N+1
     const requestedIds = dto.items.map((i) => i.inventoryItemId);
-    const foundItems = await this.prisma.inventoryItem.findMany({
+    const foundItems = await this.prisma.tenant().inventoryItem.findMany({
       where: { id: { in: requestedIds } },
     });
     const inventoryMap = new Map(foundItems.map((fi) => [fi.id, fi]));
@@ -93,7 +93,7 @@ export class TransferRequestsService {
       }
     }
 
-    const transferRequest = await this.prisma.transferRequest.create({
+    const transferRequest = await this.prisma.tenant().transferRequest.create({
       data: {
         sourceWarehouseId: dto.sourceWarehouseId,
         destinationWarehouseId: dto.destinationWarehouseId,
@@ -129,14 +129,14 @@ export class TransferRequestsService {
     };
 
     const [requests, total] = await Promise.all([
-      this.prisma.transferRequest.findMany({
+      this.prisma.tenant().transferRequest.findMany({
         where,
         skip,
         take: limit,
         orderBy: { createdAt: 'desc' },
         include: this.includeLight,
       }),
-      this.prisma.transferRequest.count({ where }),
+      this.prisma.tenant().transferRequest.count({ where }),
     ]);
 
     return { data: requests, meta: buildPaginationMeta(total, page, limit) };
@@ -147,7 +147,7 @@ export class TransferRequestsService {
   }
 
   async findOne(id: string) {
-    const request = await this.prisma.transferRequest.findUnique({
+    const request = await this.prisma.tenant().transferRequest.findUnique({
       where: { id },
       include: this.includeFull,
     });
@@ -169,7 +169,7 @@ export class TransferRequestsService {
     }
 
     // Wrap status check, quantity validation, and update in a single transaction to prevent TOCTOU races
-    const updated = await this.prisma.$transaction(async (tx) => {
+    const updated = await this.prisma.tenant().$transaction(async (tx) => {
       const current = await tx.transferRequest.findUnique({
         where: { id },
         include: { items: { include: { inventoryItem: true } } },
@@ -235,7 +235,7 @@ export class TransferRequestsService {
 
     const sendQrCode = this.qrService.generateCode();
 
-    const updated = await this.prisma.transferRequest.update({
+    const updated = await this.prisma.tenant().transferRequest.update({
       where: { id },
       data: {
         status: RequestStatus.SENT,
@@ -269,7 +269,7 @@ export class TransferRequestsService {
    * Confirm receipt by scanning QR code - also completes the transfer
    */
   async confirmReceipt(qrCode: string, userId: string) {
-    const request = await this.prisma.transferRequest.findFirst({
+    const request = await this.prisma.tenant().transferRequest.findFirst({
       where: { sendQrCode: qrCode },
       include: this.includeFull,
     });
@@ -281,7 +281,7 @@ export class TransferRequestsService {
     // Execute the transfer - all inventory modifications in a single transaction.
     // NOTE [M3]: Promise.all inside $transaction is safe on SQLite (dev) but can cause
     // serialization conflicts on PostgreSQL under high concurrency. See comments in complete().
-    const updated = await this.prisma.$transaction(async (tx) => {
+    const updated = await this.prisma.tenant().$transaction(async (tx) => {
       // Re-check status inside the transaction to prevent double-confirmation under concurrency
       const current = await tx.transferRequest.findUnique({ where: { id: request.id }, select: { status: true } });
       if (!current || current.status !== RequestStatus.SENT) {
@@ -351,7 +351,7 @@ export class TransferRequestsService {
     }
 
     // Wrap status check and update in a single transaction to prevent TOCTOU races
-    const updated = await this.prisma.$transaction(async (tx) => {
+    const updated = await this.prisma.tenant().$transaction(async (tx) => {
       const current = await tx.transferRequest.findUnique({
         where: { id },
         select: { status: true },
@@ -404,7 +404,7 @@ export class TransferRequestsService {
     // serialization conflicts on PostgreSQL under high concurrency. If this becomes an
     // issue in production, switch to sequential awaits or add a Serializable isolation
     // level (requires PostgreSQL — cannot be set in dev SQLite schema).
-    const updated = await this.prisma.$transaction(async (tx) => {
+    const updated = await this.prisma.tenant().$transaction(async (tx) => {
       // Re-check status inside the transaction to prevent double-confirmation under concurrency
       const current = await tx.transferRequest.findUnique({ where: { id }, select: { status: true } });
       if (!current || current.status !== RequestStatus.SENT) {
@@ -533,7 +533,7 @@ export class TransferRequestsService {
     }
 
     // Wrap status check and update in a single transaction to prevent TOCTOU races
-    const updated = await this.prisma.$transaction(async (tx) => {
+    const updated = await this.prisma.tenant().$transaction(async (tx) => {
       const current = await tx.transferRequest.findUnique({ where: { id }, select: { status: true } });
       if (!current || current.status === RequestStatus.COMPLETED || current.status === RequestStatus.REJECTED || current.status === RequestStatus.CANCELLED) {
         throw new BadRequestException(
@@ -562,13 +562,13 @@ export class TransferRequestsService {
     const wFilter = warehouseFilterMultiField(warehouseIds, ['sourceWarehouseId', 'destinationWarehouseId']);
 
     const [total, pending, approved, sent, completed, rejected, cancelled] = await Promise.all([
-      this.prisma.transferRequest.count({ where: { ...wFilter } }),
-      this.prisma.transferRequest.count({ where: { status: RequestStatus.PENDING, ...wFilter } }),
-      this.prisma.transferRequest.count({ where: { status: RequestStatus.APPROVED, ...wFilter } }),
-      this.prisma.transferRequest.count({ where: { status: RequestStatus.SENT, ...wFilter } }),
-      this.prisma.transferRequest.count({ where: { status: RequestStatus.COMPLETED, ...wFilter } }),
-      this.prisma.transferRequest.count({ where: { status: RequestStatus.REJECTED, ...wFilter } }),
-      this.prisma.transferRequest.count({ where: { status: RequestStatus.CANCELLED, ...wFilter } }),
+      this.prisma.tenant().transferRequest.count({ where: { ...wFilter } }),
+      this.prisma.tenant().transferRequest.count({ where: { status: RequestStatus.PENDING, ...wFilter } }),
+      this.prisma.tenant().transferRequest.count({ where: { status: RequestStatus.APPROVED, ...wFilter } }),
+      this.prisma.tenant().transferRequest.count({ where: { status: RequestStatus.SENT, ...wFilter } }),
+      this.prisma.tenant().transferRequest.count({ where: { status: RequestStatus.COMPLETED, ...wFilter } }),
+      this.prisma.tenant().transferRequest.count({ where: { status: RequestStatus.REJECTED, ...wFilter } }),
+      this.prisma.tenant().transferRequest.count({ where: { status: RequestStatus.CANCELLED, ...wFilter } }),
     ]);
 
     return {

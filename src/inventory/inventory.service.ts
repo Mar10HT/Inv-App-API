@@ -37,7 +37,7 @@ export class InventoryService {
 
   async create(createInventoryDto: CreateInventoryDto): Promise<InventoryItem> {
     // Validate warehouse exists
-    const warehouse = await this.prisma.warehouse.findUnique({
+    const warehouse = await this.prisma.tenant().warehouse.findUnique({
       where: { id: createInventoryDto.warehouseId },
     });
     if (!warehouse) {
@@ -46,7 +46,7 @@ export class InventoryService {
 
     // Validate supplier if provided
     if (createInventoryDto.supplierId) {
-      const supplier = await this.prisma.supplier.findUnique({
+      const supplier = await this.prisma.tenant().supplier.findUnique({
         where: { id: createInventoryDto.supplierId },
       });
       if (!supplier) {
@@ -88,7 +88,7 @@ export class InventoryService {
 
     // Check if SKU already exists
     if (createInventoryDto.sku) {
-      const existing = await this.prisma.inventoryItem.findUnique({
+      const existing = await this.prisma.tenant().inventoryItem.findUnique({
         where: { sku: createInventoryDto.sku },
       });
       if (existing) {
@@ -98,7 +98,7 @@ export class InventoryService {
 
     // Check if serviceTag already exists
     if (createInventoryDto.serviceTag) {
-      const existing = await this.prisma.inventoryItem.findUnique({
+      const existing = await this.prisma.tenant().inventoryItem.findUnique({
         where: { serviceTag: createInventoryDto.serviceTag },
       });
       if (existing) {
@@ -130,7 +130,7 @@ export class InventoryService {
       }
     }
 
-    const item = await this.prisma.inventoryItem.create({
+    const item = await this.prisma.tenant().inventoryItem.create({
       data: {
         ...createInventoryDto,
         itemType,
@@ -243,7 +243,7 @@ export class InventoryService {
     const orderBy: Record<string, 'asc' | 'desc'> = { [sortBy]: sortOrder };
 
     const [items, total] = await Promise.all([
-      this.prisma.inventoryItem.findMany({
+      this.prisma.tenant().inventoryItem.findMany({
         where,
         orderBy,
         skip,
@@ -268,14 +268,14 @@ export class InventoryService {
           },
         },
       }),
-      this.prisma.inventoryItem.count({ where }),
+      this.prisma.tenant().inventoryItem.count({ where }),
     ]);
 
     return new PaginatedResponseDto(items, total, page, limit);
   }
 
   async findOne(id: string): Promise<InventoryItem> {
-    const item = await this.prisma.inventoryItem.findUnique({
+    const item = await this.prisma.tenant().inventoryItem.findUnique({
       where: { id },
       include: {
         createdBy: {
@@ -324,7 +324,7 @@ export class InventoryService {
 
     // Check if SKU is being updated and already exists
     if (updateInventoryDto.sku) {
-      const existing = await this.prisma.inventoryItem.findFirst({
+      const existing = await this.prisma.tenant().inventoryItem.findFirst({
         where: {
           sku: updateInventoryDto.sku,
           NOT: { id },
@@ -338,7 +338,7 @@ export class InventoryService {
     // Auto-update status if quantity or assignment is being updated
     let status = updateInventoryDto.status;
     if ((updateInventoryDto.quantity !== undefined || updateInventoryDto.assignedToUserId !== undefined) && !status) {
-      const item = await this.prisma.inventoryItem.findUnique({ where: { id } });
+      const item = await this.prisma.tenant().inventoryItem.findUnique({ where: { id } });
       if (!item) {
         throw new NotFoundException('Inventory item not found');
       }
@@ -359,7 +359,7 @@ export class InventoryService {
       }
     }
 
-    const updatedItem = await this.prisma.inventoryItem.update({
+    const updatedItem = await this.prisma.tenant().inventoryItem.update({
       where: { id },
       data: {
         ...updateInventoryDto,
@@ -406,7 +406,7 @@ export class InventoryService {
     await this.findOne(id);
 
     // Soft delete: set deletedAt timestamp instead of hard delete
-    await this.prisma.inventoryItem.update({
+    await this.prisma.tenant().inventoryItem.update({
       where: { id },
       data: { deletedAt: new Date() },
     });
@@ -423,7 +423,7 @@ export class InventoryService {
 
   async restore(id: string): Promise<InventoryItem> {
     // Restore a soft-deleted item
-    const item = await this.prisma.inventoryItem.findUnique({
+    const item = await this.prisma.tenant().inventoryItem.findUnique({
       where: { id },
     });
 
@@ -435,7 +435,7 @@ export class InventoryService {
       throw new BadRequestException('Item is not deleted');
     }
 
-    const restoredItem = await this.prisma.inventoryItem.update({
+    const restoredItem = await this.prisma.tenant().inventoryItem.update({
       where: { id },
       data: { deletedAt: null },
       include: {
@@ -480,11 +480,11 @@ export class InventoryService {
       categoryStats,
       warehousesWithCounts,
     ] = await Promise.all([
-      this.prisma.inventoryItem.count({ where: { deletedAt: null, ...wFilter } }),
-      this.prisma.inventoryItem.count({ where: { status: InventoryStatus.IN_STOCK, deletedAt: null, ...wFilter } }),
-      this.prisma.inventoryItem.count({ where: { status: InventoryStatus.LOW_STOCK, deletedAt: null, ...wFilter } }),
-      this.prisma.inventoryItem.count({ where: { status: InventoryStatus.OUT_OF_STOCK, deletedAt: null, ...wFilter } }),
-      this.prisma.inventoryItem.count({ where: { status: InventoryStatus.IN_USE, deletedAt: null, ...wFilter } }),
+      this.prisma.tenant().inventoryItem.count({ where: { deletedAt: null, ...wFilter } }),
+      this.prisma.tenant().inventoryItem.count({ where: { status: InventoryStatus.IN_STOCK, deletedAt: null, ...wFilter } }),
+      this.prisma.tenant().inventoryItem.count({ where: { status: InventoryStatus.LOW_STOCK, deletedAt: null, ...wFilter } }),
+      this.prisma.tenant().inventoryItem.count({ where: { status: InventoryStatus.OUT_OF_STOCK, deletedAt: null, ...wFilter } }),
+      this.prisma.tenant().inventoryItem.count({ where: { status: InventoryStatus.IN_USE, deletedAt: null, ...wFilter } }),
       // Compute SUM(price * quantity) in the DB to avoid loading all rows into memory.
       // Prisma cannot express price * quantity natively, so a raw query is used here.
       // warehouseIds === undefined means the value was never passed (admin global view),
@@ -503,13 +503,13 @@ export class InventoryService {
             WHERE deleted_at IS NULL
               AND price IS NOT NULL
           `,
-      this.prisma.inventoryItem.groupBy({
+      this.prisma.tenant().inventoryItem.groupBy({
         by: ['category'],
         where: { deletedAt: null, ...wFilter },
         _count: { category: true },
       }),
       // Optimized: Fetch warehouses with item count using include
-      this.prisma.warehouse.findMany({
+      this.prisma.tenant().warehouse.findMany({
         where: wIdFilter,
         select: {
           id: true,
@@ -556,7 +556,7 @@ export class InventoryService {
   }
 
   async getLowStockItems(warehouseIds?: string[] | null): Promise<InventoryItem[]> {
-    return this.prisma.inventoryItem.findMany({
+    return this.prisma.tenant().inventoryItem.findMany({
       where: {
         ...warehouseFilter(warehouseIds),
         OR: [
@@ -588,7 +588,7 @@ export class InventoryService {
       return cached;
     }
 
-    const categories = await this.prisma.inventoryItem.findMany({
+    const categories = await this.prisma.tenant().inventoryItem.findMany({
       distinct: ['category'],
       where: { deletedAt: null, ...warehouseFilter(warehouseIds) },
       select: { category: true },
@@ -614,7 +614,7 @@ export class InventoryService {
     }
 
     const where = warehouseIds?.length ? { id: { in: warehouseIds }, deletedAt: null } : {};
-    const warehouses = await this.prisma.warehouse.findMany({
+    const warehouses = await this.prisma.tenant().warehouse.findMany({
       where,
       orderBy: { name: 'asc' },
       select: { name: true },
@@ -650,7 +650,7 @@ export class InventoryService {
       const item = dto.items[i];
       try {
         // Check if item exists
-        const existing = await this.prisma.inventoryItem.findUnique({
+        const existing = await this.prisma.tenant().inventoryItem.findUnique({
           where: { id: item.id },
         });
 
@@ -666,7 +666,7 @@ export class InventoryService {
 
         // Check SKU conflict
         if (item.warehouseId) {
-          const warehouse = await this.prisma.warehouse.findUnique({
+          const warehouse = await this.prisma.tenant().warehouse.findUnique({
             where: { id: item.warehouseId },
           });
           if (!warehouse) {
@@ -698,7 +698,7 @@ export class InventoryService {
         // Remove id from update data
         const { id, ...updateData } = item;
 
-        await this.prisma.inventoryItem.update({
+        await this.prisma.tenant().inventoryItem.update({
           where: { id: item.id },
           data: {
             ...updateData,
@@ -748,7 +748,7 @@ export class InventoryService {
       const id = dto.ids[i];
       try {
         // Check if item exists
-        const existing = await this.prisma.inventoryItem.findUnique({
+        const existing = await this.prisma.tenant().inventoryItem.findUnique({
           where: { id },
         });
 
@@ -763,7 +763,7 @@ export class InventoryService {
         }
 
         // Soft delete
-        await this.prisma.inventoryItem.update({
+        await this.prisma.tenant().inventoryItem.update({
           where: { id },
           data: { deletedAt: new Date() },
         });
@@ -810,7 +810,7 @@ export class InventoryService {
       const item = dto.items[i];
       try {
         // Validate warehouse exists
-        const warehouse = await this.prisma.warehouse.findUnique({
+        const warehouse = await this.prisma.tenant().warehouse.findUnique({
           where: { id: item.warehouseId },
         });
         if (!warehouse) {
@@ -824,7 +824,7 @@ export class InventoryService {
 
         // Check if SKU already exists
         if (item.sku) {
-          const existing = await this.prisma.inventoryItem.findUnique({
+          const existing = await this.prisma.tenant().inventoryItem.findUnique({
             where: { sku: item.sku },
           });
           if (existing) {
@@ -839,7 +839,7 @@ export class InventoryService {
 
         // Check if serviceTag already exists
         if (item.serviceTag) {
-          const existing = await this.prisma.inventoryItem.findUnique({
+          const existing = await this.prisma.tenant().inventoryItem.findUnique({
             where: { serviceTag: item.serviceTag },
           });
           if (existing) {
@@ -863,7 +863,7 @@ export class InventoryService {
           status = InventoryStatus.IN_STOCK;
         }
 
-        const created = await this.prisma.inventoryItem.create({
+        const created = await this.prisma.tenant().inventoryItem.create({
           data: {
             ...item,
             status,
@@ -902,9 +902,9 @@ export class InventoryService {
   }
 
   async resetAll(userId?: string): Promise<{ deletedCount: number }> {
-    const count = await this.prisma.inventoryItem.count({ where: { deletedAt: null } });
+    const count = await this.prisma.tenant().inventoryItem.count({ where: { deletedAt: null } });
 
-    await this.prisma.$transaction(async (tx) => {
+    await this.prisma.tenant().$transaction(async (tx) => {
       await tx.inventoryItem.updateMany({
         where: { deletedAt: null },
         data: { deletedAt: new Date() },
@@ -935,9 +935,9 @@ export class InventoryService {
     const worksheet = workbook.addWorksheet('Importar Inventario');
 
     // Load reference data from DB
-    const warehouses = await this.prisma.warehouse.findMany({ select: { name: true } });
-    const suppliers = await this.prisma.supplier.findMany({ select: { name: true } });
-    const categoryRows = await this.prisma.inventoryItem.findMany({
+    const warehouses = await this.prisma.tenant().warehouse.findMany({ select: { name: true } });
+    const suppliers = await this.prisma.tenant().supplier.findMany({ select: { name: true } });
+    const categoryRows = await this.prisma.tenant().inventoryItem.findMany({
       where: { deletedAt: null },
       select: { category: true },
       distinct: ['category'],
@@ -1070,8 +1070,8 @@ export class InventoryService {
     }
 
     // Pre-load warehouses and suppliers for name-based lookup
-    const warehouses = await this.prisma.warehouse.findMany({ select: { id: true, name: true } });
-    const suppliers = await this.prisma.supplier.findMany({ select: { id: true, name: true } });
+    const warehouses = await this.prisma.tenant().warehouse.findMany({ select: { id: true, name: true } });
+    const suppliers = await this.prisma.tenant().supplier.findMany({ select: { id: true, name: true } });
     const warehouseMap = new Map(warehouses.map(w => [w.name.toLowerCase(), w.id]));
     const supplierMap = new Map(suppliers.map(s => [s.name.toLowerCase(), s.id]));
 

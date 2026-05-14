@@ -3,6 +3,17 @@ import { PrismaService } from '../../prisma/prisma.service';
 
 @Injectable()
 export class WarehouseAccessService {
+  // Phase 3 note: this service stays on the base Prisma client (not
+  // prisma.tenant()) because:
+  // 1. getAccessibleWarehouseIds is called from AuthService.login /
+  //    refresh / switchOrg BEFORE the request-scoped tenant context is
+  //    set. tenant() would throw on missing orgId.
+  // 2. setUserWarehouses uses createMany and setWarehouseManager uses
+  //    upsert. The current extension intercepts neither; auto-injection
+  //    of organizationId would not happen.
+  // Phase 7 release should: (a) extend the Prisma extension to cover
+  // upsert + createMany, (b) accept an explicit orgId parameter in
+  // getAccessibleWarehouseIds so it filters by current org.
   constructor(private prisma: PrismaService) {}
 
   /**

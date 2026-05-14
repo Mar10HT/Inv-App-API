@@ -13,7 +13,7 @@ export class WarehousesService {
 
   async create(createDto: CreateWarehouseDto) {
     try {
-      return await this.prisma.warehouse.create({
+      return await this.prisma.tenant().warehouse.create({
         data: createDto,
       });
     } catch (error: unknown) {
@@ -32,7 +32,7 @@ export class WarehousesService {
     const where = warehouseFilter(warehouseIds, 'id');
 
     const [data, total] = await Promise.all([
-      this.prisma.warehouse.findMany({
+      this.prisma.tenant().warehouse.findMany({
         where,
         skip,
         take: limit,
@@ -48,14 +48,14 @@ export class WarehousesService {
           },
         },
       }),
-      this.prisma.warehouse.count({ where }),
+      this.prisma.tenant().warehouse.count({ where }),
     ]);
 
     return { data, meta: buildPaginationMeta(total, page, limit) };
   }
 
   async findOne(id: string) {
-    const entity = await this.prisma.warehouse.findUnique({
+    const entity = await this.prisma.tenant().warehouse.findUnique({
       where: { id },
       include: {
         manager: {
@@ -79,7 +79,7 @@ export class WarehousesService {
 
   async update(id: string, updateDto: UpdateWarehouseDto) {
     try {
-      return await this.prisma.warehouse.update({
+      return await this.prisma.tenant().warehouse.update({
         where: { id },
         data: updateDto,
       });
@@ -93,7 +93,7 @@ export class WarehousesService {
 
   async remove(id: string): Promise<void> {
     try {
-      await this.prisma.warehouse.delete({
+      await this.prisma.tenant().warehouse.delete({
         where: { id },
       });
     } catch (error: unknown) {
@@ -105,6 +105,6 @@ export class WarehousesService {
   }
 
   async count(where?: Prisma.WarehouseWhereInput): Promise<number> {
-    return this.prisma.warehouse.count({ where });
+    return this.prisma.tenant().warehouse.count({ where });
   }
 }

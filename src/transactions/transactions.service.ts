@@ -25,7 +25,7 @@ export class TransactionsService {
     await this.validateItems(items);
 
     // Create transaction with items in a single transaction
-    const result = await this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.tenant().$transaction(async (tx) => {
       const newTransaction = await tx.transaction.create({
         data: {
           ...transactionData,
@@ -72,7 +72,7 @@ export class TransactionsService {
     const where = warehouseFilterMultiField(warehouseIds, ['sourceWarehouseId', 'destinationWarehouseId']);
 
     const [data, total] = await Promise.all([
-      this.prisma.transaction.findMany({
+      this.prisma.tenant().transaction.findMany({
         where,
         skip,
         take: limit,
@@ -84,7 +84,7 @@ export class TransactionsService {
           user: { select: { id: true, email: true, name: true } },
         },
       }),
-      this.prisma.transaction.count({ where }),
+      this.prisma.tenant().transaction.count({ where }),
     ]);
 
     return { data, meta: buildPaginationMeta(total, page, limit) };
@@ -93,7 +93,7 @@ export class TransactionsService {
   async findRecent(limit: number = 10, warehouseIds?: string[] | null) {
     const where = warehouseFilterMultiField(warehouseIds, ['sourceWarehouseId', 'destinationWarehouseId']);
 
-    return this.prisma.transaction.findMany({
+    return this.prisma.tenant().transaction.findMany({
       where,
       take: limit,
       orderBy: {
@@ -119,7 +119,7 @@ export class TransactionsService {
   }
 
   async findOne(id: string) {
-    const transaction = await this.prisma.transaction.findUnique({
+    const transaction = await this.prisma.tenant().transaction.findUnique({
       where: { id },
       include: {
         items: {
@@ -148,7 +148,7 @@ export class TransactionsService {
 
   async update(id: string, updateTransactionDto: UpdateTransactionDto) {
     try {
-      return await this.prisma.transaction.update({
+      return await this.prisma.tenant().transaction.update({
         where: { id },
         data: updateTransactionDto,
         include: {
@@ -179,7 +179,7 @@ export class TransactionsService {
   async remove(id: string) {
     try {
       // Note: This will cascade delete transaction items
-      await this.prisma.transaction.delete({
+      await this.prisma.tenant().transaction.delete({
         where: { id },
       });
     } catch (error: unknown) {
@@ -209,7 +209,7 @@ export class TransactionsService {
 
   private async validateItems(items: TransactionItemDto[]) {
     const ids = items.map((i) => i.inventoryItemId);
-    const found = await this.prisma.inventoryItem.findMany({
+    const found = await this.prisma.tenant().inventoryItem.findMany({
       where: { id: { in: ids } },
       select: { id: true },
     });

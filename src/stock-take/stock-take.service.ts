@@ -14,7 +14,7 @@ export class StockTakeService {
 
   async create(dto: CreateStockTakeDto, startedById: string) {
     // Validate warehouse exists
-    const warehouse = await this.prisma.warehouse.findUnique({
+    const warehouse = await this.prisma.tenant().warehouse.findUnique({
       where: { id: dto.warehouseId },
     });
 
@@ -23,7 +23,7 @@ export class StockTakeService {
     }
 
     // Check for existing in-progress stock take
-    const existing = await this.prisma.stockTake.findFirst({
+    const existing = await this.prisma.tenant().stockTake.findFirst({
       where: {
         warehouseId: dto.warehouseId,
         status: StockTakeStatus.IN_PROGRESS,
@@ -37,7 +37,7 @@ export class StockTakeService {
     }
 
     // Get all items in the warehouse
-    const items = await this.prisma.inventoryItem.findMany({
+    const items = await this.prisma.tenant().inventoryItem.findMany({
       where: {
         warehouseId: dto.warehouseId,
         deletedAt: null,
@@ -45,7 +45,7 @@ export class StockTakeService {
     });
 
     // Create stock take with all items
-    const stockTake = await this.prisma.stockTake.create({
+    const stockTake = await this.prisma.tenant().stockTake.create({
       data: {
         warehouseId: dto.warehouseId,
         startedById,
@@ -84,7 +84,7 @@ export class StockTakeService {
     const where = status ? { status } : {};
 
     const [stockTakes, total] = await Promise.all([
-      this.prisma.stockTake.findMany({
+      this.prisma.tenant().stockTake.findMany({
         where,
         skip,
         take: limit,
@@ -96,14 +96,14 @@ export class StockTakeService {
           _count: { select: { items: true } },
         },
       }),
-      this.prisma.stockTake.count({ where }),
+      this.prisma.tenant().stockTake.count({ where }),
     ]);
 
     return { data: stockTakes, meta: buildPaginationMeta(total, page, limit) };
   }
 
   async findOne(id: string) {
-    const stockTake = await this.prisma.stockTake.findUnique({
+    const stockTake = await this.prisma.tenant().stockTake.findUnique({
       where: { id },
       include: {
         warehouse: true,
@@ -136,7 +136,7 @@ export class StockTakeService {
       throw new BadRequestException('Cannot update items on a completed or cancelled stock take');
     }
 
-    const stockTakeItem = await this.prisma.stockTakeItem.findFirst({
+    const stockTakeItem = await this.prisma.tenant().stockTakeItem.findFirst({
       where: {
         stockTakeId,
         itemId: dto.itemId,
@@ -149,7 +149,7 @@ export class StockTakeService {
 
     const variance = dto.countedQty - stockTakeItem.expectedQty;
 
-    const updated = await this.prisma.stockTakeItem.update({
+    const updated = await this.prisma.tenant().stockTakeItem.update({
       where: { id: stockTakeItem.id },
       data: {
         countedQty: dto.countedQty,
@@ -183,7 +183,7 @@ export class StockTakeService {
     // Apply inventory changes and mark as COMPLETED in one atomic transaction.
     // The stockTake.update is always the last step inside the transaction so that
     // the status only changes if all preceding writes succeed.
-    const updated = await this.prisma.$transaction(async (tx) => {
+    const updated = await this.prisma.tenant().$transaction(async (tx) => {
       if (applyChanges) {
         for (const stockItem of stockTake.items) {
           if (stockItem.variance !== 0 && stockItem.countedQty !== null) {
@@ -254,7 +254,7 @@ export class StockTakeService {
       throw new BadRequestException('Cannot cancel a completed stock take');
     }
 
-    const updated = await this.prisma.stockTake.update({
+    const updated = await this.prisma.tenant().stockTake.update({
       where: { id },
       data: {
         status: StockTakeStatus.CANCELLED,
@@ -321,14 +321,14 @@ export class StockTakeService {
 
   async getStats() {
     const [total, inProgress, completed, cancelled] = await Promise.all([
-      this.prisma.stockTake.count(),
-      this.prisma.stockTake.count({ where: { status: StockTakeStatus.IN_PROGRESS } }),
-      this.prisma.stockTake.count({ where: { status: StockTakeStatus.COMPLETED } }),
-      this.prisma.stockTake.count({ where: { status: StockTakeStatus.CANCELLED } }),
+      this.prisma.tenant().stockTake.count(),
+      this.prisma.tenant().stockTake.count({ where: { status: StockTakeStatus.IN_PROGRESS } }),
+      this.prisma.tenant().stockTake.count({ where: { status: StockTakeStatus.COMPLETED } }),
+      this.prisma.tenant().stockTake.count({ where: { status: StockTakeStatus.CANCELLED } }),
     ]);
 
     // Get recent stock takes with variances
-    const recentWithVariances = await this.prisma.stockTake.findMany({
+    const recentWithVariances = await this.prisma.tenant().stockTake.findMany({
       where: { status: StockTakeStatus.COMPLETED },
       take: 5,
       orderBy: { completedAt: 'desc' },
