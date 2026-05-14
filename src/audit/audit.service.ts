@@ -55,6 +55,20 @@ export class AuditService {
     });
   }
 
+  /**
+   * Business-mutation actions surfaced by default in the audit listing.
+   * Auth/access events (LOGIN/LOGOUT/PASSWORD_CHANGE/ACCESS) are hidden
+   * unless the caller passes `action` explicitly, because the SYSTEM_ADMIN
+   * bypass and login flow generate enough of them to drown out real changes
+   * in the default view.
+   */
+  private static readonly DEFAULT_VISIBLE_ACTIONS = [
+    'CREATE',
+    'UPDATE',
+    'DELETE',
+    'RESTORE',
+  ];
+
   async getRecentLogs(options?: { limit?: number; offset?: number; action?: string; entity?: string }) {
     const limit = options?.limit || 50;
     const offset = options?.offset || 0;
@@ -62,6 +76,8 @@ export class AuditService {
     const where: Prisma.AuditLogWhereInput = {};
     if (options?.action) {
       where.action = options.action;
+    } else {
+      where.action = { in: AuditService.DEFAULT_VISIBLE_ACTIONS };
     }
     if (options?.entity) {
       where.entity = options.entity;

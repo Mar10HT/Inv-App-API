@@ -18,6 +18,7 @@ import * as bcrypt from 'bcryptjs';
 import { randomBytes } from 'crypto';
 import { UserRole } from '@prisma/client';
 import { WarehouseAccessService } from '../common/warehouse-access/warehouse-access.service';
+import { AuditService } from '../audit/audit.service';
 
 @Injectable()
 export class AuthService {
@@ -36,6 +37,7 @@ export class AuthService {
     private prisma: PrismaService,
     private emailService: EmailService,
     private warehouseAccessService: WarehouseAccessService,
+    private auditService: AuditService,
   ) {}
 
   // ============================================
@@ -191,6 +193,18 @@ export class AuthService {
     });
   }
 
+  /**
+   * Look up the owner of a refresh token without revoking or rotating it.
+   * Used by the logout controller to audit which user is signing out before
+   * the token is invalidated.
+   */
+  async findRefreshTokenOwner(token: string): Promise<{ userId: string } | null> {
+    return this.prisma.refreshToken.findUnique({
+      where: { token },
+      select: { userId: true },
+    });
+  }
+
   async revokeAllUserRefreshTokens(userId: string): Promise<void> {
     await this.prisma.refreshToken.updateMany({
       where: { userId, revoked: false },
@@ -322,6 +336,16 @@ export class AuthService {
       });
     });
 
+    this.auditService
+      .log({
+        action: 'PASSWORD_CHANGE',
+        entity: 'User',
+        entityId: resetToken.userId,
+        userId: resetToken.userId,
+        changes: { after: { email: resetToken.user.email, source: 'reset' } },
+      })
+      .catch(() => undefined);
+
     // Send confirmation email
     this.emailService
       .sendPasswordChangedEmail(
@@ -358,6 +382,16 @@ export class AuthService {
 
     // Record successful login
     await this.recordLoginAttempt(loginDto.email, ip, true);
+
+    this.auditService
+      .log({
+        action: 'LOGIN',
+        entity: 'User',
+        entityId: user.id,
+        userId: user.id,
+        changes: { after: { email: user.email, ip } },
+      })
+      .catch(() => undefined);
 
     const payload = { sub: user.id, email: user.email, role: user.role };
     const accessToken = this.jwtService.sign(payload);
@@ -480,6 +514,16 @@ export class AuthService {
 
     // Revoke all refresh tokens for security
     await this.revokeAllUserRefreshTokens(userId);
+
+    this.auditService
+      .log({
+        action: 'PASSWORD_CHANGE',
+        entity: 'User',
+        entityId: userId,
+        userId,
+        changes: { after: { email: user.email, source: 'self' } },
+      })
+      .catch(() => undefined);
 
     // Send confirmation email
     this.emailService

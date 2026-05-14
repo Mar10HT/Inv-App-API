@@ -39,6 +39,7 @@ import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { JwtAuthGuard, PermissionsGuard } from './guards';
 import { Permissions } from './decorators';
 import { PermissionsService } from '../permissions/permissions.service';
+import { AuditService } from '../audit/audit.service';
 
 @ApiTags('auth')
 @Controller('auth')
@@ -48,6 +49,7 @@ export class AuthController {
     private readonly csrfService: CsrfService,
     private readonly usersService: UsersService,
     private readonly permissionsService: PermissionsService,
+    private readonly auditService: AuditService,
   ) {}
 
   /**
@@ -229,8 +231,22 @@ export class AuthController {
   ) {
     // Accept refresh token from cookie (web) or body (mobile)
     const refreshToken = req.cookies?.refresh_token ?? bodyRefreshToken;
+    let userId: string | undefined;
     if (refreshToken) {
+      const stored = await this.authService.findRefreshTokenOwner(refreshToken);
+      userId = stored?.userId;
       await this.authService.revokeRefreshToken(refreshToken);
+    }
+
+    if (userId) {
+      this.auditService
+        .log({
+          action: 'LOGOUT',
+          entity: 'User',
+          entityId: userId,
+          userId,
+        })
+        .catch(() => undefined);
     }
 
     const isProduction = process.env.NODE_ENV === 'production';
