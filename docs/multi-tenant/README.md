@@ -61,11 +61,12 @@ User, Role, Permission, RolePermission, LoginAttempt, PasswordResetToken, Organi
 | 1 — Schema + backfill | 5d | 17 tablas con `organizationId`, triggers, default-org `ON` seedeada |
 | 2 — Activación filtrado | 6d | Extension Prisma + Interceptor + JWT nuevo + `switch-org` + cron multi-tenant |
 | 3 — Services/controllers | 6d | Refactor de 27 services + 19 controllers |
+| 3.5 — SSO B2B | 3-5d | Google Workspace + Microsoft Entra + domain verification + JIT con pending approval |
 | 4 — Frontend Inv-App | 3d | Store org + switcher + select-org screen |
 | 5 — Mobile obsid | 2d | Pantalla select-org + Zustand + header |
 | 6 — Hardening | 3d | Uploads por org, audit, índices, suite de aislamiento |
 | 7 — Release | 2d | Flag ON, invalidar refresh tokens, rollout |
 
-**Total: ~30 días laborales (6 semanas).**
+**Total: ~33-35 días laborales (~7 semanas).**
 
-Ver [`phase-0-setup.md`](./phase-0-setup.md) para setup de dev.
+Ver [`phase-0-setup.md`](./phase-0-setup.md) para setup de dev, y [`phase-3-5-sso.md`](./phase-3-5-sso.md) para el plan de SSO B2B.
