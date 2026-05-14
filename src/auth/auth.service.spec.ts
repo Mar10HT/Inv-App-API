@@ -1,6 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { JwtService } from '@nestjs/jwt';
-import { UnauthorizedException, ConflictException, BadRequestException } from '@nestjs/common';
+import { UnauthorizedException, ConflictException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { UsersService } from '../users/users.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -69,6 +69,13 @@ describe('AuthService', () => {
       passwordResetToken: {
         create: jest.fn().mockResolvedValue({}),
         update: jest.fn().mockResolvedValue({}),
+      },
+      // Phase 2: AuthService.buildAuthContext queries memberships to decide
+      // whether to bake orgId into the JWT. Default to "no memberships" so
+      // existing tests behave as legacy single-tenant.
+      userOrganization: {
+        findMany: jest.fn().mockResolvedValue([]),
+        findUnique: jest.fn().mockResolvedValue(null),
       },
     };
 
@@ -291,6 +298,105 @@ describe('AuthService', () => {
           email: 'taken@example.com',
         }),
       ).rejects.toThrow(ConflictException);
+    });
+  });
+
+  describe('switchOrg', () => {
+    let prisma: any;
+
+    beforeEach(() => {
+      // Access the mocked PrismaService through the AuthService instance.
+      // (TestingModule.get(PrismaService) would re-fetch the same mock.)
+      prisma = (service as any).prisma;
+      jwtService.sign.mockReturnValue('new-access-token');
+      prisma.refreshToken.create.mockResolvedValue({ token: 'new-refresh-token' });
+    });
+
+    it('mints new tokens bound to target org when membership is active', async () => {
+      prisma.userOrganization.findUnique.mockResolvedValue({
+        userId: 'user-123',
+        organizationId: 'org_acme',
+        orgRole: 'MEMBER',
+        organization: { id: 'org_acme', slug: 'ACME', name: 'Acme', status: 'ACTIVE' },
+        user: {
+          id: 'user-123',
+          email: 'pedro@gmail.com',
+          name: 'Pedro',
+          role: 'USER',
+          permissionsVersion: 1,
+        },
+      });
+
+      const result = await service.switchOrg('user-123', 'org_acme', 'old-refresh-token');
+
+      expect(result.access_token).toBe('new-access-token');
+      expect(result.organization).toEqual({ id: 'org_acme', slug: 'ACME', name: 'Acme' });
+      expect(result.orgRole).toBe('MEMBER');
+      // Old refresh token should be revoked
+      expect(prisma.refreshToken.updateMany).toHaveBeenCalledWith({
+        where: { token: 'old-refresh-token' },
+        data: { revoked: true },
+      });
+      // New JWT should carry the org binding
+      expect(jwtService.sign).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sub: 'user-123',
+          orgId: 'org_acme',
+          orgRole: 'MEMBER',
+        }),
+      );
+    });
+
+    it('throws Forbidden when user is not a member of target org', async () => {
+      prisma.userOrganization.findUnique.mockResolvedValue(null);
+
+      await expect(
+        service.switchOrg('user-123', 'org_stranger', 'old-token'),
+      ).rejects.toThrow(ForbiddenException);
+
+      expect(prisma.refreshToken.updateMany).not.toHaveBeenCalled();
+      expect(jwtService.sign).not.toHaveBeenCalled();
+    });
+
+    it('throws Forbidden when target org is SUSPENDED', async () => {
+      prisma.userOrganization.findUnique.mockResolvedValue({
+        userId: 'user-123',
+        organizationId: 'org_suspended',
+        orgRole: 'MEMBER',
+        organization: {
+          id: 'org_suspended',
+          slug: 'SUS',
+          name: 'Suspended Co',
+          status: 'SUSPENDED',
+        },
+        user: { id: 'user-123', email: 'x@y.z', name: null, role: 'USER', permissionsVersion: 0 },
+      });
+
+      await expect(
+        service.switchOrg('user-123', 'org_suspended', 'old-token'),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('still revokes old token even if currentRefreshToken is missing', async () => {
+      prisma.userOrganization.findUnique.mockResolvedValue({
+        userId: 'user-123',
+        organizationId: 'org_acme',
+        orgRole: 'OWNER',
+        organization: { id: 'org_acme', slug: 'ACME', name: 'Acme', status: 'ACTIVE' },
+        user: {
+          id: 'user-123',
+          email: 'pedro@gmail.com',
+          name: 'Pedro',
+          role: 'USER',
+          permissionsVersion: 1,
+        },
+      });
+
+      const result = await service.switchOrg('user-123', 'org_acme', undefined);
+
+      // Empty refresh token = skip revoke, but new token still minted.
+      expect(prisma.refreshToken.updateMany).not.toHaveBeenCalled();
+      expect(result.access_token).toBe('new-access-token');
     });
   });
 });

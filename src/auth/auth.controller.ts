@@ -36,6 +36,7 @@ import { UpdateProfileDto } from './dto/update-profile.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
+import { SwitchOrgDto } from './dto/switch-org.dto';
 import { JwtAuthGuard, PermissionsGuard } from './guards';
 import { Permissions } from './decorators';
 import { PermissionsService } from '../permissions/permissions.service';
@@ -216,6 +217,65 @@ export class AuthController {
     // Web clients: tokens are in httpOnly cookies — do NOT include them in the body.
     return {
       user: result.user,
+      expires_in: 900,
+    };
+  }
+
+  /**
+   * Switch the current session to a different organization.
+   * Multi-tenant only: requires the user to have an active membership in the
+   * target org. Revokes the current refresh token and issues new tokens
+   * bound to the target org.
+   */
+  @Post('switch-org')
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.OK)
+  async switchOrg(
+    @Request() req: AuthenticatedRequest,
+    @Response({ passthrough: true }) res: ExpressResponse,
+    @Body(ValidationPipe) body: SwitchOrgDto,
+  ) {
+    const currentRefreshToken = req.cookies?.refresh_token;
+    const result = await this.authService.switchOrg(
+      req.user.userId,
+      body.organizationId,
+      currentRefreshToken,
+    );
+
+    const isMobile = req.headers['x-client-type'] === 'mobile';
+
+    if (isMobile) {
+      return {
+        user: result.user,
+        organization: result.organization,
+        orgRole: result.orgRole,
+        access_token: result.access_token,
+        refresh_token: result.refresh_token,
+        expires_in: 900,
+      };
+    }
+
+    const isProduction = process.env.NODE_ENV === 'production';
+    const cookieOptions = {
+      httpOnly: true,
+      secure: isProduction,
+      sameSite: isProduction ? ('none' as const) : ('strict' as const),
+    };
+
+    res.cookie('access_token', result.access_token, {
+      ...cookieOptions,
+      maxAge: 15 * 60 * 1000,
+    });
+    res.cookie('refresh_token', result.refresh_token, {
+      ...cookieOptions,
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+      path: '/api/auth',
+    });
+
+    return {
+      user: result.user,
+      organization: result.organization,
+      orgRole: result.orgRole,
       expires_in: 900,
     };
   }

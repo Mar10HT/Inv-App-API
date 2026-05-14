@@ -32,6 +32,7 @@ import { SearchModule } from './common/search/search.module';
 import { DischargeRequestsModule } from './discharge-requests/discharge-requests.module';
 import { WarehouseAccessModule } from './common/warehouse-access/warehouse-access.module';
 import { WarehouseAccessInterceptor } from './common/warehouse-access/warehouse-access.interceptor';
+import { TenantContextInterceptor } from './tenant/tenant-context.interceptor';
 import { ScheduledReportsModule } from './scheduled-reports/scheduled-reports.module';
 import { RolesModule } from './roles/roles.module';
 import { ClsModule } from 'nestjs-cls';
@@ -142,6 +143,13 @@ import { OrganizationsModule } from './organizations/organizations.module';
     {
       provide: APP_INTERCEPTOR,
       useClass: WarehouseAccessInterceptor,
+    },
+    // Populate per-request tenant context (orgId, roles) into nestjs-cls.
+    // Must run AFTER WarehouseAccessInterceptor and JwtAuthGuard so that
+    // request.user is fully populated. No-op when MULTI_TENANT_ENABLED=false.
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: TenantContextInterceptor,
     },
   ],
 })

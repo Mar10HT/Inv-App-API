@@ -14,10 +14,23 @@ import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
+import { JwtPayload } from './strategies/jwt.strategy';
 import * as bcrypt from 'bcryptjs';
 import { randomBytes } from 'crypto';
-import { UserRole } from '@prisma/client';
+import { UserRole, OrganizationStatus } from '@prisma/client';
 import { WarehouseAccessService } from '../common/warehouse-access/warehouse-access.service';
+
+interface AvailableOrg {
+  id: string;
+  slug: string;
+  name: string;
+  orgRole: 'OWNER' | 'ORG_ADMIN' | 'MEMBER' | 'EXTERNAL';
+}
+
+interface AuthContext {
+  payload: JwtPayload;
+  availableOrgs: AvailableOrg[] | null; // non-null only when user has 2+ ACTIVE orgs
+}
 
 @Injectable()
 export class AuthService {
@@ -99,7 +112,11 @@ export class AuthService {
   // Refresh Token Methods
   // ============================================
 
-  async createRefreshToken(userId: string, rememberMe = false): Promise<string> {
+  async createRefreshToken(
+    userId: string,
+    rememberMe = false,
+    organizationId?: string,
+  ): Promise<string> {
     const token = randomBytes(64).toString('hex');
     const expiryDays = rememberMe
       ? this.REFRESH_TOKEN_EXPIRY_REMEMBER_DAYS
@@ -111,10 +128,67 @@ export class AuthService {
         token,
         userId,
         expiresAt,
+        ...(organizationId ? { organizationId } : {}),
       },
     });
 
     return token;
+  }
+
+  /**
+   * Build the JWT payload and the available-orgs list for a user.
+   *
+   * Multi-tenant rules:
+   * - SUPER_ADMIN: payload has no orgId/orgRole. Impersonation happens via the
+   *   X-Org-Id header at request time, not via the token.
+   * - User with 0 ACTIVE orgs: same as SUPER_ADMIN at the payload level (no org
+   *   info). The interceptor will block any tenant-scoped route. Edge case kept
+   *   defensive; Phase 1 backfill maps everyone to org_on, so this shouldn't
+   *   happen in practice.
+   * - User with exactly 1 ACTIVE org: orgId + orgRole baked into the token.
+   * - User with 2+ ACTIVE orgs: payload has NO orgId. Caller returns the list
+   *   to the client so the UI shows a picker; client then exchanges the
+   *   org-less token for an org-bound one via POST /auth/switch-org.
+   */
+  async buildAuthContext(user: { id: string; email: string; role: string }): Promise<AuthContext> {
+    const payload: JwtPayload = {
+      sub: user.id,
+      email: user.email,
+      role: user.role,
+    };
+
+    if (user.role === UserRole.SUPER_ADMIN) {
+      return { payload, availableOrgs: null };
+    }
+
+    const memberships = await this.prisma.userOrganization.findMany({
+      where: { userId: user.id },
+      include: {
+        organization: { select: { id: true, slug: true, name: true, status: true } },
+      },
+    });
+
+    const active = memberships.filter(
+      (m) => m.organization.status === OrganizationStatus.ACTIVE,
+    );
+
+    if (active.length === 0) {
+      return { payload, availableOrgs: null };
+    }
+
+    if (active.length === 1) {
+      payload.orgId = active[0].organizationId;
+      payload.orgRole = active[0].orgRole;
+      return { payload, availableOrgs: null };
+    }
+
+    const availableOrgs: AvailableOrg[] = active.map((m) => ({
+      id: m.organization.id,
+      slug: m.organization.slug,
+      name: m.organization.name,
+      orgRole: m.orgRole,
+    }));
+    return { payload, availableOrgs };
   }
 
   async refreshAccessToken(refreshToken: string) {
@@ -160,12 +234,14 @@ export class AuthService {
 
     const newRefreshToken = newToken.token;
 
-    // Generate new access token
-    const payload = {
-      sub: storedToken.user.id,
+    // Generate new access token. Refresh keeps the original org binding (or
+    // returns an org-less token for users who now have multiple orgs since
+    // last refresh). switch-org is the explicit way to change orgs.
+    const { payload, availableOrgs } = await this.buildAuthContext({
+      id: storedToken.user.id,
       email: storedToken.user.email,
       role: storedToken.user.role,
-    };
+    });
     const accessToken = this.jwtService.sign(payload);
 
     const warehouseIds = await this.warehouseAccessService.getAccessibleWarehouseIds(storedToken.user.id, storedToken.user.role) ?? [];
@@ -181,6 +257,7 @@ export class AuthService {
         warehouseIds,
         permissionsVersion: storedToken.user.permissionsVersion,
       },
+      availableOrgs,
     };
   }
 
@@ -196,6 +273,97 @@ export class AuthService {
       where: { userId, revoked: false },
       data: { revoked: true },
     });
+  }
+
+  /**
+   * Exchange the current session for one bound to a different organization.
+   *
+   * Requirements:
+   * - The user must have an active UserOrganization for the target org.
+   * - The target org must be ACTIVE (not SUSPENDED/ARCHIVED).
+   *
+   * Effects:
+   * - Revokes the current refresh token (passed as argument, typically from
+   *   cookie or body) to prevent token reuse with the old org binding.
+   * - Mints a new refresh token bound to (userId, targetOrgId).
+   * - Mints a new access token with orgId + orgRole set to the target.
+   */
+  async switchOrg(
+    userId: string,
+    targetOrgId: string,
+    currentRefreshToken: string | undefined,
+    rememberMe = false,
+  ) {
+    // Load membership + target org status in one query
+    const membership = await this.prisma.userOrganization.findUnique({
+      where: { userId_organizationId: { userId, organizationId: targetOrgId } },
+      include: {
+        organization: { select: { id: true, slug: true, name: true, status: true } },
+        user: { select: { id: true, email: true, name: true, role: true, permissionsVersion: true } },
+      },
+    });
+
+    if (!membership) {
+      throw new ForbiddenException(`You are not a member of organization "${targetOrgId}"`);
+    }
+
+    if (membership.organization.status !== OrganizationStatus.ACTIVE) {
+      throw new ForbiddenException(
+        `Organization "${targetOrgId}" is ${membership.organization.status.toLowerCase()}`,
+      );
+    }
+
+    const user = membership.user;
+
+    // Revoke the current refresh token so it can't be reused against the old
+    // org. We do this BEFORE minting the new one so that if the new mint
+    // fails, the old token is still revoked (fail-closed).
+    if (currentRefreshToken) {
+      await this.revokeRefreshToken(currentRefreshToken);
+    }
+
+    // Mint new access token with org binding
+    const payload: JwtPayload = {
+      sub: user.id,
+      email: user.email,
+      role: user.role,
+      orgId: membership.organizationId,
+      orgRole: membership.orgRole,
+    };
+    const accessToken = this.jwtService.sign(payload);
+
+    // Mint new refresh token bound to the target org
+    const refreshToken = await this.createRefreshToken(
+      user.id,
+      rememberMe,
+      membership.organizationId,
+    );
+
+    const warehouseIds =
+      (await this.warehouseAccessService.getAccessibleWarehouseIds(user.id, user.role)) ?? [];
+
+    this.logger.log(
+      `Org switch: user=${user.email} from=<prev> to=${membership.organization.slug} (${targetOrgId})`,
+    );
+
+    return {
+      access_token: accessToken,
+      refresh_token: refreshToken,
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        role: user.role,
+        warehouseIds,
+        permissionsVersion: user.permissionsVersion,
+      },
+      organization: {
+        id: membership.organization.id,
+        slug: membership.organization.slug,
+        name: membership.organization.name,
+      },
+      orgRole: membership.orgRole,
+    };
   }
 
   // ============================================
@@ -359,13 +527,15 @@ export class AuthService {
     // Record successful login
     await this.recordLoginAttempt(loginDto.email, ip, true);
 
-    const payload = { sub: user.id, email: user.email, role: user.role };
+    const { payload, availableOrgs } = await this.buildAuthContext(user);
     const accessToken = this.jwtService.sign(payload);
 
-    // Create refresh token (rememberMe will be set from controller)
+    // Refresh token is bound to (userId, orgId). For multi-org users it is
+    // null until /auth/switch-org mints an org-bound one.
     const refreshToken = await this.createRefreshToken(
       user.id,
       loginDto.rememberMe,
+      payload.orgId,
     );
 
     const warehouseIds = await this.warehouseAccessService.getAccessibleWarehouseIds(user.id, user.role) ?? [];
@@ -381,6 +551,7 @@ export class AuthService {
         warehouseIds,
         permissionsVersion: user.permissionsVersion,
       },
+      availableOrgs,
     };
   }
 
@@ -398,13 +569,13 @@ export class AuthService {
       role: UserRole.USER,
     });
 
-    const payload = {
-      sub: newUser.id,
-      email: newUser.email,
-      role: newUser.role,
-    };
+    // Phase 2: a freshly registered user has no org membership yet. Phase 3
+    // will add the UsersService.create flow that wires UserOrganization too.
+    // Until then, the payload has no orgId and the user gets an org-less
+    // token; with MULTI_TENANT_ENABLED=false this is fine.
+    const { payload } = await this.buildAuthContext(newUser);
     const accessToken = this.jwtService.sign(payload);
-    const refreshToken = await this.createRefreshToken(newUser.id);
+    const refreshToken = await this.createRefreshToken(newUser.id, false, payload.orgId);
 
     return {
       access_token: accessToken,
