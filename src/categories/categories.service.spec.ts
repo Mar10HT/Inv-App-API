@@ -1,8 +1,12 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { NotFoundException, ConflictException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { CategoriesService } from './categories.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
+
+const prismaError = (code: string) =>
+  new Prisma.PrismaClientKnownRequestError('test error', { code, clientVersion: '6.x' });
 
 describe('CategoriesService', () => {
   let service: CategoriesService;
@@ -63,7 +67,7 @@ describe('CategoriesService', () => {
     });
 
     it('should throw ConflictException if category name already exists', async () => {
-      (prisma.category.create as jest.Mock).mockRejectedValue({ code: 'P2002' });
+      (prisma.category.create as jest.Mock).mockRejectedValue(prismaError('P2002'));
 
       await expect(
         service.create({ name: 'Electronics' }),
@@ -135,7 +139,7 @@ describe('CategoriesService', () => {
     });
 
     it('should throw ConflictException if name already exists', async () => {
-      (prisma.category.update as jest.Mock).mockRejectedValue({ code: 'P2002' });
+      (prisma.category.update as jest.Mock).mockRejectedValue(prismaError('P2002'));
 
       await expect(
         service.update('category-123', { name: 'Existing Name' }),
@@ -143,7 +147,7 @@ describe('CategoriesService', () => {
     });
 
     it('should throw NotFoundException if category does not exist', async () => {
-      (prisma.category.update as jest.Mock).mockRejectedValue({ code: 'P2025' });
+      (prisma.category.update as jest.Mock).mockRejectedValue(prismaError('P2025'));
 
       await expect(
         service.update('nonexistent', { name: 'Test' }),
@@ -163,7 +167,7 @@ describe('CategoriesService', () => {
     });
 
     it('should throw NotFoundException if category does not exist', async () => {
-      (prisma.category.delete as jest.Mock).mockRejectedValue({ code: 'P2025' });
+      (prisma.category.delete as jest.Mock).mockRejectedValue(prismaError('P2025'));
 
       await expect(service.remove('nonexistent')).rejects.toThrow(NotFoundException);
     });
