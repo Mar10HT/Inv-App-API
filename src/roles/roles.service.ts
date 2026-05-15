@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { PermissionsService } from '../permissions/permissions.service';
+import { AuditService } from '../audit/audit.service';
 import { CreateRoleDto } from './dto/create-role.dto';
 import { UpdateRoleDto } from './dto/update-role.dto';
 import { PERMISSIONS } from '../common/constants/permissions.constant';
@@ -15,6 +16,7 @@ export class RolesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly permissionsService: PermissionsService,
+    private readonly auditService: AuditService,
   ) {}
 
   /** Returns all roles with permission count and user count. */
@@ -74,7 +76,7 @@ export class RolesService {
     };
   }
 
-  async create(dto: CreateRoleDto) {
+  async create(dto: CreateRoleDto, actorUserId?: string) {
     const existing = await this.prisma.role.findUnique({ where: { name: dto.name } });
     if (existing) throw new ConflictException(`Role name '${dto.name}' is already taken`);
 
@@ -102,11 +104,31 @@ export class RolesService {
       throw err;
     });
 
+    this.auditService
+      .log({
+        action: 'CREATE',
+        entity: 'Role',
+        entityId: role.id,
+        userId: actorUserId,
+        changes: {
+          after: {
+            name: role.name,
+            displayName: role.displayName,
+            description: role.description,
+            permissionIds: dto.permissionIds ?? [],
+          },
+        },
+      })
+      .catch(() => undefined);
+
     return this.findOne(role.id);
   }
 
-  async update(id: string, dto: UpdateRoleDto) {
-    const role = await this.prisma.role.findUnique({ where: { id } });
+  async update(id: string, dto: UpdateRoleDto, actorUserId?: string) {
+    const role = await this.prisma.role.findUnique({
+      where: { id },
+      include: { permissions: { select: { permissionId: true } } },
+    });
     if (!role) throw new NotFoundException('Role not found');
 
     if (role.isSystem && dto.permissionIds !== undefined) {
@@ -159,10 +181,33 @@ export class RolesService {
       this.permissionsService.invalidateCacheForUsers(affectedUserIds);
     }
 
+    this.auditService
+      .log({
+        action: 'UPDATE',
+        entity: 'Role',
+        entityId: id,
+        userId: actorUserId,
+        changes: {
+          before: {
+            name: role.name,
+            displayName: role.displayName,
+            description: role.description,
+            permissionIds: role.permissions.map((p) => p.permissionId),
+          },
+          after: {
+            displayName: dto.displayName ?? role.displayName,
+            description: dto.description ?? role.description,
+            permissionIds: dto.permissionIds ?? role.permissions.map((p) => p.permissionId),
+          },
+          fields: Object.keys(dto),
+        },
+      })
+      .catch(() => undefined);
+
     return this.findOne(id);
   }
 
-  async remove(id: string) {
+  async remove(id: string, actorUserId?: string) {
     const role = await this.prisma.role.findUnique({
       where: { id },
       include: { _count: { select: { users: true } } },
@@ -177,6 +222,23 @@ export class RolesService {
     }
 
     await this.prisma.role.delete({ where: { id } });
+
+    this.auditService
+      .log({
+        action: 'DELETE',
+        entity: 'Role',
+        entityId: id,
+        userId: actorUserId,
+        changes: {
+          before: {
+            name: role.name,
+            displayName: role.displayName,
+            description: role.description,
+          },
+        },
+      })
+      .catch(() => undefined);
+
     return { message: `Role '${role.name}' deleted` };
   }
 

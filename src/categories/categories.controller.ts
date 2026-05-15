@@ -17,7 +17,8 @@ import { CreateCategoryDto } from './dto/create-category.dto';
 import { UpdateCategoryDto } from './dto/update-category.dto';
 import { PaginationDto } from '../common/dto';
 import { JwtAuthGuard, PermissionsGuard } from '../auth/guards';
-import { Permissions } from '../auth/decorators';
+import { Permissions, CurrentUser } from '../auth/decorators';
+import { AuthenticatedUser } from '../auth/interfaces/auth-user.interface';
 
 @Controller('categories')
 @UseGuards(JwtAuthGuard, PermissionsGuard)
@@ -27,8 +28,11 @@ export class CategoriesController {
   @Post()
   @HttpCode(HttpStatus.CREATED)
   @Permissions('categories:create')
-  create(@Body(ValidationPipe) createCategoryDto: CreateCategoryDto) {
-    return this.categoriesService.create(createCategoryDto);
+  create(
+    @Body(ValidationPipe) createCategoryDto: CreateCategoryDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.categoriesService.create(createCategoryDto, user.userId);
   }
 
   @Get()
@@ -48,14 +52,18 @@ export class CategoriesController {
   update(
     @Param('id') id: string,
     @Body(ValidationPipe) updateCategoryDto: UpdateCategoryDto,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.categoriesService.update(id, updateCategoryDto);
+    return this.categoriesService.update(id, updateCategoryDto, user.userId);
   }
 
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
   @Permissions('categories:delete')
-  async remove(@Param('id') id: string) {
-    await this.categoriesService.remove(id);
+  async remove(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    await this.categoriesService.remove(id, user.userId);
   }
 }

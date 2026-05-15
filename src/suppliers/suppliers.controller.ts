@@ -17,7 +17,8 @@ import { CreateSupplierDto } from './dto/create-supplier.dto';
 import { UpdateSupplierDto } from './dto/update-supplier.dto';
 import { PaginationDto } from '../common/dto';
 import { JwtAuthGuard, PermissionsGuard } from '../auth/guards';
-import { Permissions } from '../auth/decorators';
+import { Permissions, CurrentUser } from '../auth/decorators';
+import { AuthenticatedUser } from '../auth/interfaces/auth-user.interface';
 
 @Controller('suppliers')
 @UseGuards(JwtAuthGuard, PermissionsGuard)
@@ -27,8 +28,11 @@ export class SuppliersController {
   @Post()
   @HttpCode(HttpStatus.CREATED)
   @Permissions('suppliers:create')
-  create(@Body(ValidationPipe) createSupplierDto: CreateSupplierDto) {
-    return this.suppliersService.create(createSupplierDto);
+  create(
+    @Body(ValidationPipe) createSupplierDto: CreateSupplierDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.suppliersService.create(createSupplierDto, user.userId);
   }
 
   @Get()
@@ -48,14 +52,18 @@ export class SuppliersController {
   update(
     @Param('id') id: string,
     @Body(ValidationPipe) updateSupplierDto: UpdateSupplierDto,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.suppliersService.update(id, updateSupplierDto);
+    return this.suppliersService.update(id, updateSupplierDto, user.userId);
   }
 
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
   @Permissions('suppliers:delete')
-  async remove(@Param('id') id: string) {
-    await this.suppliersService.remove(id);
+  async remove(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    await this.suppliersService.remove(id, user.userId);
   }
 }

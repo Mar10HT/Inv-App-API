@@ -2,6 +2,7 @@ import { Injectable, NotFoundException, ConflictException, BadRequestException }
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { EmailService } from '../email/email.service';
+import { AuditService } from '../audit/audit.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { PaginationDto, PaginatedResult, parsePagination, buildPaginationMeta, parseSortOrder } from '../common/dto';
@@ -12,7 +13,23 @@ export class UsersService {
   constructor(
     private prisma: PrismaService,
     private emailService: EmailService,
+    private auditService: AuditService,
   ) {}
+
+  /**
+   * Snapshot of a user safe to embed in audit changes. Strips password,
+   * roleId, and any other field we don't want to materialize in the audit
+   * log. Used by create/update/remove instrumentation below.
+   */
+  private auditSnapshot(user: Record<string, unknown> | null) {
+    if (!user) return undefined;
+    return {
+      email: user['email'],
+      name: user['name'],
+      role: user['role'],
+      roleId: user['roleId'],
+    };
+  }
 
   private readonly userSelect = {
     id: true,
@@ -25,7 +42,7 @@ export class UsersService {
     // Exclude password
   };
 
-  async create(createUserDto: CreateUserDto) {
+  async create(createUserDto: CreateUserDto, actorUserId?: string) {
     try {
       // Check for existing active user with same email (soft-delete safe)
       const existingActive = await this.prisma.user.findFirst({
@@ -57,6 +74,16 @@ export class UsersService {
 
       // Send welcome email (fire-and-forget)
       this.emailService.sendWelcomeEmail(user.email, user.name || undefined).catch(() => {});
+
+      this.auditService
+        .log({
+          action: 'CREATE',
+          entity: 'User',
+          entityId: user.id,
+          userId: actorUserId,
+          changes: { after: this.auditSnapshot(user) },
+        })
+        .catch(() => undefined);
 
       // Remove password from response
       const { password, ...result } = user;
@@ -108,7 +135,7 @@ export class UsersService {
     return user;
   }
 
-  async update(id: string, updateUserDto: UpdateUserDto) {
+  async update(id: string, updateUserDto: UpdateUserDto, actorUserId?: string) {
     if (updateUserDto.role === 'SYSTEM_ADMIN') {
       throw new BadRequestException('Cannot assign SYSTEM_ADMIN role through this endpoint');
     }
@@ -124,6 +151,11 @@ export class UsersService {
       }
     }
 
+    const before = await this.prisma.user.findUnique({
+      where: { id },
+      select: { email: true, name: true, role: true, roleId: true },
+    });
+
     try {
       const user = await this.prisma.user.update({
         where: { id },
@@ -133,11 +165,26 @@ export class UsersService {
           email: true,
           name: true,
           role: true,
+          roleId: true,
           createdAt: true,
           updatedAt: true,
           // Exclude password
         },
       });
+
+      this.auditService
+        .log({
+          action: 'UPDATE',
+          entity: 'User',
+          entityId: id,
+          userId: actorUserId,
+          changes: {
+            before: this.auditSnapshot(before),
+            after: this.auditSnapshot(user),
+            fields: Object.keys(updateUserDto),
+          },
+        })
+        .catch(() => undefined);
 
       return user;
     } catch (error: unknown) {
@@ -149,7 +196,12 @@ export class UsersService {
     }
   }
 
-  async remove(id: string) {
+  async remove(id: string, actorUserId?: string) {
+    const before = await this.prisma.user.findUnique({
+      where: { id },
+      select: { email: true, name: true, role: true, roleId: true },
+    });
+
     try {
       // Soft delete: set deletedAt timestamp instead of hard delete
       await this.prisma.user.update({
@@ -162,9 +214,19 @@ export class UsersService {
       }
       throw error;
     }
+
+    this.auditService
+      .log({
+        action: 'DELETE',
+        entity: 'User',
+        entityId: id,
+        userId: actorUserId,
+        changes: { before: this.auditSnapshot(before) },
+      })
+      .catch(() => undefined);
   }
 
-  async restore(id: string) {
+  async restore(id: string, actorUserId?: string) {
     const user = await this.prisma.user.findUnique({
       where: { id },
     });
@@ -177,7 +239,7 @@ export class UsersService {
       throw new ConflictException('User is not deleted');
     }
 
-    return this.prisma.user.update({
+    const restored = await this.prisma.user.update({
       where: { id },
       data: { deletedAt: null },
       select: {
@@ -185,10 +247,23 @@ export class UsersService {
         email: true,
         name: true,
         role: true,
+        roleId: true,
         createdAt: true,
         updatedAt: true,
       },
     });
+
+    this.auditService
+      .log({
+        action: 'RESTORE',
+        entity: 'User',
+        entityId: id,
+        userId: actorUserId,
+        changes: { after: this.auditSnapshot(restored) },
+      })
+      .catch(() => undefined);
+
+    return restored;
   }
 
   // Notification preferences

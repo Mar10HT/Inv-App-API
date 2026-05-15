@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { NotFoundException } from '@nestjs/common';
 import { SuppliersService } from './suppliers.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { AuditService } from '../audit/audit.service';
 
 describe('SuppliersService', () => {
   let service: SuppliersService;
@@ -35,6 +36,7 @@ describe('SuppliersService', () => {
       providers: [
         SuppliersService,
         { provide: PrismaService, useValue: mockPrismaService },
+        { provide: AuditService, useValue: { log: jest.fn().mockResolvedValue(undefined) } },
       ],
     }).compile();
 
