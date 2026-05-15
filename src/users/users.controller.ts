@@ -22,7 +22,7 @@ import { UpdatePushTokenDto } from './dto/update-push-token.dto';
 import { PaginationDto } from '../common/dto';
 import { JwtAuthGuard, PermissionsGuard } from '../auth/guards';
 import { Permissions, CurrentUser } from '../auth/decorators';
-import { AuthenticatedUser } from '../auth/interfaces/auth-user.interface';
+import type { AuthenticatedUser } from '../auth/interfaces/auth-user.interface';
 import { WarehouseAccessService } from '../common/warehouse-access/warehouse-access.service';
 
 @Controller('users')
@@ -36,8 +36,11 @@ export class UsersController {
   @Post()
   @HttpCode(HttpStatus.CREATED)
   @Permissions('users:create')
-  create(@Body(ValidationPipe) createUserDto: CreateUserDto) {
-    return this.usersService.create(createUserDto);
+  create(
+    @Body(ValidationPipe) createUserDto: CreateUserDto,
+    @CurrentUser() actor: AuthenticatedUser,
+  ) {
+    return this.usersService.create(createUserDto, actor.userId);
   }
 
   @Get()
@@ -82,21 +85,28 @@ export class UsersController {
   update(
     @Param('id') id: string,
     @Body(ValidationPipe) updateUserDto: UpdateUserDto,
+    @CurrentUser() actor: AuthenticatedUser,
   ) {
-    return this.usersService.update(id, updateUserDto);
+    return this.usersService.update(id, updateUserDto, actor.userId);
   }
 
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
   @Permissions('users:delete')
-  async remove(@Param('id') id: string) {
-    await this.usersService.remove(id);
+  async remove(
+    @Param('id') id: string,
+    @CurrentUser() actor: AuthenticatedUser,
+  ) {
+    await this.usersService.remove(id, actor.userId);
   }
 
   @Patch(':id/restore')
   @Permissions('users:delete')
-  restore(@Param('id') id: string) {
-    return this.usersService.restore(id);
+  restore(
+    @Param('id') id: string,
+    @CurrentUser() actor: AuthenticatedUser,
+  ) {
+    return this.usersService.restore(id, actor.userId);
   }
 
   // Warehouse access management

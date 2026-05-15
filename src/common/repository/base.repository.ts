@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import { AuditService } from '../../audit/audit.service';
 import { PaginationDto, PaginatedResult, parsePagination, buildPaginationMeta } from '../dto';
 
 export interface BaseRepositoryOptions {
@@ -8,6 +9,12 @@ export interface BaseRepositoryOptions {
   defaultOrderBy?: Record<string, 'asc' | 'desc'>;
   findAllInclude?: Record<string, unknown>;
   findOneInclude?: Record<string, unknown>;
+  /**
+   * Entity name written to the audit log. Defaults to PascalCase of
+   * `modelName` (e.g. 'category' -> 'Category'). Override when the audit
+   * label should differ from the Prisma model accessor.
+   */
+  auditEntityName?: string;
 }
 
 @Injectable()
@@ -18,15 +25,51 @@ export abstract class BaseRepository<
 > {
   protected abstract readonly options: BaseRepositoryOptions;
 
-  constructor(protected readonly prisma: PrismaService) {}
+  constructor(
+    protected readonly prisma: PrismaService,
+    protected readonly auditService: AuditService,
+  ) {}
 
   protected get model(): any {
     return (this.prisma as any)[this.options.modelName];
   }
 
-  async create(createDto: TCreate): Promise<TEntity> {
+  protected get auditEntity(): string {
+    if (this.options.auditEntityName) return this.options.auditEntityName;
+    const name = this.options.modelName;
+    return name.charAt(0).toUpperCase() + name.slice(1);
+  }
+
+  /**
+   * Fields that must never appear in an audit `changes` snapshot regardless
+   * of the entity. Stripped by `summarizeForAudit` before write.
+   * - Bookkeeping (id, *At) — noise, not interesting in a diff.
+   * - Credential-equivalent (password, *token*, *secret*, *apiKey*, *hash*)
+   *   — leaking these into the audit log defeats the point of storing
+   *   them hashed/encrypted in the first place.
+   */
+  private static readonly AUDIT_FIELD_DENYLIST = /^(id|createdAt|updatedAt|deletedAt|password|.*token.*|.*secret.*|.*apiKey.*|.*hash.*)$/i;
+
+  /**
+   * Override to control which fields land in the audit `changes` snapshot.
+   * Default strips bookkeeping fields and anything matching
+   * `AUDIT_FIELD_DENYLIST`. Subclasses that need to keep a sensitive-named
+   * field can override and selectively re-include it.
+   */
+  protected summarizeForAudit(entity: object | null): Record<string, unknown> {
+    if (!entity || typeof entity !== 'object') return {};
+    const out: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(entity)) {
+      if (BaseRepository.AUDIT_FIELD_DENYLIST.test(key)) continue;
+      out[key] = value;
+    }
+    return out;
+  }
+
+  async create(createDto: TCreate, userId?: string): Promise<TEntity> {
+    let entity: TEntity;
     try {
-      return await this.model.create({
+      entity = await this.model.create({
         data: createDto,
       });
     } catch (error: unknown) {
@@ -37,6 +80,16 @@ export abstract class BaseRepository<
       }
       throw error;
     }
+
+    this.auditService.logSafe({
+      action: 'CREATE',
+      entity: this.auditEntity,
+      entityId: (entity as any).id,
+      userId,
+      changes: { after: this.summarizeForAudit(entity) },
+    });
+
+    return entity;
   }
 
   async findAll(pagination?: PaginationDto): Promise<PaginatedResult<TEntity>> {
@@ -80,9 +133,14 @@ export abstract class BaseRepository<
     return entity;
   }
 
-  async update(id: string, updateDto: TUpdate): Promise<TEntity> {
+  async update(id: string, updateDto: TUpdate, userId?: string): Promise<TEntity> {
+    // Load the prior state for the audit diff. If it doesn't exist the
+    // following update would 404 anyway, so this isn't an extra failure path.
+    const before = await this.model.findUnique({ where: { id } });
+
+    let entity: TEntity;
     try {
-      return await this.model.update({
+      entity = await this.model.update({
         where: { id },
         data: updateDto,
       });
@@ -93,9 +151,25 @@ export abstract class BaseRepository<
       }
       throw error;
     }
+
+    this.auditService.logSafe({
+      action: 'UPDATE',
+      entity: this.auditEntity,
+      entityId: id,
+      userId,
+      changes: {
+        before: this.summarizeForAudit(before),
+        after: this.summarizeForAudit(entity),
+        fields: Object.keys(updateDto as Record<string, unknown>),
+      },
+    });
+
+    return entity;
   }
 
-  async remove(id: string): Promise<void> {
+  async remove(id: string, userId?: string): Promise<void> {
+    const before = await this.model.findUnique({ where: { id } });
+
     try {
       await this.model.delete({
         where: { id },
@@ -106,6 +180,14 @@ export abstract class BaseRepository<
       }
       throw error;
     }
+
+    this.auditService.logSafe({
+      action: 'DELETE',
+      entity: this.auditEntity,
+      entityId: id,
+      userId,
+      changes: { before: this.summarizeForAudit(before) },
+    });
   }
 
   async count(where?: Record<string, unknown>): Promise<number> {

@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { AuditService } from '../audit/audit.service';
 import { BaseRepository, BaseRepositoryOptions } from '../common/repository';
 import { CreateSupplierDto } from './dto/create-supplier.dto';
 import { UpdateSupplierDto } from './dto/update-supplier.dto';
@@ -26,7 +27,7 @@ export class SuppliersService extends BaseRepository<CreateSupplierDto, UpdateSu
     },
   };
 
-  constructor(prisma: PrismaService) {
-    super(prisma);
+  constructor(prisma: PrismaService, auditService: AuditService) {
+    super(prisma, auditService);
   }
 }

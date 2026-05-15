@@ -19,7 +19,7 @@ import { UpdateWarehouseDto } from './dto/update-warehouse.dto';
 import { PaginationDto } from '../common/dto';
 import { JwtAuthGuard, PermissionsGuard } from '../auth/guards';
 import { Permissions, CurrentUser } from '../auth/decorators';
-import { AuthenticatedUser } from '../auth/interfaces/auth-user.interface';
+import type { AuthenticatedUser } from '../auth/interfaces/auth-user.interface';
 import { WarehouseAccessService } from '../common/warehouse-access/warehouse-access.service';
 
 @Controller('warehouses')
@@ -33,8 +33,11 @@ export class WarehousesController {
   @Post()
   @HttpCode(HttpStatus.CREATED)
   @Permissions('warehouse:create')
-  create(@Body(ValidationPipe) createWarehouseDto: CreateWarehouseDto) {
-    return this.warehousesService.create(createWarehouseDto);
+  create(
+    @Body(ValidationPipe) createWarehouseDto: CreateWarehouseDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.warehousesService.create(createWarehouseDto, user.userId);
   }
 
   @Get()
@@ -69,14 +72,17 @@ export class WarehousesController {
     if (user.warehouseIds !== null && !user.warehouseIds.includes(id)) {
       throw new ForbiddenException('You do not have access to this warehouse');
     }
-    return this.warehousesService.update(id, updateWarehouseDto);
+    return this.warehousesService.update(id, updateWarehouseDto, user.userId);
   }
 
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
   @Permissions('warehouse:delete')
-  async remove(@Param('id') id: string) {
-    await this.warehousesService.remove(id);
+  async remove(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    await this.warehousesService.remove(id, user.userId);
   }
 
   @Patch(':id/manager')

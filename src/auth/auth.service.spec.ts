@@ -6,6 +6,7 @@ import { UsersService } from '../users/users.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { EmailService } from '../email/email.service';
 import { WarehouseAccessService } from '../common/warehouse-access/warehouse-access.service';
+import { AuditService } from '../audit/audit.service';
 import * as bcrypt from 'bcryptjs';
 
 // Mock bcrypt
@@ -82,6 +83,11 @@ describe('AuthService', () => {
       getAccessibleWarehouseIds: jest.fn().mockResolvedValue([]),
     };
 
+    const mockAuditService = {
+      log: jest.fn().mockResolvedValue(undefined),
+      logSafe: jest.fn(),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AuthService,
@@ -90,6 +96,7 @@ describe('AuthService', () => {
         { provide: PrismaService, useValue: mockPrismaService },
         { provide: EmailService, useValue: mockEmailService },
         { provide: WarehouseAccessService, useValue: mockWarehouseAccessService },
+        { provide: AuditService, useValue: mockAuditService },
       ],
     }).compile();
 

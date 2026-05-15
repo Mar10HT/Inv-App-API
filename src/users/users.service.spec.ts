@@ -1,8 +1,13 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { NotFoundException, ConflictException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { UsersService } from './users.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { EmailService } from '../email/email.service';
+import { AuditService } from '../audit/audit.service';
+
+const prismaError = (code: string) =>
+  new Prisma.PrismaClientKnownRequestError('test error', { code, clientVersion: '6.x' });
 import * as bcrypt from 'bcryptjs';
 
 jest.mock('bcryptjs', () => ({
@@ -39,6 +44,7 @@ describe('UsersService', () => {
         create: jest.fn(),
         findMany: jest.fn(),
         findUnique: jest.fn(),
+        findFirst: jest.fn(),
         update: jest.fn(),
         count: jest.fn(),
       },
@@ -53,6 +59,7 @@ describe('UsersService', () => {
         UsersService,
         { provide: PrismaService, useValue: mockPrismaService },
         { provide: EmailService, useValue: mockEmailService },
+        { provide: AuditService, useValue: { log: jest.fn().mockResolvedValue(undefined), logSafe: jest.fn() } },
       ],
     }).compile();
 
@@ -83,7 +90,7 @@ describe('UsersService', () => {
 
     it('should throw ConflictException if email already exists', async () => {
       (bcrypt.hash as jest.Mock).mockResolvedValue('hashedPassword');
-      (prisma.user.create as jest.Mock).mockRejectedValue({ code: 'P2002' });
+      (prisma.user.create as jest.Mock).mockRejectedValue(prismaError('P2002'));
 
       await expect(
         service.create({
@@ -161,7 +168,7 @@ describe('UsersService', () => {
     });
 
     it('should throw ConflictException if email already exists', async () => {
-      (prisma.user.update as jest.Mock).mockRejectedValue({ code: 'P2002' });
+      (prisma.user.update as jest.Mock).mockRejectedValue(prismaError('P2002'));
 
       await expect(
         service.update('user-123', { email: 'existing@example.com' }),
@@ -169,7 +176,7 @@ describe('UsersService', () => {
     });
 
     it('should throw NotFoundException if user does not exist', async () => {
-      (prisma.user.update as jest.Mock).mockRejectedValue({ code: 'P2025' });
+      (prisma.user.update as jest.Mock).mockRejectedValue(prismaError('P2025'));
 
       await expect(
         service.update('nonexistent', { name: 'Test' }),
@@ -193,7 +200,7 @@ describe('UsersService', () => {
     });
 
     it('should throw NotFoundException if user does not exist', async () => {
-      (prisma.user.update as jest.Mock).mockRejectedValue({ code: 'P2025' });
+      (prisma.user.update as jest.Mock).mockRejectedValue(prismaError('P2025'));
 
       await expect(service.remove('nonexistent')).rejects.toThrow(NotFoundException);
     });
@@ -232,18 +239,20 @@ describe('UsersService', () => {
 
   describe('findByEmail', () => {
     it('should return a user by email', async () => {
-      (prisma.user.findUnique as jest.Mock).mockResolvedValue(mockUser);
+      (prisma.user.findFirst as jest.Mock).mockResolvedValue(mockUser);
 
       const result = await service.findByEmail('test@example.com');
 
       expect(result).toEqual(mockUser);
-      expect(prisma.user.findUnique).toHaveBeenCalledWith({
-        where: { email: 'test@example.com' },
-      });
+      expect(prisma.user.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { email: 'test@example.com', deletedAt: null },
+        }),
+      );
     });
 
     it('should return null if user does not exist', async () => {
-      (prisma.user.findUnique as jest.Mock).mockResolvedValue(null);
+      (prisma.user.findFirst as jest.Mock).mockResolvedValue(null);
 
       const result = await service.findByEmail('nonexistent@example.com');
 

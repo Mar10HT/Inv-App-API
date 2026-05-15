@@ -1,7 +1,12 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { SuppliersService } from './suppliers.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { AuditService } from '../audit/audit.service';
+
+const prismaError = (code: string) =>
+  new Prisma.PrismaClientKnownRequestError('test error', { code, clientVersion: '6.x' });
 
 describe('SuppliersService', () => {
   let service: SuppliersService;
@@ -35,6 +40,7 @@ describe('SuppliersService', () => {
       providers: [
         SuppliersService,
         { provide: PrismaService, useValue: mockPrismaService },
+        { provide: AuditService, useValue: { log: jest.fn().mockResolvedValue(undefined), logSafe: jest.fn() } },
       ],
     }).compile();
 
@@ -144,7 +150,7 @@ describe('SuppliersService', () => {
     });
 
     it('should throw NotFoundException if supplier does not exist', async () => {
-      (prisma.supplier.update as jest.Mock).mockRejectedValue(new Error('Not found'));
+      (prisma.supplier.update as jest.Mock).mockRejectedValue(prismaError('P2025'));
 
       await expect(
         service.update('nonexistent', { name: 'Test' }),
@@ -164,7 +170,7 @@ describe('SuppliersService', () => {
     });
 
     it('should throw NotFoundException if supplier does not exist', async () => {
-      (prisma.supplier.delete as jest.Mock).mockRejectedValue(new Error('Not found'));
+      (prisma.supplier.delete as jest.Mock).mockRejectedValue(prismaError('P2025'));
 
       await expect(service.remove('nonexistent')).rejects.toThrow(NotFoundException);
     });
