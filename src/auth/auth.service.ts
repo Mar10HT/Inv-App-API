@@ -186,23 +186,22 @@ export class AuthService {
     };
   }
 
-  async revokeRefreshToken(token: string): Promise<void> {
-    await this.prisma.refreshToken.updateMany({
-      where: { token },
-      data: { revoked: true },
-    });
-  }
-
   /**
-   * Look up the owner of a refresh token without revoking or rotating it.
-   * Used by the logout controller to audit which user is signing out before
-   * the token is invalidated.
+   * Revoke a refresh token. Returns the userId of the token's prior owner
+   * (or null if the token didn't exist) so callers can audit the LOGOUT
+   * attribution in one round-trip instead of fetching beforehand.
    */
-  async findRefreshTokenOwner(token: string): Promise<{ userId: string } | null> {
-    return this.prisma.refreshToken.findUnique({
+  async revokeRefreshToken(token: string): Promise<{ userId: string } | null> {
+    const stored = await this.prisma.refreshToken.findUnique({
       where: { token },
       select: { userId: true },
     });
+    if (!stored) return null;
+    await this.prisma.refreshToken.update({
+      where: { token },
+      data: { revoked: true },
+    });
+    return { userId: stored.userId };
   }
 
   async revokeAllUserRefreshTokens(userId: string): Promise<void> {
@@ -336,15 +335,13 @@ export class AuthService {
       });
     });
 
-    this.auditService
-      .log({
-        action: 'PASSWORD_CHANGE',
-        entity: 'User',
-        entityId: resetToken.userId,
-        userId: resetToken.userId,
-        changes: { after: { email: resetToken.user.email, source: 'reset' } },
-      })
-      .catch(() => undefined);
+    this.auditService.logSafe({
+      action: 'PASSWORD_CHANGE',
+      entity: 'User',
+      entityId: resetToken.userId,
+      userId: resetToken.userId,
+      changes: { after: { email: resetToken.user.email, source: 'reset' } },
+    });
 
     // Send confirmation email
     this.emailService
@@ -383,15 +380,13 @@ export class AuthService {
     // Record successful login
     await this.recordLoginAttempt(loginDto.email, ip, true);
 
-    this.auditService
-      .log({
-        action: 'LOGIN',
-        entity: 'User',
-        entityId: user.id,
-        userId: user.id,
-        changes: { after: { email: user.email, ip } },
-      })
-      .catch(() => undefined);
+    this.auditService.logSafe({
+      action: 'LOGIN',
+      entity: 'User',
+      entityId: user.id,
+      userId: user.id,
+      changes: { after: { email: user.email, ip } },
+    });
 
     const payload = { sub: user.id, email: user.email, role: user.role };
     const accessToken = this.jwtService.sign(payload);
@@ -515,15 +510,13 @@ export class AuthService {
     // Revoke all refresh tokens for security
     await this.revokeAllUserRefreshTokens(userId);
 
-    this.auditService
-      .log({
-        action: 'PASSWORD_CHANGE',
-        entity: 'User',
-        entityId: userId,
-        userId,
-        changes: { after: { email: user.email, source: 'self' } },
-      })
-      .catch(() => undefined);
+    this.auditService.logSafe({
+      action: 'PASSWORD_CHANGE',
+      entity: 'User',
+      entityId: userId,
+      userId,
+      changes: { after: { email: user.email, source: 'self' } },
+    });
 
     // Send confirmation email
     this.emailService

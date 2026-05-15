@@ -41,14 +41,29 @@ export abstract class BaseRepository<
   }
 
   /**
-   * Override to control which fields land in the audit `changes` snapshot.
-   * The default strips id/timestamps and any field literally named
-   * `password` so subclasses with credential columns don't leak hashes.
+   * Fields that must never appear in an audit `changes` snapshot regardless
+   * of the entity. Stripped by `summarizeForAudit` before write.
+   * - Bookkeeping (id, *At) — noise, not interesting in a diff.
+   * - Credential-equivalent (password, *token*, *secret*, *apiKey*, *hash*)
+   *   — leaking these into the audit log defeats the point of storing
+   *   them hashed/encrypted in the first place.
    */
-  protected summarizeForAudit(entity: any): Record<string, unknown> {
+  private static readonly AUDIT_FIELD_DENYLIST = /^(id|createdAt|updatedAt|deletedAt|password|.*token.*|.*secret.*|.*apiKey.*|.*hash.*)$/i;
+
+  /**
+   * Override to control which fields land in the audit `changes` snapshot.
+   * Default strips bookkeeping fields and anything matching
+   * `AUDIT_FIELD_DENYLIST`. Subclasses that need to keep a sensitive-named
+   * field can override and selectively re-include it.
+   */
+  protected summarizeForAudit(entity: object | null): Record<string, unknown> {
     if (!entity || typeof entity !== 'object') return {};
-    const { id, createdAt, updatedAt, deletedAt, password, ...rest } = entity;
-    return rest;
+    const out: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(entity)) {
+      if (BaseRepository.AUDIT_FIELD_DENYLIST.test(key)) continue;
+      out[key] = value;
+    }
+    return out;
   }
 
   async create(createDto: TCreate, userId?: string): Promise<TEntity> {
@@ -66,15 +81,13 @@ export abstract class BaseRepository<
       throw error;
     }
 
-    await this.auditService
-      .log({
-        action: 'CREATE',
-        entity: this.auditEntity,
-        entityId: (entity as any).id,
-        userId,
-        changes: { after: this.summarizeForAudit(entity) },
-      })
-      .catch(() => undefined);
+    this.auditService.logSafe({
+      action: 'CREATE',
+      entity: this.auditEntity,
+      entityId: (entity as any).id,
+      userId,
+      changes: { after: this.summarizeForAudit(entity) },
+    });
 
     return entity;
   }
@@ -139,19 +152,17 @@ export abstract class BaseRepository<
       throw error;
     }
 
-    await this.auditService
-      .log({
-        action: 'UPDATE',
-        entity: this.auditEntity,
-        entityId: id,
-        userId,
-        changes: {
-          before: this.summarizeForAudit(before),
-          after: this.summarizeForAudit(entity),
-          fields: Object.keys(updateDto as Record<string, unknown>),
-        },
-      })
-      .catch(() => undefined);
+    this.auditService.logSafe({
+      action: 'UPDATE',
+      entity: this.auditEntity,
+      entityId: id,
+      userId,
+      changes: {
+        before: this.summarizeForAudit(before),
+        after: this.summarizeForAudit(entity),
+        fields: Object.keys(updateDto as Record<string, unknown>),
+      },
+    });
 
     return entity;
   }
@@ -170,15 +181,13 @@ export abstract class BaseRepository<
       throw error;
     }
 
-    await this.auditService
-      .log({
-        action: 'DELETE',
-        entity: this.auditEntity,
-        entityId: id,
-        userId,
-        changes: { before: this.summarizeForAudit(before) },
-      })
-      .catch(() => undefined);
+    this.auditService.logSafe({
+      action: 'DELETE',
+      entity: this.auditEntity,
+      entityId: id,
+      userId,
+      changes: { before: this.summarizeForAudit(before) },
+    });
   }
 
   async count(where?: Record<string, unknown>): Promise<number> {

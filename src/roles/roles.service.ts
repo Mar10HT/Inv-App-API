@@ -104,22 +104,20 @@ export class RolesService {
       throw err;
     });
 
-    this.auditService
-      .log({
-        action: 'CREATE',
-        entity: 'Role',
-        entityId: role.id,
-        userId: actorUserId,
-        changes: {
-          after: {
-            name: role.name,
-            displayName: role.displayName,
-            description: role.description,
-            permissionIds: dto.permissionIds ?? [],
-          },
+    this.auditService.logSafe({
+      action: 'CREATE',
+      entity: 'Role',
+      entityId: role.id,
+      userId: actorUserId,
+      changes: {
+        after: {
+          name: role.name,
+          displayName: role.displayName,
+          description: role.description,
+          permissionIds: dto.permissionIds ?? [],
         },
-      })
-      .catch(() => undefined);
+      },
+    });
 
     return this.findOne(role.id);
   }
@@ -181,28 +179,26 @@ export class RolesService {
       this.permissionsService.invalidateCacheForUsers(affectedUserIds);
     }
 
-    this.auditService
-      .log({
-        action: 'UPDATE',
-        entity: 'Role',
-        entityId: id,
-        userId: actorUserId,
-        changes: {
-          before: {
-            name: role.name,
-            displayName: role.displayName,
-            description: role.description,
-            permissionIds: role.permissions.map((p) => p.permissionId),
-          },
-          after: {
-            displayName: dto.displayName ?? role.displayName,
-            description: dto.description ?? role.description,
-            permissionIds: dto.permissionIds ?? role.permissions.map((p) => p.permissionId),
-          },
-          fields: Object.keys(dto),
+    this.auditService.logSafe({
+      action: 'UPDATE',
+      entity: 'Role',
+      entityId: id,
+      userId: actorUserId,
+      changes: {
+        before: {
+          name: role.name,
+          displayName: role.displayName,
+          description: role.description,
+          permissionIds: role.permissions.map((p) => p.permissionId),
         },
-      })
-      .catch(() => undefined);
+        after: {
+          displayName: dto.displayName ?? role.displayName,
+          description: dto.description ?? role.description,
+          permissionIds: dto.permissionIds ?? role.permissions.map((p) => p.permissionId),
+        },
+        fields: Object.keys(dto),
+      },
+    });
 
     return this.findOne(id);
   }
@@ -223,21 +219,19 @@ export class RolesService {
 
     await this.prisma.role.delete({ where: { id } });
 
-    this.auditService
-      .log({
-        action: 'DELETE',
-        entity: 'Role',
-        entityId: id,
-        userId: actorUserId,
-        changes: {
-          before: {
-            name: role.name,
-            displayName: role.displayName,
-            description: role.description,
-          },
+    this.auditService.logSafe({
+      action: 'DELETE',
+      entity: 'Role',
+      entityId: id,
+      userId: actorUserId,
+      changes: {
+        before: {
+          name: role.name,
+          displayName: role.displayName,
+          description: role.description,
         },
-      })
-      .catch(() => undefined);
+      },
+    });
 
     return { message: `Role '${role.name}' deleted` };
   }

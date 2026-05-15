@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { Prisma, Warehouse } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { CreateWarehouseDto } from './dto/create-warehouse.dto';
@@ -14,8 +14,8 @@ export class WarehousesService {
     private readonly auditService: AuditService,
   ) {}
 
-  async create(createDto: CreateWarehouseDto, userId?: string) {
-    let warehouse;
+  async create(createDto: CreateWarehouseDto, userId?: string): Promise<Warehouse> {
+    let warehouse: Warehouse;
     try {
       warehouse = await this.prisma.warehouse.create({
         data: createDto,
@@ -27,23 +27,21 @@ export class WarehousesService {
       throw error;
     }
 
-    await this.auditService
-      .log({
-        action: 'CREATE',
-        entity: 'Warehouse',
-        entityId: warehouse.id,
-        userId,
-        changes: {
-          after: {
-            name: warehouse.name,
-            location: warehouse.location,
-            description: warehouse.description,
-            isActive: warehouse.isActive,
-            managerId: warehouse.managerId,
-          },
+    this.auditService.logSafe({
+      action: 'CREATE',
+      entity: 'Warehouse',
+      entityId: warehouse.id,
+      userId,
+      changes: {
+        after: {
+          name: warehouse.name,
+          location: warehouse.location,
+          description: warehouse.description,
+          isActive: warehouse.isActive,
+          managerId: warehouse.managerId,
         },
-      })
-      .catch(() => undefined);
+      },
+    });
 
     return warehouse;
   }
@@ -101,10 +99,10 @@ export class WarehousesService {
     return entity;
   }
 
-  async update(id: string, updateDto: UpdateWarehouseDto, userId?: string) {
+  async update(id: string, updateDto: UpdateWarehouseDto, userId?: string): Promise<Warehouse> {
     const before = await this.prisma.warehouse.findUnique({ where: { id } });
 
-    let warehouse;
+    let warehouse: Warehouse;
     try {
       warehouse = await this.prisma.warehouse.update({
         where: { id },
@@ -118,33 +116,31 @@ export class WarehousesService {
       throw error;
     }
 
-    await this.auditService
-      .log({
-        action: 'UPDATE',
-        entity: 'Warehouse',
-        entityId: id,
-        userId,
-        changes: {
-          before: before
-            ? {
-                name: before.name,
-                location: before.location,
-                description: before.description,
-                isActive: before.isActive,
-                managerId: before.managerId,
-              }
-            : undefined,
-          after: {
-            name: warehouse.name,
-            location: warehouse.location,
-            description: warehouse.description,
-            isActive: warehouse.isActive,
-            managerId: warehouse.managerId,
-          },
-          fields: Object.keys(updateDto),
+    this.auditService.logSafe({
+      action: 'UPDATE',
+      entity: 'Warehouse',
+      entityId: id,
+      userId,
+      changes: {
+        before: before
+          ? {
+              name: before.name,
+              location: before.location,
+              description: before.description,
+              isActive: before.isActive,
+              managerId: before.managerId,
+            }
+          : undefined,
+        after: {
+          name: warehouse.name,
+          location: warehouse.location,
+          description: warehouse.description,
+          isActive: warehouse.isActive,
+          managerId: warehouse.managerId,
         },
-      })
-      .catch(() => undefined);
+        fields: Object.keys(updateDto),
+      },
+    });
 
     return warehouse;
   }
@@ -163,24 +159,22 @@ export class WarehousesService {
       throw error;
     }
 
-    await this.auditService
-      .log({
-        action: 'DELETE',
-        entity: 'Warehouse',
-        entityId: id,
-        userId,
-        changes: {
-          before: before
-            ? {
-                name: before.name,
-                location: before.location,
-                description: before.description,
-                managerId: before.managerId,
-              }
-            : undefined,
-        },
-      })
-      .catch(() => undefined);
+    this.auditService.logSafe({
+      action: 'DELETE',
+      entity: 'Warehouse',
+      entityId: id,
+      userId,
+      changes: {
+        before: before
+          ? {
+              name: before.name,
+              location: before.location,
+              description: before.description,
+              managerId: before.managerId,
+            }
+          : undefined,
+      },
+    });
   }
 
   async count(where?: Prisma.WarehouseWhereInput): Promise<number> {

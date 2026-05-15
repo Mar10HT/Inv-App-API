@@ -75,15 +75,13 @@ export class UsersService {
       // Send welcome email (fire-and-forget)
       this.emailService.sendWelcomeEmail(user.email, user.name || undefined).catch(() => {});
 
-      this.auditService
-        .log({
-          action: 'CREATE',
-          entity: 'User',
-          entityId: user.id,
-          userId: actorUserId,
-          changes: { after: this.auditSnapshot(user) },
-        })
-        .catch(() => undefined);
+      this.auditService.logSafe({
+        action: 'CREATE',
+        entity: 'User',
+        entityId: user.id,
+        userId: actorUserId,
+        changes: { after: this.auditSnapshot(user) },
+      });
 
       // Remove password from response
       const { password, ...result } = user;
@@ -172,19 +170,17 @@ export class UsersService {
         },
       });
 
-      this.auditService
-        .log({
-          action: 'UPDATE',
-          entity: 'User',
-          entityId: id,
-          userId: actorUserId,
-          changes: {
-            before: this.auditSnapshot(before),
-            after: this.auditSnapshot(user),
-            fields: Object.keys(updateUserDto),
-          },
-        })
-        .catch(() => undefined);
+      this.auditService.logSafe({
+        action: 'UPDATE',
+        entity: 'User',
+        entityId: id,
+        userId: actorUserId,
+        changes: {
+          before: this.auditSnapshot(before),
+          after: this.auditSnapshot(user),
+          fields: Object.keys(updateUserDto),
+        },
+      });
 
       return user;
     } catch (error: unknown) {
@@ -215,15 +211,13 @@ export class UsersService {
       throw error;
     }
 
-    this.auditService
-      .log({
-        action: 'DELETE',
-        entity: 'User',
-        entityId: id,
-        userId: actorUserId,
-        changes: { before: this.auditSnapshot(before) },
-      })
-      .catch(() => undefined);
+    this.auditService.logSafe({
+      action: 'DELETE',
+      entity: 'User',
+      entityId: id,
+      userId: actorUserId,
+      changes: { before: this.auditSnapshot(before) },
+    });
   }
 
   async restore(id: string, actorUserId?: string) {
@@ -253,15 +247,13 @@ export class UsersService {
       },
     });
 
-    this.auditService
-      .log({
-        action: 'RESTORE',
-        entity: 'User',
-        entityId: id,
-        userId: actorUserId,
-        changes: { after: this.auditSnapshot(restored) },
-      })
-      .catch(() => undefined);
+    this.auditService.logSafe({
+      action: 'RESTORE',
+      entity: 'User',
+      entityId: id,
+      userId: actorUserId,
+      changes: { after: this.auditSnapshot(restored) },
+    });
 
     return restored;
   }

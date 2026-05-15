@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -19,6 +19,8 @@ export interface AuditLogData {
 
 @Injectable()
 export class AuditService {
+  private readonly logger = new Logger(AuditService.name);
+
   constructor(private prisma: PrismaService) {}
 
   async log(data: AuditLogData) {
@@ -30,6 +32,22 @@ export class AuditService {
         userId: data.userId,
         changes: data.changes ? JSON.parse(JSON.stringify(data.changes)) : null,
       },
+    });
+  }
+
+  /**
+   * Fire-and-forget audit log. Failures are logged at warn level (with the
+   * action/entity for triage) and otherwise swallowed — a broken audit write
+   * must never poison a successful business mutation. Use this from service
+   * code instead of `.catch(() => undefined)` so production failures stay
+   * observable instead of vanishing silently.
+   */
+  logSafe(data: AuditLogData): void {
+    this.log(data).catch((err: unknown) => {
+      const message = err instanceof Error ? err.message : String(err);
+      this.logger.warn(
+        `audit log failed for ${data.action} ${data.entity}:${data.entityId} — ${message}`,
+      );
     });
   }
 

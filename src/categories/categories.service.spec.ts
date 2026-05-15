@@ -32,7 +32,7 @@ describe('CategoriesService', () => {
       providers: [
         CategoriesService,
         { provide: PrismaService, useValue: mockPrismaService },
-        { provide: AuditService, useValue: { log: jest.fn().mockResolvedValue(undefined) } },
+        { provide: AuditService, useValue: { log: jest.fn().mockResolvedValue(undefined), logSafe: jest.fn() } },
       ],
     }).compile();
 

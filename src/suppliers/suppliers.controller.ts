@@ -18,7 +18,7 @@ import { UpdateSupplierDto } from './dto/update-supplier.dto';
 import { PaginationDto } from '../common/dto';
 import { JwtAuthGuard, PermissionsGuard } from '../auth/guards';
 import { Permissions, CurrentUser } from '../auth/decorators';
-import { AuthenticatedUser } from '../auth/interfaces/auth-user.interface';
+import type { AuthenticatedUser } from '../auth/interfaces/auth-user.interface';
 
 @Controller('suppliers')
 @UseGuards(JwtAuthGuard, PermissionsGuard)

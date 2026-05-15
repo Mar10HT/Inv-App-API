@@ -22,7 +22,7 @@ import { UpdatePushTokenDto } from './dto/update-push-token.dto';
 import { PaginationDto } from '../common/dto';
 import { JwtAuthGuard, PermissionsGuard } from '../auth/guards';
 import { Permissions, CurrentUser } from '../auth/decorators';
-import { AuthenticatedUser } from '../auth/interfaces/auth-user.interface';
+import type { AuthenticatedUser } from '../auth/interfaces/auth-user.interface';
 import { WarehouseAccessService } from '../common/warehouse-access/warehouse-access.service';
 
 @Controller('users')

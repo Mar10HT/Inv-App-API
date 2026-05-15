@@ -52,18 +52,16 @@ export class PermissionsGuard implements CanActivate {
         method === 'PATCH' ||
         method === 'DELETE';
       if (isMutation) {
-        this.auditService
-          .log({
-            action: 'ACCESS',
-            entity: 'system_admin_bypass',
-            entityId: user.userId,
-            userId: user.userId,
-            changes: {
-              fields: required,
-              after: { method, path: request.path },
-            },
-          })
-          .catch(() => undefined); // Non-blocking; never fail the request over audit
+        this.auditService.logSafe({
+          action: 'ACCESS',
+          entity: 'system_admin_bypass',
+          entityId: user.userId,
+          userId: user.userId,
+          changes: {
+            fields: required,
+            after: { method, path: request.path },
+          },
+        });
       }
       return true;
     }

@@ -233,20 +233,17 @@ export class AuthController {
     const refreshToken = req.cookies?.refresh_token ?? bodyRefreshToken;
     let userId: string | undefined;
     if (refreshToken) {
-      const stored = await this.authService.findRefreshTokenOwner(refreshToken);
-      userId = stored?.userId;
-      await this.authService.revokeRefreshToken(refreshToken);
+      const revoked = await this.authService.revokeRefreshToken(refreshToken);
+      userId = revoked?.userId;
     }
 
     if (userId) {
-      this.auditService
-        .log({
-          action: 'LOGOUT',
-          entity: 'User',
-          entityId: userId,
-          userId,
-        })
-        .catch(() => undefined);
+      this.auditService.logSafe({
+        action: 'LOGOUT',
+        entity: 'User',
+        entityId: userId,
+        userId,
+      });
     }
 
     const isProduction = process.env.NODE_ENV === 'production';

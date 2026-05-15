@@ -85,6 +85,7 @@ describe('AuthService', () => {
 
     const mockAuditService = {
       log: jest.fn().mockResolvedValue(undefined),
+      logSafe: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({

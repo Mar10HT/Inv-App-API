@@ -17,7 +17,7 @@ import { CreateRoleDto } from './dto/create-role.dto';
 import { UpdateRoleDto } from './dto/update-role.dto';
 import { JwtAuthGuard, PermissionsGuard } from '../auth/guards';
 import { Permissions, CurrentUser } from '../auth/decorators';
-import { AuthenticatedUser } from '../auth/interfaces/auth-user.interface';
+import type { AuthenticatedUser } from '../auth/interfaces/auth-user.interface';
 
 @ApiTags('roles')
 @Controller('roles')
