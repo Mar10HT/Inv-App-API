@@ -489,18 +489,22 @@ export class InventoryService {
       // Prisma cannot express price * quantity natively, so a raw query is used here.
       // warehouseIds === undefined means the value was never passed (admin global view),
       // warehouseIds === null means unrestricted access (no warehouse filter applied).
+      // Column names are camelCase (matching Prisma's default mapping); the
+      // models don't use @map. Using snake_case here breaks on both SQLite
+      // (column not found) and Postgres (unquoted identifiers fold to
+      // lowercase and miss the actual `"deletedAt"`/`"warehouseId"` columns).
       warehouseIds != null && warehouseIds !== undefined && warehouseIds.length > 0
         ? this.prisma.$queryRaw<[{ total: number }]>`
             SELECT COALESCE(SUM(price * quantity), 0) AS total
             FROM inventory_items
-            WHERE deleted_at IS NULL
+            WHERE "deletedAt" IS NULL
               AND price IS NOT NULL
-              AND warehouse_id IN (${Prisma.join(warehouseIds)})
+              AND "warehouseId" IN (${Prisma.join(warehouseIds)})
           `
         : this.prisma.$queryRaw<[{ total: number }]>`
             SELECT COALESCE(SUM(price * quantity), 0) AS total
             FROM inventory_items
-            WHERE deleted_at IS NULL
+            WHERE "deletedAt" IS NULL
               AND price IS NOT NULL
           `,
       this.prisma.inventoryItem.groupBy({
