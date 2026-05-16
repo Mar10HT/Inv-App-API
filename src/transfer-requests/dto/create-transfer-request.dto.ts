@@ -11,6 +11,10 @@ export class TransferRequestItemDto {
 }
 
 export class CreateTransferRequestDto {
+  @IsOptional()
+  @IsString()
+  name?: string;
+
   @IsString()
   sourceWarehouseId: string;
 
