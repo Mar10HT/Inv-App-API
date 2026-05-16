@@ -499,7 +499,7 @@ export class ReportsService {
     const loans = await this.prisma.loan.findMany({
       where,
       include: {
-        inventoryItem:        true,
+        items: { include: { inventoryItem: { select: { name: true } } } },
         sourceWarehouse:      true,
         destinationWarehouse: true,
         createdBy: { select: { name: true, email: true } },
@@ -527,10 +527,14 @@ export class ReportsService {
     const dateLocale = locale === 'en' ? 'en-US' : 'es-HN';
 
     loans.forEach((loan, idx) => {
+      const itemSummary = loan.items
+        .map((li) => `${li.inventoryItem?.name ?? ''} x${li.quantity}`)
+        .join('; ');
+      const totalQty = loan.items.reduce((sum, li) => sum + li.quantity, 0);
       const row = worksheet.addRow({
         id:          loan.id,
-        item:        loan.inventoryItem?.name || '',
-        quantity:    loan.quantity,
+        item:        itemSummary,
+        quantity:    totalQty,
         source:      loan.sourceWarehouse?.name || '',
         destination: loan.destinationWarehouse?.name || '',
         loanDate:    loan.loanDate.toLocaleDateString(dateLocale),

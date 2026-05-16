@@ -183,7 +183,7 @@ model InventoryItem {
   // Relations
   auditLogs         AuditLog[]
   transactionItems  TransactionItem[]
-  loans             Loan[]
+  loanItems         LoanItem[]
 
   // New relations for Phase 3
   stockAlerts            StockAlert[]
@@ -313,11 +313,10 @@ model TransactionItem {
   @@map("transaction_items")
 }
 
-// Loan model for tracking item loans between warehouses
+// Loan model for tracking item loans between warehouses (multi-item)
 model Loan {
   id                     String     @id @default(cuid())
-  inventoryItemId        String
-  quantity               Int        @default(1)
+  name                   String?
   sourceWarehouseId      String
   destinationWarehouseId String
   loanDate               DateTime   @default(now())
@@ -342,14 +341,13 @@ model Loan {
   returnConfirmedById    String?             // Who confirmed return
 
   // Relations
-  inventoryItem        InventoryItem @relation(fields: [inventoryItemId], references: [id])
+  items                LoanItem[]
   sourceWarehouse      Warehouse     @relation("SourceLoans", fields: [sourceWarehouseId], references: [id])
   destinationWarehouse Warehouse     @relation("DestinationLoans", fields: [destinationWarehouseId], references: [id])
   createdBy            User          @relation(fields: [createdById], references: [id])
   receivedBy           User?         @relation("ReceivedLoans", fields: [receivedById], references: [id])
   returnConfirmedBy    User?         @relation("ReturnConfirmedLoans", fields: [returnConfirmedById], references: [id])
 
-  @@index([inventoryItemId])
   @@index([sourceWarehouseId])
   @@index([destinationWarehouseId])
   @@index([status])
@@ -358,6 +356,22 @@ model Loan {
   @@index([sendQrCode])
   @@index([returnQrCode])
   @@map("loans")
+}
+
+model LoanItem {
+  id              String   @id @default(cuid())
+  loanId          String
+  inventoryItemId String
+  quantity        Int      @default(1)
+  notes           String?
+  createdAt       DateTime @default(now())
+
+  loan          Loan          @relation(fields: [loanId], references: [id], onDelete: Cascade)
+  inventoryItem InventoryItem @relation(fields: [inventoryItemId], references: [id])
+
+  @@index([loanId])
+  @@index([inventoryItemId])
+  @@map("loan_items")
 }
 
 enum LoanStatus {
@@ -401,6 +415,7 @@ enum AlertType {
 // Transfer Request model for approval workflow
 model TransferRequest {
   id                     String        @id @default(cuid())
+  name                   String?
   status                 RequestStatus @default(PENDING)
   sourceWarehouseId      String
   destinationWarehouseId String
