@@ -24,7 +24,7 @@ describe('WarehousesService', () => {
   };
 
   beforeEach(async () => {
-    const mockPrismaService = {
+    const mockPrismaService: any = {
       warehouse: {
         create: jest.fn(),
         findMany: jest.fn(),
@@ -33,7 +33,14 @@ describe('WarehousesService', () => {
         delete: jest.fn(),
         count: jest.fn(),
       },
+      user: {
+        findUnique: jest.fn().mockResolvedValue({ id: 'manager-1' }),
+      },
+      userWarehouse: {
+        upsert: jest.fn(),
+      },
     };
+    mockPrismaService.$transaction = jest.fn((cb: (tx: any) => any) => cb(mockPrismaService));
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
