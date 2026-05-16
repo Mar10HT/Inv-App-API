@@ -1,7 +1,18 @@
-import { IsString, IsNotEmpty, IsOptional, IsDateString, IsNumber, Min } from 'class-validator';
+import {
+  IsString,
+  IsNotEmpty,
+  IsOptional,
+  IsDateString,
+  IsNumber,
+  Min,
+  IsArray,
+  ArrayMinSize,
+  ValidateNested,
+} from 'class-validator';
+import { Type } from 'class-transformer';
 import { IsFutureDate } from '../../common/decorators';
 
-export class CreateLoanDto {
+export class LoanItemDto {
   @IsString()
   @IsNotEmpty()
   inventoryItemId: string;
@@ -9,6 +20,22 @@ export class CreateLoanDto {
   @IsNumber()
   @Min(1)
   quantity: number;
+
+  @IsString()
+  @IsOptional()
+  notes?: string;
+}
+
+export class CreateLoanDto {
+  @IsString()
+  @IsOptional()
+  name?: string;
+
+  @IsArray()
+  @ArrayMinSize(1)
+  @ValidateNested({ each: true })
+  @Type(() => LoanItemDto)
+  items: LoanItemDto[];
 
   @IsString()
   @IsNotEmpty()

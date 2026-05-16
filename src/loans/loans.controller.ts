@@ -109,7 +109,7 @@ export class LoansController {
     @Param('id') id: string,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.loansService.sendLoan(id, user.warehouseIds);
+    return this.loansService.sendLoan(id, user.userId, user.warehouseIds);
   }
 
   @Get(':id/qr/:type')
@@ -138,7 +138,7 @@ export class LoansController {
     @Param('id') id: string,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.loansService.initiateReturn(id, user.warehouseIds);
+    return this.loansService.initiateReturn(id, user.userId, user.warehouseIds);
   }
 
   @Post('confirm-return')
@@ -209,7 +209,7 @@ export class LoansController {
     @Param('id') id: string,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.loansService.cancel(id, user.warehouseIds);
+    return this.loansService.cancel(id, user.userId, user.warehouseIds);
   }
 
   @Delete(':id')

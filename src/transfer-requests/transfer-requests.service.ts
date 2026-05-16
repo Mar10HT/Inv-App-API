@@ -95,6 +95,7 @@ export class TransferRequestsService {
 
     const transferRequest = await this.prisma.transferRequest.create({
       data: {
+        name: dto.name?.trim() || null,
         sourceWarehouseId: dto.sourceWarehouseId,
         destinationWarehouseId: dto.destinationWarehouseId,
         requestedById,
@@ -109,12 +110,20 @@ export class TransferRequestsService {
       include: this.includeFull,
     });
 
-    await this.auditService.log({
+    this.auditService.logSafe({
       action: 'CREATE',
       entity: 'TransferRequest',
       entityId: transferRequest.id,
       userId: requestedById,
-      changes: { status: 'PENDING', itemCount: dto.items.length },
+      changes: {
+        after: {
+          name: transferRequest.name,
+          sourceWarehouseId: transferRequest.sourceWarehouseId,
+          destinationWarehouseId: transferRequest.destinationWarehouseId,
+          status: transferRequest.status,
+          items: dto.items.map((i) => ({ inventoryItemId: i.inventoryItemId, quantity: i.quantity })),
+        },
+      },
     });
 
     return transferRequest;
@@ -202,12 +211,12 @@ export class TransferRequestsService {
       });
     });
 
-    await this.auditService.log({
+    this.auditService.logSafe({
       action: 'UPDATE',
       entity: 'TransferRequest',
       entityId: id,
       userId: approvedById,
-      changes: { status: 'APPROVED' },
+      changes: { before: { status: 'PENDING' }, after: { status: 'APPROVED' }, fields: ['status'] },
     });
 
     return updated;
@@ -251,12 +260,12 @@ export class TransferRequestsService {
     };
     const qrDataUrl = await this.qrService.generateQrDataUrl(qrData);
 
-    await this.auditService.log({
+    this.auditService.logSafe({
       action: 'UPDATE',
       entity: 'TransferRequest',
       entityId: id,
       userId, // The user who performed the send action — NOT the approver or requester
-      changes: { status: 'SENT', qrGenerated: true },
+      changes: { before: { status: 'APPROVED' }, after: { status: 'SENT' }, fields: ['status'] },
     });
 
     return {
@@ -292,12 +301,16 @@ export class TransferRequestsService {
       return this.applyInventoryTransfer(tx, request, userId);
     });
 
-    await this.auditService.log({
+    this.auditService.logSafe({
       action: 'UPDATE',
       entity: 'TransferRequest',
       entityId: request.id,
       userId,
-      changes: { status: 'COMPLETED', confirmedViaQr: true, itemsTransferred: request.items.length },
+      changes: {
+        before: { status: 'SENT' },
+        after: { status: 'COMPLETED', confirmedViaQr: true, itemsTransferred: request.items.length },
+        fields: ['status'],
+      },
     });
 
     return updated;
@@ -374,12 +387,12 @@ export class TransferRequestsService {
       });
     });
 
-    await this.auditService.log({
+    this.auditService.logSafe({
       action: 'UPDATE',
       entity: 'TransferRequest',
       entityId: id,
       userId: rejectedById,
-      changes: { status: 'REJECTED', reason },
+      changes: { before: { status: 'PENDING' }, after: { status: 'REJECTED', reason }, fields: ['status'] },
     });
 
     return updated;
@@ -415,12 +428,16 @@ export class TransferRequestsService {
       return this.applyInventoryTransfer(tx, request, completedById);
     });
 
-    await this.auditService.log({
+    this.auditService.logSafe({
       action: 'UPDATE',
       entity: 'TransferRequest',
       entityId: id,
       userId: completedById,
-      changes: { status: 'COMPLETED', confirmedManually: true, itemsTransferred: request.items.length },
+      changes: {
+        before: { status: 'SENT' },
+        after: { status: 'COMPLETED', confirmedManually: true, itemsTransferred: request.items.length },
+        fields: ['status'],
+      },
     });
 
     return updated;
@@ -532,6 +549,8 @@ export class TransferRequestsService {
       if (!hasAccess) throw new ForbiddenException('You do not have access to the involved warehouses');
     }
 
+    let previousStatus: string = 'unknown';
+
     // Wrap status check and update in a single transaction to prevent TOCTOU races
     const updated = await this.prisma.$transaction(async (tx) => {
       const current = await tx.transferRequest.findUnique({ where: { id }, select: { status: true } });
@@ -540,6 +559,7 @@ export class TransferRequestsService {
           `Cannot cancel a transfer request in ${current?.status ?? 'unknown'} status`
         );
       }
+      previousStatus = current.status;
       return tx.transferRequest.update({
         where: { id },
         data: { status: RequestStatus.CANCELLED },
@@ -547,12 +567,12 @@ export class TransferRequestsService {
       });
     });
 
-    await this.auditService.log({
+    this.auditService.logSafe({
       action: 'UPDATE',
       entity: 'TransferRequest',
       entityId: id,
       userId: cancelledById,
-      changes: { status: 'CANCELLED' },
+      changes: { before: { status: previousStatus }, after: { status: 'CANCELLED' }, fields: ['status'] },
     });
 
     return updated;

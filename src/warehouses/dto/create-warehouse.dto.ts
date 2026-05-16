@@ -1,4 +1,10 @@
-import { IsString, IsNotEmpty, IsOptional, IsBoolean } from 'class-validator';
+import {
+  IsString,
+  IsNotEmpty,
+  IsOptional,
+  IsBoolean,
+  ValidateIf,
+} from 'class-validator';
 
 export class CreateWarehouseDto {
   @IsString()
@@ -16,4 +22,10 @@ export class CreateWarehouseDto {
   @IsBoolean()
   @IsOptional()
   isActive?: boolean;
+
+  // Optional. Empty string is normalized to null so the form can clear it.
+  @ValidateIf((_, value) => value !== null && value !== '')
+  @IsString()
+  @IsOptional()
+  managerId?: string | null;
 }

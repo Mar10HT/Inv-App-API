@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
 import { Prisma, Warehouse } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
@@ -14,11 +14,41 @@ export class WarehousesService {
     private readonly auditService: AuditService,
   ) {}
 
+  private normalizeManagerId(value: string | null | undefined): string | null | undefined {
+    if (value === undefined) return undefined;
+    if (value === null || value === '') return null;
+    return value;
+  }
+
+  private async assertManagerExists(managerId: string): Promise<void> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: managerId },
+      select: { id: true },
+    });
+    if (!user) throw new BadRequestException('Manager user not found');
+  }
+
   async create(createDto: CreateWarehouseDto, userId?: string): Promise<Warehouse> {
+    const managerId = this.normalizeManagerId(createDto.managerId);
+    if (managerId) await this.assertManagerExists(managerId);
+
+    const { managerId: _ignored, ...rest } = createDto;
+    void _ignored;
+
     let warehouse: Warehouse;
     try {
-      warehouse = await this.prisma.warehouse.create({
-        data: createDto,
+      warehouse = await this.prisma.$transaction(async (tx) => {
+        const created = await tx.warehouse.create({
+          data: { ...rest, managerId: managerId ?? null },
+        });
+        if (managerId) {
+          await tx.userWarehouse.upsert({
+            where: { userId_warehouseId: { userId: managerId, warehouseId: created.id } },
+            create: { userId: managerId, warehouseId: created.id },
+            update: {},
+          });
+        }
+        return created;
       });
     } catch (error: unknown) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
@@ -102,11 +132,31 @@ export class WarehousesService {
   async update(id: string, updateDto: UpdateWarehouseDto, userId?: string): Promise<Warehouse> {
     const before = await this.prisma.warehouse.findUnique({ where: { id } });
 
+    const managerIdProvided = Object.prototype.hasOwnProperty.call(updateDto, 'managerId');
+    const managerId = managerIdProvided ? this.normalizeManagerId(updateDto.managerId) : undefined;
+    if (managerId) await this.assertManagerExists(managerId);
+
+    const { managerId: _ignored, ...rest } = updateDto;
+    void _ignored;
+    const data: Prisma.WarehouseUpdateInput = { ...rest };
+    if (managerIdProvided) {
+      data.manager = managerId
+        ? { connect: { id: managerId } }
+        : { disconnect: true };
+    }
+
     let warehouse: Warehouse;
     try {
-      warehouse = await this.prisma.warehouse.update({
-        where: { id },
-        data: updateDto,
+      warehouse = await this.prisma.$transaction(async (tx) => {
+        const updated = await tx.warehouse.update({ where: { id }, data });
+        if (managerIdProvided && managerId) {
+          await tx.userWarehouse.upsert({
+            where: { userId_warehouseId: { userId: managerId, warehouseId: id } },
+            create: { userId: managerId, warehouseId: id },
+            update: {},
+          });
+        }
+        return updated;
       });
     } catch (error: unknown) {
       if (error instanceof Prisma.PrismaClientKnownRequestError) {
