@@ -12,19 +12,25 @@ import {
   Query,
   UseGuards,
   ForbiddenException,
+  Res,
 } from '@nestjs/common';
+import { Response } from 'express';
 import { LoansService } from './loans.service';
 import { CreateLoanDto } from './dto/create-loan.dto';
 import { UpdateLoanDto, ReturnLoanDto } from './dto/update-loan.dto';
 import { JwtAuthGuard, PermissionsGuard } from '../auth/guards';
 import { Permissions, CurrentUser } from '../auth/decorators';
 import { PaginationDto } from '../common/dto';
-import { AuthenticatedUser } from '../auth/interfaces/auth-user.interface';
+import type { AuthenticatedUser } from '../auth/interfaces/auth-user.interface';
+import { PdfReceiptsService } from '../pdf-receipts/pdf-receipts.service';
 
 @Controller('loans')
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 export class LoansController {
-  constructor(private readonly loansService: LoansService) {}
+  constructor(
+    private readonly loansService: LoansService,
+    private readonly pdfReceipts: PdfReceiptsService,
+  ) {}
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
@@ -99,6 +105,27 @@ export class LoansController {
     @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.loansService.findOne(id, user.warehouseIds);
+  }
+
+  @Get(':id/pdf')
+  @Permissions('loans:view')
+  async exportPdf(
+    @Param('id') id: string,
+    @Query('locale') locale: string | undefined,
+    @CurrentUser() user: AuthenticatedUser,
+    @Res() res: Response,
+  ) {
+    const resolvedLocale = locale === 'en' ? 'en' : 'es';
+    // Reuse findOne for warehouse-access enforcement before generating
+    await this.loansService.findOne(id, user.warehouseIds);
+    const buffer = await this.pdfReceipts.generateLoanReceipt(id, resolvedLocale);
+
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename=prestamo_${id}.pdf`,
+      'Content-Length': buffer.length,
+    });
+    res.send(buffer);
   }
 
   // ==================== QR Code Endpoints ====================
