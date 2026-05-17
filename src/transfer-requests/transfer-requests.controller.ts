@@ -11,7 +11,9 @@ import {
   HttpCode,
   HttpStatus,
   ForbiddenException,
+  Res,
 } from '@nestjs/common';
+import { Response } from 'express';
 import { ApiTags, ApiQuery } from '@nestjs/swagger';
 import { TransferRequestsService } from './transfer-requests.service';
 import { CreateTransferRequestDto } from './dto/create-transfer-request.dto';
@@ -19,13 +21,17 @@ import { JwtAuthGuard, PermissionsGuard } from '../auth/guards';
 import { Permissions, CurrentUser } from '../auth/decorators';
 import { PaginationDto } from '../common/dto/pagination.dto';
 import { RequestStatus } from '@prisma/client';
-import { AuthenticatedUser } from '../auth/interfaces/auth-user.interface';
+import type { AuthenticatedUser } from '../auth/interfaces/auth-user.interface';
+import { PdfReceiptsService } from '../pdf-receipts/pdf-receipts.service';
 
 @ApiTags('transfer-requests')
 @Controller('transfer-requests')
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 export class TransferRequestsController {
-  constructor(private readonly transferRequestsService: TransferRequestsService) {}
+  constructor(
+    private readonly transferRequestsService: TransferRequestsService,
+    private readonly pdfReceipts: PdfReceiptsService,
+  ) {}
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
@@ -74,8 +80,31 @@ export class TransferRequestsController {
 
   @Get(':id')
   @Permissions('transfers:view')
-  findOne(@Param('id') id: string) {
-    return this.transferRequestsService.findOne(id);
+  findOne(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.transferRequestsService.findOne(id, user.warehouseIds);
+  }
+
+  @Get(':id/pdf')
+  @Permissions('transfers:view')
+  async exportPdf(
+    @Param('id') id: string,
+    @Query('locale') locale: string | undefined,
+    @CurrentUser() user: AuthenticatedUser,
+    @Res() res: Response,
+  ) {
+    const resolvedLocale = locale === 'en' ? 'en' : 'es';
+    // Enforce warehouse access before generating the PDF.
+    await this.transferRequestsService.findOne(id, user.warehouseIds);
+    const buffer = await this.pdfReceipts.generateTransferReceipt(id, resolvedLocale);
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename=transferencia_${id}.pdf`,
+      'Content-Length': buffer.length,
+    });
+    res.send(buffer);
   }
 
   // ==================== QR-Based Operations ====================

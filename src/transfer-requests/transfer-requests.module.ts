@@ -5,9 +5,10 @@ import { PrismaModule } from '../prisma/prisma.module';
 import { AuditModule } from '../audit/audit.module';
 import { QrModule } from '../qr/qr.module';
 import { PermissionsModule } from '../permissions/permissions.module';
+import { PdfReceiptsModule } from '../pdf-receipts/pdf-receipts.module';
 
 @Module({
-  imports: [PrismaModule, AuditModule, QrModule, PermissionsModule],
+  imports: [PrismaModule, AuditModule, QrModule, PermissionsModule, PdfReceiptsModule],
   controllers: [TransferRequestsController],
   providers: [TransferRequestsService],
   exports: [TransferRequestsService],
