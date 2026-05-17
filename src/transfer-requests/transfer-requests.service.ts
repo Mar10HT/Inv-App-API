@@ -155,7 +155,7 @@ export class TransferRequestsService {
     return this.findAll(pagination, RequestStatus.PENDING, warehouseIds);
   }
 
-  async findOne(id: string) {
+  async findOne(id: string, userWarehouseIds?: string[] | null) {
     const request = await this.prisma.transferRequest.findUnique({
       where: { id },
       include: this.includeFull,
@@ -163,6 +163,15 @@ export class TransferRequestsService {
 
     if (!request) {
       throw new NotFoundException('Transfer request not found');
+    }
+
+    if (userWarehouseIds != null) {
+      const hasAccess =
+        userWarehouseIds.includes(request.sourceWarehouseId) ||
+        userWarehouseIds.includes(request.destinationWarehouseId);
+      if (!hasAccess) {
+        throw new ForbiddenException('You do not have access to this transfer');
+      }
     }
 
     return request;
