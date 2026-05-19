@@ -62,7 +62,14 @@ const translations: Record<string, Record<Locale, string>> = {
   'wsTransfers':      { en: 'Transfer Requests', es: 'Transferencias'    },
   'wsStockTakes':     { en: 'Stock Takes',       es: 'Conteos Fisicos'   },
   'wsDischarges':     { en: 'Discharges',        es: 'Bajas'             },
+  'wsOutflows':       { en: 'Outflows',          es: 'Salidas'           },
   'wsDetail':         { en: 'Detail',            es: 'Detalle'           },
+  // Outflow headers
+  'reason':           { en: 'Reason',            es: 'Motivo'            },
+  'name':             { en: 'Name',              es: 'Nombre'            },
+  'totalQty':         { en: 'Total Qty',         es: 'Cant. Total'       },
+  'cancelledBy':      { en: 'Cancelled By',      es: 'Cancelado Por'     },
+  'cancelledAt':      { en: 'Cancelled At',      es: 'Fecha Cancelacion' },
   // Transfer headers
   'requestedBy':      { en: 'Requested By',      es: 'Solicitado Por'    },
   'approvedBy':       { en: 'Approved By',       es: 'Aprobado Por'      },
@@ -100,6 +107,7 @@ const COLORS = {
   transfers:   'FF8B5CF6', // purple
   stockTakes:  'FF0EA5E9', // sky blue
   discharges:  'FFEF4444', // red
+  outflows:    'FFEA580C', // orange
 
   // Alternating row tint
   altRow:      'FFF9FAFB',
@@ -119,6 +127,22 @@ const STATUS_LABELS: Record<string, Record<Locale, string>> = {
   TRANSFER:     { en: 'Transfer',     es: 'Transferencia' },
   ADJUSTMENT:   { en: 'Adjustment',   es: 'Ajuste'      },
   DISCHARGE:    { en: 'Discharge',    es: 'Baja'        },
+};
+
+// Outflow-specific labels — keep separate from STATUS_LABELS to avoid
+// clashing with other entity statuses (e.g. loan ACTIVE).
+const OUTFLOW_STATUS_LABELS: Record<string, Record<Locale, string>> = {
+  ACTIVE:    { en: 'Recorded',  es: 'Registrada' },
+  CANCELLED: { en: 'Cancelled', es: 'Cancelada'  },
+};
+
+const OUTFLOW_REASON_LABELS: Record<string, Record<Locale, string>> = {
+  DAMAGED:  { en: 'Damaged',         es: 'Dañado'         },
+  LOST:     { en: 'Lost',            es: 'Perdido'        },
+  EXPIRED:  { en: 'Expired',         es: 'Vencido'        },
+  CONSUMED: { en: 'Consumed',        es: 'Consumo'        },
+  SOLD:     { en: 'Sold',            es: 'Venta'          },
+  OTHER:    { en: 'Other',           es: 'Otro'           },
 };
 
 @Injectable()
@@ -770,6 +794,76 @@ export class ReportsService {
         resolvedBy:   dr.resolvedBy?.name || dr.resolvedBy?.email || '-',
         resolvedDate: dr.resolvedAt?.toLocaleDateString(dateLocale) || '-',
         notes:        dr.notes || '',
+      });
+      row.height = 20;
+      if (idx % 2 === 0) {
+        row.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLORS.altRow } };
+      }
+    });
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    return Buffer.from(buffer);
+  }
+
+  async generateOutflowsReport(
+    warehouseIds?: string[] | null,
+    locale: Locale = 'es',
+  ): Promise<Buffer> {
+    const ExcelJS = await import('exceljs');
+    const workbook = new ExcelJS.Workbook();
+    await this.applyWorkbookMeta(workbook, this.t('wsOutflows', locale));
+    const worksheet = workbook.addWorksheet(this.t('wsOutflows', locale));
+
+    const where: Prisma.OutflowWhereInput = warehouseIds?.length
+      ? { warehouseId: { in: warehouseIds } }
+      : {};
+
+    const outflows = await this.prisma.outflow.findMany({
+      where,
+      include: {
+        warehouse:   true,
+        createdBy:   { select: { name: true, email: true } },
+        cancelledBy: { select: { name: true, email: true } },
+        items:       true,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    worksheet.columns = [
+      { header: this.t('id', locale),           key: 'id',           width: 25 },
+      { header: this.t('name', locale),         key: 'name',         width: 28 },
+      { header: this.t('status', locale),       key: 'status',       width: 14 },
+      { header: this.t('reason', locale),       key: 'reason',       width: 16 },
+      { header: this.t('warehouse', locale),    key: 'warehouse',    width: 22 },
+      { header: this.t('itemCount', locale),    key: 'itemCount',    width: 12 },
+      { header: this.t('totalQty', locale),     key: 'totalQty',     width: 12 },
+      { header: this.t('user', locale),         key: 'createdBy',    width: 22 },
+      { header: this.t('date', locale),         key: 'createdAt',    width: 16 },
+      { header: this.t('cancelledBy', locale),  key: 'cancelledBy',  width: 22 },
+      { header: this.t('cancelledAt', locale),  key: 'cancelledAt',  width: 16 },
+      { header: this.t('notes', locale),        key: 'notes',        width: 32 },
+    ];
+
+    this.applyHeader(worksheet, COLORS.outflows);
+    worksheet.views = [{ state: 'frozen', ySplit: 1 }];
+    worksheet.autoFilter = { from: 'A1', to: 'L1' };
+
+    const dateLocale = locale === 'en' ? 'en-US' : 'es-HN';
+
+    outflows.forEach((o, idx) => {
+      const row = worksheet.addRow({
+        id:           o.id,
+        name:         o.name || '-',
+        status:       OUTFLOW_STATUS_LABELS[o.status]?.[locale] ?? o.status,
+        reason:       OUTFLOW_REASON_LABELS[o.reason]?.[locale] ?? o.reason,
+        warehouse:    o.warehouse?.name || '',
+        itemCount:    o.items.length,
+        totalQty:     o.items.reduce((sum, it) => sum + it.quantity, 0),
+        createdBy:    o.createdBy?.name || o.createdBy?.email || '-',
+        createdAt:    o.createdAt.toLocaleDateString(dateLocale),
+        cancelledBy:  o.cancelledBy?.name || o.cancelledBy?.email || '-',
+        cancelledAt:  o.cancelledAt?.toLocaleDateString(dateLocale) || '-',
+        notes:        o.notes || '',
       });
       row.height = 20;
       if (idx % 2 === 0) {

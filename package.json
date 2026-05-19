@@ -8,7 +8,7 @@
   "scripts": {
     "build": "nest build",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
-    "start": "prisma db push --schema=./prisma/schema.prod.prisma --skip-generate --accept-data-loss && bun dist/main",
+    "start": "prisma db execute --schema=./prisma/schema.prod.prisma --file=./prisma/migrate-loan-multi-item.sql && prisma db push --schema=./prisma/schema.prod.prisma --skip-generate --accept-data-loss && bun dist/main",
     "start:dev": "cross-env NODE_ENV=development nest start --watch",
     "start:debug": "cross-env NODE_ENV=development nest start --debug --watch",
     "start:prod": "bun dist/main",

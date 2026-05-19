@@ -53,6 +53,10 @@ model User {
   // Discharge Request relations
   resolvedDischarges  DischargeRequest[]  @relation("ResolvedDischarges")
 
+  // Outflow relations
+  createdOutflows     Outflow[]           @relation("CreatedOutflows")
+  cancelledOutflows   Outflow[]           @relation("CancelledOutflows")
+
   // Auth tokens relations
   refreshTokens       RefreshToken[]
   passwordResetTokens PasswordResetToken[]
@@ -107,6 +111,9 @@ model Warehouse {
 
   // Discharge Request relations
   dischargeRequests       DischargeRequest[]
+
+  // Outflow relations
+  outflows                Outflow[]
 
   scheduledReports        ScheduledReport[]
 
@@ -183,13 +190,14 @@ model InventoryItem {
   // Relations
   auditLogs         AuditLog[]
   transactionItems  TransactionItem[]
-  loans             Loan[]
+  loanItems         LoanItem[]
 
   // New relations for Phase 3
   stockAlerts            StockAlert[]
   transferRequestItems   TransferRequestItem[]
   stockTakeItems         StockTakeItem[]
   dischargeRequestItems  DischargeRequestItem[]
+  outflowItems           OutflowItem[]
 
   @@index([category])
   @@index([categoryId])
@@ -313,11 +321,10 @@ model TransactionItem {
   @@map("transaction_items")
 }
 
-// Loan model for tracking item loans between warehouses
+// Loan model for tracking item loans between warehouses (multi-item)
 model Loan {
   id                     String     @id @default(cuid())
-  inventoryItemId        String
-  quantity               Int        @default(1)
+  name                   String?
   sourceWarehouseId      String
   destinationWarehouseId String
   loanDate               DateTime   @default(now())
@@ -342,14 +349,13 @@ model Loan {
   returnConfirmedById    String?             // Who confirmed return
 
   // Relations
-  inventoryItem        InventoryItem @relation(fields: [inventoryItemId], references: [id])
+  items                LoanItem[]
   sourceWarehouse      Warehouse     @relation("SourceLoans", fields: [sourceWarehouseId], references: [id])
   destinationWarehouse Warehouse     @relation("DestinationLoans", fields: [destinationWarehouseId], references: [id])
   createdBy            User          @relation(fields: [createdById], references: [id])
   receivedBy           User?         @relation("ReceivedLoans", fields: [receivedById], references: [id])
   returnConfirmedBy    User?         @relation("ReturnConfirmedLoans", fields: [returnConfirmedById], references: [id])
 
-  @@index([inventoryItemId])
   @@index([sourceWarehouseId])
   @@index([destinationWarehouseId])
   @@index([status])
@@ -358,6 +364,22 @@ model Loan {
   @@index([sendQrCode])
   @@index([returnQrCode])
   @@map("loans")
+}
+
+model LoanItem {
+  id              String   @id @default(cuid())
+  loanId          String
+  inventoryItemId String
+  quantity        Int      @default(1)
+  notes           String?
+  createdAt       DateTime @default(now())
+
+  loan          Loan          @relation(fields: [loanId], references: [id], onDelete: Cascade)
+  inventoryItem InventoryItem @relation(fields: [inventoryItemId], references: [id])
+
+  @@index([loanId])
+  @@index([inventoryItemId])
+  @@map("loan_items")
 }
 
 enum LoanStatus {
@@ -401,6 +423,7 @@ enum AlertType {
 // Transfer Request model for approval workflow
 model TransferRequest {
   id                     String        @id @default(cuid())
+  name                   String?
   status                 RequestStatus @default(PENDING)
   sourceWarehouseId      String
   destinationWarehouseId String
@@ -682,6 +705,72 @@ model RolePermission {
   @@index([roleId])
   @@index([permissionId])
   @@map("role_permissions")
+}
+
+// ============================================
+// Outflows (write-offs / salidas)
+// Internal record of items leaving inventory permanently for reasons
+// other than loans or transfers (damaged, lost, expired, consumed, sold).
+// Stock is decremented at creation; cancelling restores it.
+// ============================================
+
+model Outflow {
+  id                  String         @id @default(cuid())
+  name                String?
+  warehouseId         String
+  reason              OutflowReason
+  status              OutflowStatus  @default(ACTIVE)
+  notes               String?
+  createdById         String
+  cancelledById       String?
+  cancelledAt         DateTime?
+  cancellationReason  String?
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+
+  warehouse   Warehouse     @relation(fields: [warehouseId], references: [id])
+  createdBy   User          @relation("CreatedOutflows", fields: [createdById], references: [id])
+  cancelledBy User?         @relation("CancelledOutflows", fields: [cancelledById], references: [id])
+  items       OutflowItem[]
+
+  @@index([warehouseId])
+  @@index([status])
+  @@index([reason])
+  @@index([createdById])
+  @@index([createdAt])
+  @@map("outflows")
+}
+
+model OutflowItem {
+  id              String   @id @default(cuid())
+  outflowId       String
+  inventoryItemId String
+  quantity        Int      @default(1)
+  unitPrice       Float?   // Snapshot of price at outflow time (for PDF)
+  currency        String?  // Snapshot of currency at outflow time
+  notes           String?
+  createdAt       DateTime @default(now())
+
+  outflow       Outflow       @relation(fields: [outflowId], references: [id], onDelete: Cascade)
+  inventoryItem InventoryItem @relation(fields: [inventoryItemId], references: [id])
+
+  @@index([outflowId])
+  @@index([inventoryItemId])
+  @@map("outflow_items")
+}
+
+enum OutflowReason {
+  DAMAGED
+  LOST
+  EXPIRED
+  CONSUMED
+  SOLD
+  OTHER
+}
+
+enum OutflowStatus {
+  ACTIVE     // Outflow is recorded; stock has been decremented
+  CANCELLED  // Outflow was reverted; stock has been restored
 }
 
 // Password reset tokens
