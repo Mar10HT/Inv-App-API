@@ -4,7 +4,7 @@ import { AuditService } from '../audit/audit.service';
 import { QrService } from '../qr/qr.service';
 import { CreateDischargeRequestDto } from './dto/create-discharge-request.dto';
 import { FilterDischargeRequestDto } from './dto/filter-discharge-request.dto';
-import { DischargeRequestStatus, Prisma } from '@prisma/client';
+import { DischargeRequestStatus, OutflowReason, OutflowStatus, Prisma } from '@prisma/client';
 import { warehouseFilter } from '../common/warehouse-access/warehouse-filter.util';
 
 @Injectable()
@@ -214,12 +214,20 @@ export class DischargeRequestsService {
     }
 
     // Validate and decrement inventory in a single transaction to prevent race conditions
+    let createdOutflowId: string | null = null;
     const updated = await this.prisma.$transaction(async (tx) => {
       // Validate all items exist, are not soft-deleted, and have sufficient quantity
       const inventoryItems = await Promise.all(
         request.items.map((item) =>
           tx.inventoryItem.findFirst({
             where: { id: item.inventoryItemId, deletedAt: null },
+            select: {
+              id: true,
+              name: true,
+              quantity: true,
+              price: true,
+              currency: true,
+            },
           }),
         ),
       );
@@ -249,6 +257,32 @@ export class DischargeRequestsService {
         ),
       );
 
+      // Approved discharges are recorded as outflows (CONSUMED) so they show up
+      // in the Salidas module alongside manually-created write-offs. The stock
+      // was already decremented above, so we don't go through OutflowsService.
+      const outflow = await tx.outflow.create({
+        data: {
+          name: `Discharge: ${request.requesterName}`,
+          warehouseId: request.warehouseId,
+          reason: OutflowReason.CONSUMED,
+          status: OutflowStatus.ACTIVE,
+          notes: request.justification ?? null,
+          createdById: resolvedById,
+          items: {
+            create: request.items.map((item, i) => {
+              const snapshot = inventoryItems[i];
+              return {
+                inventoryItemId: item.inventoryItemId,
+                quantity: item.quantity,
+                unitPrice: snapshot?.price ?? null,
+                currency: snapshot?.currency ?? null,
+              };
+            }),
+          },
+        },
+      });
+      createdOutflowId = outflow.id;
+
       return tx.dischargeRequest.update({
         where: { id },
         data: {
@@ -265,8 +299,26 @@ export class DischargeRequestsService {
       entity: 'DischargeRequest',
       entityId: id,
       userId: resolvedById,
-      changes: { status: 'COMPLETED', itemsDelivered: request.items.length },
+      changes: { status: 'COMPLETED', itemsDelivered: request.items.length, outflowId: createdOutflowId },
     });
+
+    if (createdOutflowId) {
+      await this.auditService.log({
+        action: 'CREATE',
+        entity: 'Outflow',
+        entityId: createdOutflowId,
+        userId: resolvedById,
+        changes: {
+          after: {
+            warehouseId: request.warehouseId,
+            reason: 'CONSUMED',
+            status: 'ACTIVE',
+            itemCount: request.items.length,
+            sourceDischargeRequestId: id,
+          },
+        },
+      });
+    }
 
     return updated;
   }

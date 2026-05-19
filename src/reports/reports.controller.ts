@@ -200,4 +200,24 @@ export class ReportsController {
 
     res.send(buffer);
   }
+
+  @Get('outflows/excel')
+  @Permissions('reports:export')
+  async exportOutflowsExcel(
+    @Query('warehouseId') warehouseId: string | undefined,
+    @Query('locale') locale: 'en' | 'es' = 'es',
+    @CurrentUser() user: AuthenticatedUser,
+    @Res() res: Response,
+  ) {
+    const scope = this.scope(user, warehouseId);
+    const buffer = await this.reportsService.generateOutflowsReport(scope, locale);
+
+    res.set({
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': `attachment; filename=salidas_${Date.now()}.xlsx`,
+      'Content-Length': buffer.length,
+    });
+
+    res.send(buffer);
+  }
 }
