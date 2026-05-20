@@ -25,6 +25,8 @@ import { warehouseFilter } from '../common/warehouse-access/warehouse-filter.uti
 interface OutflowItemSeed {
   inventoryItemId: string;
   quantity: number;
+  itemName?: string | null;
+  serviceTag?: string | null;
   unitPrice?: number | null;
   currency?: string | null;
   notes?: string | null;
@@ -103,6 +105,8 @@ export class OutflowsService {
       where: { id: { in: ids }, deletedAt: null },
       select: {
         id: true,
+        name: true,
+        serviceTag: true,
         warehouseId: true,
         quantity: true,
         price: true,
@@ -137,6 +141,8 @@ export class OutflowsService {
         return {
           inventoryItemId: line.inventoryItemId,
           quantity: line.quantity,
+          itemName: snapshot?.name ?? null,
+          serviceTag: snapshot?.serviceTag ?? null,
           unitPrice: snapshot?.price ?? null,
           currency: snapshot?.currency ?? null,
           notes: line.notes ?? null,
@@ -196,6 +202,8 @@ export class OutflowsService {
             create: args.items.map((line) => ({
               inventoryItemId: line.inventoryItemId,
               quantity: line.quantity,
+              itemName: line.itemName ?? null,
+              serviceTag: line.serviceTag ?? null,
               unitPrice: line.unitPrice ?? null,
               currency: line.currency ?? null,
               notes: line.notes ?? null,

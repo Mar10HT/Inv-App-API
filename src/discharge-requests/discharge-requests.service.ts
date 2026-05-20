@@ -224,6 +224,7 @@ export class DischargeRequestsService {
             select: {
               id: true,
               name: true,
+              serviceTag: true,
               quantity: true,
               price: true,
               currency: true,
@@ -274,6 +275,8 @@ export class DischargeRequestsService {
               return {
                 inventoryItemId: item.inventoryItemId,
                 quantity: item.quantity,
+                itemName: snapshot?.name ?? null,
+                serviceTag: snapshot?.serviceTag ?? null,
                 unitPrice: snapshot?.price ?? null,
                 currency: snapshot?.currency ?? null,
               };
