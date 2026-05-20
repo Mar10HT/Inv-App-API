@@ -191,10 +191,10 @@ export class PdfReceiptsService {
       createdAt: outflow.createdAt,
       createdBy: outflow.createdBy?.name || outflow.createdBy?.email || '',
       items: outflow.items.map((line) => ({
-        name: line.inventoryItem?.name ?? '',
-        serviceTag: line.inventoryItem?.serviceTag,
+        // Prefer snapshot fields — they survive item renames and deletions.
+        name: line.itemName ?? line.inventoryItem?.name ?? '',
+        serviceTag: line.serviceTag ?? line.inventoryItem?.serviceTag,
         quantity: line.quantity,
-        // OutflowItem snapshots price/currency at creation time
         unitPrice: line.unitPrice ?? null,
         currency: line.currency ?? null,
       })),

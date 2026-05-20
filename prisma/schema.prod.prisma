@@ -746,13 +746,19 @@ model OutflowItem {
   outflowId       String
   inventoryItemId String
   quantity        Int      @default(1)
-  unitPrice       Float?   // Snapshot of price at outflow time (for PDF)
-  currency        String?  // Snapshot of currency at outflow time
+  // Snapshots captured at outflow time so receipts/reports survive item
+  // renames, price changes, or hard-delete attempts.
+  itemName        String?
+  serviceTag      String?
+  unitPrice       Float?
+  currency        String?
   notes           String?
   createdAt       DateTime @default(now())
 
   outflow       Outflow       @relation(fields: [outflowId], references: [id], onDelete: Cascade)
-  inventoryItem InventoryItem @relation(fields: [inventoryItemId], references: [id])
+  // Restrict deletes on the underlying inventory item: write-off history must
+  // not silently disappear if someone hard-deletes an item.
+  inventoryItem InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Restrict)
 
   @@index([outflowId])
   @@index([inventoryItemId])
