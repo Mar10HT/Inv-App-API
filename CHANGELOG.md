@@ -6,6 +6,19 @@ This project uses [Semantic Versioning](https://semver.org/). Version `0.x.x` in
 
 ---
 
+## [Unreleased]
+
+### Fixed
+- RBAC seed (`PermissionsSeedService.syncRolePermissions`) no longer passes `skipDuplicates` to `rolePermission.createMany`, which SQLite (the dev datasource) does not support and threw on. This silently prevented newly-added permissions from being granted to roles in dev; `toAdd` is already deduplicated so the flag was unnecessary.
+
+### Added
+- **Sales module**: `Sale` / `SaleItem` tables, `SalesModule` (service, controller, DTOs) for recording sales that decrement stock
+  - Per-line manual pricing with customer tier (`WHOLESALE` / `DISTRIBUTOR` / `RETAIL`), single-currency totals, snapshots of item name/price
+  - New permissions: `sales:view`, `sales:create`, `sales:cancel` (assigned to `WAREHOUSE_MANAGER`, `USER` view+create, `VIEWER` view)
+  - Endpoints: `POST /sales`, `GET /sales`, `GET /sales/stats`, `GET /sales/:id`, `GET /sales/:id/pdf`, `PATCH /sales/:id/cancel`
+  - PDF sale receipt (`generateSaleReceipt`) with customer block and per-currency totals; cancel restores stock and watermarks the PDF
+- Documentation: recorded the previously-undocumented **Outflows** module (write-offs) and corrected RBAC counts to **55 permissions across 18 modules**
+
 ## [0.5.0] - 2026-03-28
 
 ### Added
