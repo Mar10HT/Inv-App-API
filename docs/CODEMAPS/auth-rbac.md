@@ -3,7 +3,7 @@
 **Last Updated:** 2026-04-03
 **Modules:** `src/auth`, `src/permissions`
 **Version:** 0.5.0 (granular RBAC system)
-**Key Feature:** 46 granular permissions with 60s in-memory caching
+**Key Feature:** 55 granular permissions with 60s in-memory caching
 
 ---
 
@@ -13,7 +13,7 @@ The Auth & RBAC system provides:
 
 - **JWT Authentication** — 15-minute access tokens + 7-day refresh tokens via HttpOnly cookies
 - **CSRF Protection** — Double Submit Cookie pattern
-- **Granular RBAC** — 46 permissions across 14 modules (not role-based)
+- **Granular RBAC** — 55 permissions across 18 modules (not role-based)
 - **Permission Caching** — 60-second in-memory Map (no Redis)
 - **Warehouse Access Control** — Users restricted to assigned warehouses or system-wide
 - **Strong Passwords** — Bcryptjs with custom validation decorator
@@ -48,7 +48,7 @@ The Auth & RBAC system provides:
 |------|---------|-------|
 | `permissions.service.ts` | Permission caching + resolution | ~150 |
 | `permissions.module.ts` | Module export | ~20 |
-| `../common/constants/permissions.constant.ts` | 46 permissions definition | ~120 |
+| `../common/constants/permissions.constant.ts` | 55 permissions definition | ~120 |
 
 ---
 
@@ -171,7 +171,7 @@ Role → [Permissions via RolePermission join table]
 
 ### Permission System
 
-**46 Total Permissions:**
+**55 Total Permissions:**
 
 ```
 auth:login, auth:register, auth:refresh, auth:logout,
@@ -184,6 +184,8 @@ categories:view, categories:create, categories:update, categories:delete,
 loans:view, loans:create, loans:manage, loans:delete,
 transfers:view, transfers:create, transfers:manage,
 transactions:view, transactions:create, transactions:update, transactions:delete,
+outflows:view, outflows:create, outflows:cancel,
+sales:view, sales:create, sales:cancel,
 reports:view, reports:generate, reports:export,
 alerts:view, alerts:manage,
 audit:view,
@@ -195,7 +197,7 @@ roles:view, roles:create, roles:update, roles:delete
 
 | Role | Permissions | Purpose |
 |------|-------------|---------|
-| **SYSTEM_ADMIN** | All 46 permissions | Full system access |
+| **SYSTEM_ADMIN** | All 55 permissions | Full system access |
 | **WAREHOUSE_MANAGER** | ~25 permissions | Operations + inventory mgmt + alerts |
 | **USER** | ~15 permissions | View, create, manage (not delete) |
 | **VIEWER** | ~8 permissions | View-only (read all data) |
@@ -711,7 +713,7 @@ curl -X PATCH http://localhost:3000/api/auth/change-password \
 - [x] Strong password policy (8+ chars, mixed case, number, special)
 - [x] Rate limiting on auth endpoints
 - [x] Helmet security headers
-- [x] Granular permissions (46 permissions)
+- [x] Granular permissions (55 permissions)
 - [x] Warehouse-level access control
 - [x] Audit trail for auth events
 

@@ -108,9 +108,11 @@ export class PermissionsSeedService {
       const toRemove = [...existingIds].filter((id) => !desiredPermIds.has(id));
 
       if (toAdd.length > 0) {
+        // `toAdd` is already the set difference (desired − existing), so every
+        // row is unique and new — no need for `skipDuplicates`, which SQLite
+        // (the dev datasource) does not support and would throw on.
         await this.prisma.rolePermission.createMany({
           data: toAdd.map((permissionId) => ({ roleId: role.id, permissionId })),
-          skipDuplicates: true,
         });
       }
 

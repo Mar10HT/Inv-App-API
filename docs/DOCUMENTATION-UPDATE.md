@@ -37,7 +37,7 @@ Comprehensive codemaps and documentation have been created for the Inv-App-API p
 - **Coverage:** `src/auth/`, `src/permissions/`
 - **Key Sections:**
   - 13 auth endpoints (login, register, password reset)
-  - 46 granular permissions with RBAC
+  - 55 granular permissions with RBAC
   - 60-second in-memory permission caching
   - Warehouse-level access control
   - CSRF protection (double submit cookie)

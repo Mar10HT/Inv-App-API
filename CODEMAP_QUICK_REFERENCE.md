@@ -161,7 +161,7 @@ w3: Bodega Sur (Hardware focus)
 
 ---
 
-## Permission System (46 Permissions)
+## Permission System (55 Permissions)
 
 ### Example: Loans
 
@@ -188,7 +188,7 @@ confirmReceipt(@Param('id') id: string) { ... }
 
 | Role | Key Permissions | Purpose |
 |------|-----------------|---------|
-| SYSTEM_ADMIN | All 46 permissions | Full access |
+| SYSTEM_ADMIN | All 55 permissions | Full access |
 | WAREHOUSE_MANAGER | 25 permissions | Operations manager |
 | USER | 15 permissions | Warehouse staff |
 | VIEWER | 8 permissions | Read-only |
@@ -234,6 +234,28 @@ POST   /transfer-requests/confirm-receipt  # Confirm (executes applyInventoryTra
 PATCH  /transfer-requests/:id/complete    # Manual complete
 GET    /transfer-requests              # List
 # ... more
+```
+
+### Outflows (6 endpoints)
+
+```http
+POST   /outflows                       # Create write-off (decrements stock)
+GET    /outflows                       # List
+GET    /outflows/stats                 # Outflow statistics
+GET    /outflows/:id                   # Detail
+GET    /outflows/:id/pdf               # PDF receipt
+PATCH  /outflows/:id/cancel            # Cancel (restores stock)
+```
+
+### Sales (6 endpoints)
+
+```http
+POST   /sales                          # Create sale (decrements stock)
+GET    /sales                          # List
+GET    /sales/stats                    # Sales statistics
+GET    /sales/:id                      # Detail
+GET    /sales/:id/pdf                  # PDF receipt
+PATCH  /sales/:id/cancel               # Cancel (restores stock)
 ```
 
 ### Inventory (16 endpoints)
@@ -333,7 +355,7 @@ Permissions are cached for 60 seconds:
 - [x] **Password hashing** bcryptjs (salt=10)
 - [x] **Strong password** policy enforced
 - [x] **Warehouse access** control per user
-- [x] **Granular permissions** 46 permissions across 14 modules
+- [x] **Granular permissions** 55 permissions across 18 modules
 - [x] **Rate limiting** per IP, per minute, per hour
 - [x] **Helmet headers** CSP, HSTS, X-Frame-Options
 - [x] **Audit trail** all operations logged

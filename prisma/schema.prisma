@@ -57,6 +57,10 @@ model User {
   createdOutflows     Outflow[]           @relation("CreatedOutflows")
   cancelledOutflows   Outflow[]           @relation("CancelledOutflows")
 
+  // Sale relations
+  createdSales        Sale[]              @relation("CreatedSales")
+  cancelledSales      Sale[]              @relation("CancelledSales")
+
   // Auth tokens relations
   refreshTokens       RefreshToken[]
   passwordResetTokens PasswordResetToken[]
@@ -114,6 +118,9 @@ model Warehouse {
 
   // Outflow relations
   outflows                Outflow[]
+
+  // Sale relations
+  sales                   Sale[]
 
   scheduledReports        ScheduledReport[]
 
@@ -198,6 +205,7 @@ model InventoryItem {
   stockTakeItems         StockTakeItem[]
   dischargeRequestItems  DischargeRequestItem[]
   outflowItems           OutflowItem[]
+  saleItems              SaleItem[]
 
   @@index([category])
   @@index([categoryId])
@@ -793,4 +801,81 @@ model PasswordResetToken {
   @@index([userId])
   @@index([expiresAt])
   @@map("password_reset_tokens")
+}
+
+// ============================================
+// Sales (ventas)
+// A sale removes items from inventory permanently in exchange for payment.
+// Prices are entered manually per line at sale time (no per-product price
+// tiers); the customer type (wholesale / distributor / retail) is recorded
+// as a label on the sale. Stock is decremented at creation; cancelling
+// restores it (same flow as Outflow).
+// ============================================
+
+model Sale {
+  id                  String       @id @default(cuid())
+  name                String?
+  warehouseId         String
+  customerName        String?
+  customerType        CustomerType @default(RETAIL)
+  // A sale is single-currency: every line uses this currency and totalAmount
+  // is computed against it. Defaults to USD.
+  currency            String       @default("USD")
+  totalAmount         Float        @default(0)
+  status              SaleStatus   @default(ACTIVE)
+  notes               String?
+  createdById         String
+  cancelledById       String?
+  cancelledAt         DateTime?
+  cancellationReason  String?
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+
+  warehouse   Warehouse  @relation(fields: [warehouseId], references: [id])
+  createdBy   User       @relation("CreatedSales", fields: [createdById], references: [id])
+  cancelledBy User?      @relation("CancelledSales", fields: [cancelledById], references: [id])
+  items       SaleItem[]
+
+  @@index([warehouseId])
+  @@index([status])
+  @@index([customerType])
+  @@index([createdById])
+  @@index([createdAt])
+  @@map("sales")
+}
+
+model SaleItem {
+  id              String   @id @default(cuid())
+  saleId          String
+  inventoryItemId String
+  quantity        Int      @default(1)
+  unitPrice       Float    // Entered manually at sale time
+  lineTotal       Float    @default(0) // quantity * unitPrice, snapshot
+  // Snapshots captured at sale time so receipts/reports survive item
+  // renames, price changes, or hard-delete attempts.
+  itemName        String?
+  serviceTag      String?
+  currency        String?
+  notes           String?
+  createdAt       DateTime @default(now())
+
+  sale          Sale          @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  // Restrict deletes on the underlying inventory item: sales history must
+  // not silently disappear if someone hard-deletes an item.
+  inventoryItem InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Restrict)
+
+  @@index([saleId])
+  @@index([inventoryItemId])
+  @@map("sale_items")
+}
+
+enum CustomerType {
+  WHOLESALE   // Mayorista
+  DISTRIBUTOR // Distribuidor
+  RETAIL      // Cliente final
+}
+
+enum SaleStatus {
+  ACTIVE    // Sale is recorded; stock has been decremented
+  CANCELLED // Sale was reverted; stock has been restored
 }
