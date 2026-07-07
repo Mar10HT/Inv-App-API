@@ -46,7 +46,9 @@ export class TransferRequestsController {
         user.warehouseIds.includes(dto.sourceWarehouseId) ||
         user.warehouseIds.includes(dto.destinationWarehouseId);
       if (!hasAccess) {
-        throw new ForbiddenException('You do not have access to the involved warehouses');
+        throw new ForbiddenException(
+          'You do not have access to the involved warehouses',
+        );
       }
     }
     return this.transferRequestsService.create(dto, user.userId);
@@ -54,13 +56,22 @@ export class TransferRequestsController {
 
   @Get()
   @Permissions('transfers:view')
-  @ApiQuery({ name: 'status', enum: ['PENDING', 'APPROVED', 'SENT', 'COMPLETED', 'REJECTED', 'CANCELLED'], required: false })
+  @ApiQuery({
+    name: 'status',
+    enum: ['PENDING', 'APPROVED', 'SENT', 'COMPLETED', 'REJECTED', 'CANCELLED'],
+    required: false,
+  })
   findAll(
-    @Query(new ValidationPipe({ whitelist: true, transform: true })) pagination: PaginationDto,
+    @Query(new ValidationPipe({ whitelist: true, transform: true }))
+    pagination: PaginationDto,
     @Query('status') status?: string,
     @CurrentUser() user?: AuthenticatedUser,
   ) {
-    return this.transferRequestsService.findAll(pagination, status as RequestStatus, user?.warehouseIds);
+    return this.transferRequestsService.findAll(
+      pagination,
+      status as RequestStatus,
+      user?.warehouseIds,
+    );
   }
 
   @Get('pending')
@@ -69,7 +80,10 @@ export class TransferRequestsController {
     @Query(ValidationPipe) pagination: PaginationDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.transferRequestsService.findPending(pagination, user.warehouseIds);
+    return this.transferRequestsService.findPending(
+      pagination,
+      user.warehouseIds,
+    );
   }
 
   @Get('stats')
@@ -80,10 +94,7 @@ export class TransferRequestsController {
 
   @Get(':id')
   @Permissions('transfers:view')
-  findOne(
-    @Param('id') id: string,
-    @CurrentUser() user: AuthenticatedUser,
-  ) {
+  findOne(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
     return this.transferRequestsService.findOne(id, user.warehouseIds);
   }
 
@@ -98,7 +109,10 @@ export class TransferRequestsController {
     const resolvedLocale = locale === 'en' ? 'en' : 'es';
     // Enforce warehouse access before generating the PDF.
     await this.transferRequestsService.findOne(id, user.warehouseIds);
-    const buffer = await this.pdfReceipts.generateTransferReceipt(id, resolvedLocale);
+    const buffer = await this.pdfReceipts.generateTransferReceipt(
+      id,
+      resolvedLocale,
+    );
     res.set({
       'Content-Type': 'application/pdf',
       'Content-Disposition': `attachment; filename=transferencia_${id}.pdf`,
@@ -121,7 +135,11 @@ export class TransferRequestsController {
     @Param('id') id: string,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.transferRequestsService.sendTransfer(id, user.userId, user.warehouseIds);
+    return this.transferRequestsService.sendTransfer(
+      id,
+      user.userId,
+      user.warehouseIds,
+    );
   }
 
   @Post('confirm-receipt')
@@ -131,7 +149,11 @@ export class TransferRequestsController {
     @Body('qrCode') qrCode: string,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.transferRequestsService.confirmReceipt(qrCode, user.userId);
+    return this.transferRequestsService.confirmReceipt(
+      qrCode,
+      user.userId,
+      user.warehouseIds,
+    );
   }
 
   @Post('scan-qr')
@@ -141,18 +163,23 @@ export class TransferRequestsController {
     @Body('scannedData') scannedData: string,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.transferRequestsService.processQrCode(scannedData, user.userId);
+    return this.transferRequestsService.processQrCode(
+      scannedData,
+      user.userId,
+      user.warehouseIds,
+    );
   }
 
   // ==================== Standard Operations ====================
 
   @Patch(':id/approve')
   @Permissions('transfers:manage')
-  approve(
-    @Param('id') id: string,
-    @CurrentUser() user: AuthenticatedUser,
-  ) {
-    return this.transferRequestsService.approve(id, user.userId, user.warehouseIds);
+  approve(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.transferRequestsService.approve(
+      id,
+      user.userId,
+      user.warehouseIds,
+    );
   }
 
   @Patch(':id/reject')
@@ -162,24 +189,31 @@ export class TransferRequestsController {
     @Body('reason') reason: string,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.transferRequestsService.reject(id, user.userId, reason, user.warehouseIds);
+    return this.transferRequestsService.reject(
+      id,
+      user.userId,
+      reason,
+      user.warehouseIds,
+    );
   }
 
   @Patch(':id/complete')
   @Permissions('transfers:manage')
-  complete(
-    @Param('id') id: string,
-    @CurrentUser() user: AuthenticatedUser,
-  ) {
-    return this.transferRequestsService.complete(id, user.userId, user.warehouseIds);
+  complete(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.transferRequestsService.complete(
+      id,
+      user.userId,
+      user.warehouseIds,
+    );
   }
 
   @Patch(':id/cancel')
   @Permissions('transfers:create')
-  cancel(
-    @Param('id') id: string,
-    @CurrentUser() user: AuthenticatedUser,
-  ) {
-    return this.transferRequestsService.cancel(id, user.userId, user.warehouseIds);
+  cancel(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.transferRequestsService.cancel(
+      id,
+      user.userId,
+      user.warehouseIds,
+    );
   }
 }
