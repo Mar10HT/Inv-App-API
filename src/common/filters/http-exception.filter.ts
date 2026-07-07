@@ -63,7 +63,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
 
     // Only report unexpected server errors, not routine 4xx client errors.
     // No-ops when SENTRY_DSN isn't configured (see common/sentry.ts).
-    if (status >= 500) {
+    if (status >= HttpStatus.INTERNAL_SERVER_ERROR) {
       Sentry.captureException(exception);
     }
 

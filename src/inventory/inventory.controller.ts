@@ -15,7 +15,6 @@ import {
   UploadedFile,
   BadRequestException,
   ForbiddenException,
-  Req,
   Res,
 } from '@nestjs/common';
 import { Response } from 'express';

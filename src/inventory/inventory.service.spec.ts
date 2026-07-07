@@ -88,7 +88,9 @@ describe('InventoryService', () => {
     const mockCacheManager = {
       get: jest.fn().mockResolvedValue(undefined),
       set: jest.fn().mockResolvedValue(undefined),
-      reset: jest.fn().mockResolvedValue(undefined),
+      // cache-manager v7's `Cache` type exposes `clear()`, not `reset()`
+      // (see InventoryService.invalidateCache).
+      clear: jest.fn().mockResolvedValue(undefined),
     };
 
     const mockEventsService = {

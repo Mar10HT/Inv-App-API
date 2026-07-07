@@ -18,6 +18,7 @@ import {
   BulkUpdateDto,
   BulkDeleteDto,
   BulkImportDto,
+  BulkImportItemDto,
   BulkOperationResultDto,
 } from './dto/bulk-operations.dto';
 import {
@@ -29,6 +30,7 @@ import {
 import { EventsService } from '../events/events.service';
 import { SearchService } from '../common/search/search.service';
 import { warehouseFilter } from '../common/warehouse-access/warehouse-filter.util';
+import type { CellValue } from 'exceljs';
 
 @Injectable()
 export class InventoryService {
@@ -616,9 +618,16 @@ export class InventoryService {
       }),
     ]);
 
-    const totalValue = parseFloat(
-      String((totalValueResult as [{ total: unknown }])[0]?.total ?? 0),
-    );
+    // Raw SUM() results can come back as a JS number (SQLite) or a numeric
+    // string (Postgres returns NUMERIC/DECIMAL columns as strings via the
+    // node-postgres driver to avoid float precision loss). Convert
+    // explicitly rather than relying on the default `String()`/toString()
+    // coercion, which would stringify to "[object Object]" for any
+    // unexpected shape.
+    const rawTotal = (
+      totalValueResult as [{ total: number | string | null }]
+    )[0]?.total;
+    const totalValue = rawTotal != null ? Number(rawTotal) : 0;
 
     // No need for extra query - warehouse counts are already included
     const locationStats = warehousesWithCounts.map((warehouse) => ({
@@ -727,12 +736,15 @@ export class InventoryService {
   }
 
   // Cache invalidation method.
-  // Uses reset() to clear all keys because getCategories and getLocations write
+  // Uses clear() to wipe all keys because getCategories and getLocations write
   // scoped keys per warehouse combination (e.g. inventory:categories:wh1,wh2)
-  // that cannot be enumerated cheaply. reset() is safe here: the cache is
+  // that cannot be enumerated cheaply. clear() is safe here: the cache is
   // in-memory and short-lived (60s stats, 5m categories/locations).
+  // Note: cache-manager v7's `Cache` type no longer exposes `reset()` (it was
+  // renamed to `clear()`); calling `.reset()` here would throw
+  // "cacheManager.reset is not a function" at runtime.
   async invalidateCache(): Promise<void> {
-    await this.cacheManager.reset();
+    await this.cacheManager.clear();
   }
 
   // Bulk Operations
@@ -804,7 +816,7 @@ export class InventoryService {
         const { id, ...updateData } = item;
 
         await this.prisma.inventoryItem.update({
-          where: { id: item.id },
+          where: { id },
           data: {
             ...updateData,
             ...(status && { status }),
@@ -815,19 +827,19 @@ export class InventoryService {
         await this.auditService.log({
           action: 'UPDATE',
           entity: 'InventoryItem',
-          entityId: item.id,
+          entityId: id,
           userId,
           changes: { after: { bulk: true }, fields: Object.keys(updateData) },
         });
 
         result.success++;
-        result.updatedIds!.push(item.id);
+        result.updatedIds!.push(id);
       } catch (error) {
         result.failed++;
         result.errors.push({
           index: i,
           id: item.id,
-          error: error.message || 'Unknown error',
+          error: error instanceof Error ? error.message : String(error),
         });
       }
     }
@@ -894,7 +906,7 @@ export class InventoryService {
         result.errors.push({
           index: i,
           id,
-          error: error.message || 'Unknown error',
+          error: error instanceof Error ? error.message : String(error),
         });
       }
     }
@@ -999,7 +1011,7 @@ export class InventoryService {
         result.failed++;
         result.errors.push({
           index: i,
-          error: error.message || 'Unknown error',
+          error: error instanceof Error ? error.message : String(error),
         });
       }
     }
@@ -1228,6 +1240,38 @@ export class InventoryService {
     return workbook.xlsx.writeBuffer() as Promise<Buffer>;
   }
 
+  // Converts an exceljs cell value to a plain string, without ever falling
+  // back to the default Object stringification ("[object Object]") that a
+  // bare `.toString()` would produce for the non-primitive CellValue shapes
+  // (rich text, hyperlinks, error values, unresolved formulas).
+  private cellValueToString(value: CellValue): string | undefined {
+    if (value === null || value === undefined) {
+      return undefined;
+    }
+    if (typeof value === 'string') {
+      return value;
+    }
+    if (typeof value === 'number' || typeof value === 'boolean') {
+      return String(value);
+    }
+    if (value instanceof Date) {
+      return value.toISOString();
+    }
+    if ('richText' in value) {
+      return value.richText.map((part) => part.text).join('');
+    }
+    if ('text' in value) {
+      return value.text;
+    }
+    if ('error' in value) {
+      return value.error;
+    }
+    if ('result' in value) {
+      return this.cellValueToString(value.result);
+    }
+    return undefined;
+  }
+
   async parseExcelFile(buffer: Buffer): Promise<BulkImportDto['items']> {
     const ExcelJS = await import('exceljs');
     const workbook = new ExcelJS.Workbook();
@@ -1266,33 +1310,27 @@ export class InventoryService {
 
     // Get headers from first row
     worksheet.getRow(1).eachCell((cell, colNumber) => {
-      headers[colNumber] = cell.value
-        ? normalizeHeader(cell.value.toString())
-        : '';
+      const headerValue = this.cellValueToString(cell.value);
+      headers[colNumber] = headerValue ? normalizeHeader(headerValue) : '';
     });
 
     // Parse data rows
     worksheet.eachRow((row, rowNumber) => {
       if (rowNumber === 1) return; // Skip header row
 
-      const item: any = {};
+      const item: Partial<BulkImportItemDto> = {};
       row.eachCell((cell, colNumber) => {
         const header = headers[colNumber];
-        let value = cell.value;
-
-        // Handle formula cells
-        if (typeof value === 'object' && value !== null && 'result' in value) {
-          value = value.result;
-        }
+        const value = this.cellValueToString(cell.value);
 
         switch (header) {
           case 'name':
           case 'nombre':
-            item.name = value?.toString();
+            item.name = value;
             break;
           case 'description':
           case 'descripcion':
-            item.description = value?.toString();
+            item.description = value;
             break;
           case 'quantity':
           case 'cantidad':
@@ -1306,7 +1344,7 @@ export class InventoryService {
             break;
           case 'category':
           case 'categoria':
-            item.category = value?.toString();
+            item.category = value;
             break;
           case 'price':
           case 'precio':
@@ -1314,47 +1352,47 @@ export class InventoryService {
             break;
           case 'currency':
           case 'moneda':
-            item.currency =
-              value?.toString().toUpperCase() === 'HNL' ? 'HNL' : 'USD';
+            item.currency = value?.toUpperCase() === 'HNL' ? 'HNL' : 'USD';
             break;
           case 'sku':
-            item.sku = value?.toString();
+            item.sku = value;
             break;
           case 'barcode':
           case 'codigobarras':
           case 'codigo de barras':
-            item.barcode = value?.toString();
+            item.barcode = value;
             break;
           case 'itemtype':
           case 'tipo':
             item.itemType =
-              value?.toString().toUpperCase() === 'UNIQUE' ? 'UNIQUE' : 'BULK';
+              value?.toUpperCase() === 'UNIQUE'
+                ? ItemType.UNIQUE
+                : ItemType.BULK;
             break;
           case 'servicetag':
           case 'service_tag':
           case 'service tag':
-            item.serviceTag = value?.toString();
+            item.serviceTag = value;
             break;
           case 'serialnumber':
           case 'serial_number':
           case 'numeroserie':
           case 'n\u00b0 serie': // N° serie (degree symbol U+00B0)
           case 'n serie':
-            item.serialNumber = value?.toString();
+            item.serialNumber = value;
             break;
           case 'warehouseid':
           case 'warehouse_id':
           case 'almacen': {
             // Resolve by name first, fall back to raw value (UUID)
-            const wName = value?.toString()?.toLowerCase();
-            item.warehouseId =
-              (wName && warehouseMap.get(wName)) || value?.toString();
+            const wName = value?.toLowerCase();
+            item.warehouseId = (wName && warehouseMap.get(wName)) || value;
             break;
           }
           case 'supplierid':
           case 'supplier_id':
           case 'proveedor': {
-            const sName = value?.toString()?.toLowerCase();
+            const sName = value?.toLowerCase();
             const sId = sName ? supplierMap.get(sName) : undefined;
             if (sId) item.supplierId = sId;
             break;
@@ -1365,7 +1403,7 @@ export class InventoryService {
       // Only add if required fields are present
       if (item.name && item.category && item.warehouseId) {
         item.quantity = item.quantity || 0;
-        items.push(item);
+        items.push(item as BulkImportItemDto);
       }
     });
 

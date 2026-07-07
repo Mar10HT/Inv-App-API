@@ -183,6 +183,20 @@ export class StockTakeService {
       },
     });
 
+    await this.auditService.log({
+      action: 'UPDATE',
+      entity: 'StockTakeItem',
+      entityId: stockTakeItem.id,
+      userId,
+      changes: {
+        stockTakeId,
+        itemId: dto.itemId,
+        expectedQty: stockTakeItem.expectedQty,
+        countedQty: dto.countedQty,
+        variance,
+      },
+    });
+
     return updated;
   }
 

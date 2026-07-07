@@ -38,7 +38,9 @@ export class AuditService {
         entity: data.entity,
         entityId: data.entityId,
         userId: data.userId,
-        changes: data.changes ? JSON.parse(JSON.stringify(data.changes)) : null,
+        changes: data.changes
+          ? (JSON.parse(JSON.stringify(data.changes)) as Prisma.InputJsonValue)
+          : null,
       },
     });
   }

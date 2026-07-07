@@ -141,10 +141,7 @@ export class LoansController {
 
   @Get(':id/qr/:type')
   @Permissions('loans:manage')
-  async getQrCode(
-    @Param('id') id: string,
-    @Param('type') type: 'send' | 'return',
-  ) {
+  async getQrCode(@Param('id') id: string, @Param('type') type: string) {
     const qrDataUrl = await this.loansService.getQrCode(id, type);
     return { qrDataUrl };
   }

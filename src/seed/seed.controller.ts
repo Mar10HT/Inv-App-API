@@ -56,7 +56,7 @@ export class SeedController {
     } catch (error) {
       return {
         success: false,
-        error: error.message,
+        error: error instanceof Error ? error.message : String(error),
       };
     }
   }
@@ -74,7 +74,10 @@ export class SeedController {
       const result = await this.permissionsSeed.run();
       return { success: true, ...result };
     } catch (error) {
-      return { success: false, error: error.message };
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+      };
     }
   }
 }

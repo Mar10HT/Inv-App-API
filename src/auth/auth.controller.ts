@@ -10,7 +10,6 @@ import {
   Request,
   Response,
   Param,
-  Ip,
   NotFoundException,
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
@@ -179,7 +178,8 @@ export class AuthController {
     @Body() body?: RefreshTokenDto,
   ) {
     // Get refresh token from cookie or body
-    const refreshToken = req.cookies?.refresh_token || body?.refresh_token;
+    const cookies = req.cookies as Record<string, string> | undefined;
+    const refreshToken = cookies?.refresh_token || body?.refresh_token;
 
     if (!refreshToken) {
       res.status(HttpStatus.UNAUTHORIZED);
@@ -233,7 +233,8 @@ export class AuthController {
     @Body('refresh_token') bodyRefreshToken?: string,
   ) {
     // Accept refresh token from cookie (web) or body (mobile)
-    const refreshToken = req.cookies?.refresh_token ?? bodyRefreshToken;
+    const cookies = req.cookies as Record<string, string> | undefined;
+    const refreshToken = cookies?.refresh_token ?? bodyRefreshToken;
     let userId: string | undefined;
     if (refreshToken) {
       const revoked = await this.authService.revokeRefreshToken(refreshToken);

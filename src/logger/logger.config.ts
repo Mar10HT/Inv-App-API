@@ -11,10 +11,16 @@ const consoleFormat = winston.format.combine(
   winston.format.colorize({ all: true }),
   winston.format.printf(
     ({ timestamp, level, message, context, trace, ...meta }) => {
-      const contextStr = context ? `[${context}]` : '';
+      // winston's TransformableInfo types these fields as `unknown` (they come
+      // from a generic index signature), so narrow them before interpolating —
+      // otherwise they'd render as "[object Object]" for non-string values.
+      const timestampStr = typeof timestamp === 'string' ? timestamp : '';
+      const contextStr = typeof context === 'string' ? `[${context}]` : '';
+      const messageStr =
+        typeof message === 'string' ? message : JSON.stringify(message);
       const metaStr = Object.keys(meta).length ? JSON.stringify(meta) : '';
-      const traceStr = trace ? `\n${trace}` : '';
-      return `${timestamp} ${level} ${contextStr} ${message} ${metaStr}${traceStr}`;
+      const traceStr = typeof trace === 'string' ? `\n${trace}` : '';
+      return `${timestampStr} ${level} ${contextStr} ${messageStr} ${metaStr}${traceStr}`;
     },
   ),
 );

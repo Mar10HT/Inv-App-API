@@ -6,6 +6,7 @@ import {
   MinLength,
 } from 'class-validator';
 import { Transform } from 'class-transformer';
+import { normalizeEmail } from '../../common/decorators';
 
 export class UpdateProfileDto {
   @IsString()
@@ -13,7 +14,7 @@ export class UpdateProfileDto {
   @MinLength(2, { message: 'Name must be at least 2 characters long' })
   name?: string;
 
-  @Transform(({ value }) => value?.toLowerCase().trim())
+  @Transform(normalizeEmail)
   @IsEmail()
   @IsNotEmpty()
   email: string;

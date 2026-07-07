@@ -159,10 +159,7 @@ export class WarehousesService {
   ): Promise<Warehouse> {
     const before = await this.prisma.warehouse.findUnique({ where: { id } });
 
-    const managerIdProvided = Object.prototype.hasOwnProperty.call(
-      updateDto,
-      'managerId',
-    );
+    const managerIdProvided = 'managerId' in updateDto;
     const managerId = managerIdProvided
       ? this.normalizeManagerId(updateDto.managerId)
       : undefined;

@@ -9,7 +9,6 @@ import { PermissionsService } from '../permissions/permissions.service';
 import { AuditService } from '../audit/audit.service';
 import { CreateRoleDto } from './dto/create-role.dto';
 import { UpdateRoleDto } from './dto/update-role.dto';
-import { PERMISSIONS } from '../common/constants/permissions.constant';
 
 @Injectable()
 export class RolesService {

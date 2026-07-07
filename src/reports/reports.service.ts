@@ -188,10 +188,10 @@ export class ReportsService {
   }
 
   // Apply workbook metadata
-  private async applyWorkbookMeta(
+  private applyWorkbookMeta(
     workbook: ExcelJSType.Workbook,
     title: string,
-  ): Promise<void> {
+  ): void {
     workbook.creator = 'Obsid';
     workbook.lastModifiedBy = 'Obsid';
     workbook.created = new Date();
@@ -246,7 +246,7 @@ export class ReportsService {
   ): Promise<Buffer> {
     const ExcelJS = await import('exceljs');
     const workbook = new ExcelJS.Workbook();
-    await this.applyWorkbookMeta(workbook, this.t('inventoryReport', locale));
+    this.applyWorkbookMeta(workbook, this.t('inventoryReport', locale));
     const worksheet = workbook.addWorksheet(this.t('wsInventory', locale));
 
     const where: Prisma.InventoryItemWhereInput = {
@@ -365,7 +365,7 @@ export class ReportsService {
       const chunks: Buffer[] = [];
       const doc = new PDFDocument({ margin: 50 });
 
-      doc.on('data', (chunk) => chunks.push(chunk));
+      doc.on('data', (chunk: Buffer) => chunks.push(chunk));
       doc.on('end', () => resolve(Buffer.concat(chunks)));
       doc.on('error', reject);
 
@@ -436,7 +436,7 @@ export class ReportsService {
   ): Promise<Buffer> {
     const ExcelJS = await import('exceljs');
     const workbook = new ExcelJS.Workbook();
-    await this.applyWorkbookMeta(workbook, this.t('wsLowStock', locale));
+    this.applyWorkbookMeta(workbook, this.t('wsLowStock', locale));
     const worksheet = workbook.addWorksheet(this.t('wsLowStock', locale));
 
     const items = await this.prisma.inventoryItem.findMany({
@@ -508,7 +508,7 @@ export class ReportsService {
   ): Promise<Buffer> {
     const ExcelJS = await import('exceljs');
     const workbook = new ExcelJS.Workbook();
-    await this.applyWorkbookMeta(workbook, this.t('wsTransactions', locale));
+    this.applyWorkbookMeta(workbook, this.t('wsTransactions', locale));
     const worksheet = workbook.addWorksheet(this.t('wsTransactions', locale));
 
     const where: Prisma.TransactionWhereInput = {
@@ -589,7 +589,7 @@ export class ReportsService {
   ): Promise<Buffer> {
     const ExcelJS = await import('exceljs');
     const workbook = new ExcelJS.Workbook();
-    await this.applyWorkbookMeta(workbook, this.t('wsLoans', locale));
+    this.applyWorkbookMeta(workbook, this.t('wsLoans', locale));
     const worksheet = workbook.addWorksheet(this.t('wsLoans', locale));
 
     const where = warehouseFilterMultiField(warehouseIds, [
@@ -666,7 +666,7 @@ export class ReportsService {
   ): Promise<Buffer> {
     const ExcelJS = await import('exceljs');
     const workbook = new ExcelJS.Workbook();
-    await this.applyWorkbookMeta(workbook, this.t('wsTransfers', locale));
+    this.applyWorkbookMeta(workbook, this.t('wsTransfers', locale));
     const worksheet = workbook.addWorksheet(this.t('wsTransfers', locale));
 
     const where: Prisma.TransferRequestWhereInput = warehouseIds?.length
@@ -744,7 +744,7 @@ export class ReportsService {
   ): Promise<Buffer> {
     const ExcelJS = await import('exceljs');
     const workbook = new ExcelJS.Workbook();
-    await this.applyWorkbookMeta(workbook, this.t('wsStockTakes', locale));
+    this.applyWorkbookMeta(workbook, this.t('wsStockTakes', locale));
 
     const where: Prisma.StockTakeWhereInput = warehouseIds?.length
       ? { warehouseId: { in: warehouseIds } }
@@ -853,7 +853,7 @@ export class ReportsService {
   ): Promise<Buffer> {
     const ExcelJS = await import('exceljs');
     const workbook = new ExcelJS.Workbook();
-    await this.applyWorkbookMeta(workbook, this.t('wsDischarges', locale));
+    this.applyWorkbookMeta(workbook, this.t('wsDischarges', locale));
     const worksheet = workbook.addWorksheet(this.t('wsDischarges', locale));
 
     const where: Prisma.DischargeRequestWhereInput = warehouseIds?.length
@@ -924,7 +924,7 @@ export class ReportsService {
   ): Promise<Buffer> {
     const ExcelJS = await import('exceljs');
     const workbook = new ExcelJS.Workbook();
-    await this.applyWorkbookMeta(workbook, this.t('wsOutflows', locale));
+    this.applyWorkbookMeta(workbook, this.t('wsOutflows', locale));
     const worksheet = workbook.addWorksheet(this.t('wsOutflows', locale));
 
     const where: Prisma.OutflowWhereInput = warehouseIds?.length

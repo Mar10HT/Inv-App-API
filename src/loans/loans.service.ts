@@ -483,7 +483,7 @@ export class LoansService {
   /**
    * Get QR code image for a loan (send or return)
    */
-  async getQrCode(id: string, type: 'send' | 'return') {
+  async getQrCode(id: string, type: string) {
     if (type !== 'send' && type !== 'return') {
       throw new BadRequestException(
         `Invalid QR code type: ${type}. Must be 'send' or 'return'.`,
@@ -803,6 +803,7 @@ export class LoansService {
     try {
       // Explicitly omit status to prevent state machine bypass via the generic update endpoint
       const { status: _omitted, ...safeFields } = updateLoanDto;
+      void _omitted;
       return await this.prisma.loan.update({
         where: { id },
         data: {

@@ -261,12 +261,10 @@ export class AuthService {
     if (user) {
       this.emailService
         .sendPasswordResetEmail(user.email, token, user.name || undefined)
-        .catch((err) =>
-          this.logger.error(
-            'Failed to send password reset email',
-            err?.message,
-          ),
-        );
+        .catch((err: unknown) => {
+          const message = err instanceof Error ? err.message : String(err);
+          this.logger.error('Failed to send password reset email', message);
+        });
     }
 
     return token;
@@ -361,12 +359,10 @@ export class AuthService {
         resetToken.user.email,
         resetToken.user.name || undefined,
       )
-      .catch((err) =>
-        this.logger.error(
-          'Failed to send password changed email',
-          err?.message,
-        ),
-      );
+      .catch((err: unknown) => {
+        const message = err instanceof Error ? err.message : String(err);
+        this.logger.error('Failed to send password changed email', message);
+      });
   }
 
   // ============================================
@@ -429,7 +425,13 @@ export class AuthService {
         name: user.name,
         role: user.role,
         warehouseIds,
-        permissionsVersion: user.permissionsVersion,
+        // `findByEmail`'s Prisma select doesn't project `permissionsVersion` (unlike
+        // `refreshAccessToken`'s `include: { user: true }`), so the field isn't part
+        // of its static return type. Narrow the cast here instead of widening the
+        // select, to leave the query itself untouched.
+        permissionsVersion: (
+          user as typeof user & { permissionsVersion?: number }
+        ).permissionsVersion,
       },
     };
   }
@@ -540,14 +542,16 @@ export class AuthService {
     });
 
     // Send confirmation email
+    // `findOneWithPassword`'s Prisma select only projects id/email/password (the
+    // minimum needed to verify credentials), so `name` isn't part of its static
+    // return type. Narrow the cast here instead of widening the select.
+    const userName = (user as typeof user & { name?: string | null }).name;
     this.emailService
-      .sendPasswordChangedEmail(user.email, user.name || undefined)
-      .catch((err) =>
-        this.logger.error(
-          'Failed to send password changed email',
-          err?.message,
-        ),
-      );
+      .sendPasswordChangedEmail(user.email, userName || undefined)
+      .catch((err: unknown) => {
+        const message = err instanceof Error ? err.message : String(err);
+        this.logger.error('Failed to send password changed email', message);
+      });
 
     return { message: 'Password changed successfully' };
   }

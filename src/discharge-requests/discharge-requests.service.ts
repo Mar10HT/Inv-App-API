@@ -87,9 +87,9 @@ export class DischargeRequestsService {
 
     // Create N discharge requests in a transaction (one per warehouse)
     const createdRequests = await this.prisma.$transaction(async (tx) => {
-      const requests: Awaited<
-        ReturnType<typeof this.prisma.dischargeRequest.create>
-      >[] = [];
+      const requests: Prisma.DischargeRequestGetPayload<{
+        include: typeof this.includeFull;
+      }>[] = [];
 
       for (const [warehouseId, items] of groupedByWarehouse) {
         const request = await tx.dischargeRequest.create({

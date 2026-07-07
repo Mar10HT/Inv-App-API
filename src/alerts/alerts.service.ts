@@ -301,7 +301,7 @@ export class AlertsService {
   }
 
   async markAsNotified(id: string) {
-    const alert = await this.findOne(id);
+    await this.findOne(id);
 
     return this.prisma.stockAlert.update({
       where: { id },

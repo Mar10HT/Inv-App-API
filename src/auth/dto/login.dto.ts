@@ -7,9 +7,10 @@ import {
   IsOptional,
 } from 'class-validator';
 import { Transform } from 'class-transformer';
+import { normalizeEmail } from '../../common/decorators';
 
 export class LoginDto {
-  @Transform(({ value }) => value?.toLowerCase().trim())
+  @Transform(normalizeEmail)
   @IsEmail()
   @IsNotEmpty()
   email: string;

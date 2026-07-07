@@ -1,9 +1,4 @@
-import {
-  Injectable,
-  Logger,
-  NotFoundException,
-  ForbiddenException,
-} from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
 import { ReportsService } from '../reports/reports.service';
@@ -113,10 +108,9 @@ export class ScheduledReportsService {
             nextSendAt: this.computeNextSendAt(report.frequency),
           },
         });
-      } catch (err) {
-        this.logger.error(
-          `Scheduled report ${report.id} failed: ${err.message}`,
-        );
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        this.logger.error(`Scheduled report ${report.id} failed: ${message}`);
       }
     }
   }
@@ -182,7 +176,7 @@ export class ScheduledReportsService {
         filename = `bajas_${ts}.xlsx`;
         break;
       default:
-        throw new Error(`Unknown report type: ${report.reportType}`);
+        throw new Error(`Unknown report type: ${String(report.reportType)}`);
     }
 
     const emails = report.recipientEmails

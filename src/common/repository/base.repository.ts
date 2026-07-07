@@ -26,11 +26,43 @@ export interface BaseRepositoryOptions {
   auditEntityName?: string;
 }
 
+/**
+ * Minimal shape of a Prisma model delegate (e.g. `prisma.category`,
+ * `prisma.supplier`) that BaseRepository's CRUD methods rely on.
+ *
+ * Prisma's generated client types (`prisma.<model>`) can't be referenced
+ * generically by the string `modelName` at runtime, so this interface
+ * stands in for "whichever delegate `options.modelName` resolves to". Any
+ * real Prisma delegate structurally satisfies it, which is what lets
+ * `this.model` be fully typed instead of `any` without depending on a
+ * specific generated model type.
+ */
+interface PrismaModelDelegate<
+  TEntity extends { id: string },
+  TCreate,
+  TUpdate,
+> {
+  create(args: { data: TCreate }): Promise<TEntity>;
+  findMany(args: {
+    skip: number;
+    take: number;
+    orderBy: Record<string, string>;
+    include?: Record<string, unknown>;
+  }): Promise<TEntity[]>;
+  count(args?: { where?: Record<string, unknown> }): Promise<number>;
+  findUnique(args: {
+    where: { id: string };
+    include?: Record<string, unknown>;
+  }): Promise<TEntity | null>;
+  update(args: { where: { id: string }; data: TUpdate }): Promise<TEntity>;
+  delete(args: { where: { id: string } }): Promise<TEntity>;
+}
+
 @Injectable()
 export abstract class BaseRepository<
   TCreate = any,
   TUpdate = any,
-  TEntity = any,
+  TEntity extends { id: string } = any,
 > {
   protected abstract readonly options: BaseRepositoryOptions;
 
@@ -39,8 +71,12 @@ export abstract class BaseRepository<
     protected readonly auditService: AuditService,
   ) {}
 
-  protected get model(): any {
-    return (this.prisma as any)[this.options.modelName];
+  protected get model(): PrismaModelDelegate<TEntity, TCreate, TUpdate> {
+    const client = this.prisma as unknown as Record<
+      string,
+      PrismaModelDelegate<TEntity, TCreate, TUpdate>
+    >;
+    return client[this.options.modelName];
   }
 
   protected get auditEntity(): string {
@@ -97,7 +133,7 @@ export abstract class BaseRepository<
     this.auditService.logSafe({
       action: 'CREATE',
       entity: this.auditEntity,
-      entityId: (entity as any).id,
+      entityId: entity.id,
       userId,
       changes: { after: this.summarizeForAudit(entity) },
     });
@@ -223,7 +259,7 @@ export abstract class BaseRepository<
     });
   }
 
-  async count(where?: Record<string, unknown>): Promise<number> {
+  count(where?: Record<string, unknown>): Promise<number> {
     return this.model.count({ where });
   }
 }

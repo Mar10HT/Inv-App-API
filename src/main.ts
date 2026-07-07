@@ -5,6 +5,7 @@ import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
 import compression from 'compression';
 import cors from 'cors';
+import type { Express, Request, Response, NextFunction } from 'express';
 import { AppModule } from './app.module';
 import { CsrfService } from './csrf/csrf.service';
 import { GlobalExceptionFilter } from './common/filters';
@@ -32,7 +33,9 @@ async function bootstrap() {
   app.useLogger(app.get(WINSTON_MODULE_NEST_PROVIDER));
 
   // Trust proxy (Railway, Vercel, etc. use reverse proxies)
-  const expressApp = app.getHttpAdapter().getInstance();
+  // `getInstance()` is typed `any` on the generic `HttpServer` interface (it's
+  // the underlying Express instance here since we use the default HTTP adapter).
+  const expressApp = app.getHttpAdapter().getInstance() as Express;
   expressApp.set('trust proxy', 1);
 
   // Security middleware - Helmet
@@ -102,8 +105,8 @@ async function bootstrap() {
     '/api/auth/register',
     '/api/auth/forgot-password',
   ];
-  app.use((req, res, next) => {
-    const authHeader = req.headers.authorization as string | undefined;
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    const authHeader = req.headers.authorization;
     if (authHeader?.startsWith('Bearer ')) {
       return next();
     }
@@ -191,7 +194,8 @@ async function bootstrap() {
       }
     }
   } catch (e) {
-    logger.error(`Auto-seed failed: ${e.message}`);
+    const message = e instanceof Error ? e.message : String(e);
+    logger.error(`Auto-seed failed: ${message}`);
   }
 
   const port = process.env.PORT ?? 3000;
@@ -203,4 +207,5 @@ async function bootstrap() {
     logger.log(`API Documentation at http://localhost:${port}/api/docs`);
   }
 }
-bootstrap();
+// Fire-and-forget: this is the process entry point, there is nothing to await it from.
+void bootstrap();

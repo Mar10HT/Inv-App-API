@@ -5,7 +5,9 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
+import { Request } from 'express';
 import { ROLES_KEY } from '../decorators/roles.decorator';
+import { AuthenticatedUser } from '../interfaces/auth-user.interface';
 
 /**
  * @deprecated Use PermissionsGuard with @Permissions() instead.
@@ -28,7 +30,9 @@ export class RolesGuard implements CanActivate {
     }
 
     // Get user from request (set by JwtAuthGuard)
-    const { user } = context.switchToHttp().getRequest();
+    const { user } = context
+      .switchToHttp()
+      .getRequest<Request & { user?: AuthenticatedUser }>();
 
     if (!user) {
       throw new ForbiddenException('User not authenticated');

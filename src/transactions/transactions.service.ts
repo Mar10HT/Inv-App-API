@@ -222,20 +222,20 @@ export class TransactionsService {
   private validateTransactionType(dto: CreateTransactionDto) {
     const { type, sourceWarehouseId, destinationWarehouseId } = dto;
 
-    if (type === 'IN' && !destinationWarehouseId) {
+    if (type === TransactionType.IN && !destinationWarehouseId) {
       throw new BadRequestException(
         'IN transactions require destinationWarehouseId',
       );
     }
 
-    if (type === 'OUT' && !sourceWarehouseId) {
+    if (type === TransactionType.OUT && !sourceWarehouseId) {
       throw new BadRequestException(
         'OUT transactions require sourceWarehouseId',
       );
     }
 
     if (
-      type === 'TRANSFER' &&
+      type === TransactionType.TRANSFER &&
       (!sourceWarehouseId || !destinationWarehouseId)
     ) {
       throw new BadRequestException(

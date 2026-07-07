@@ -101,7 +101,8 @@ export class UsersService {
       });
 
       // Remove password from response
-      const { password, ...result } = user;
+      const { password: _password, ...result } = user;
+      void _password;
       return result;
     } catch (error: unknown) {
       if (

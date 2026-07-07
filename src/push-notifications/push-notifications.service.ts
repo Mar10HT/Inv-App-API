@@ -16,6 +16,19 @@ interface ExpoPushTicket {
   details?: { error?: string };
 }
 
+interface ExpoPushApiResponse {
+  data: ExpoPushTicket[];
+}
+
+/** Runtime guard for the Expo push API response shape (fetch's `.json()` is typed `any`). */
+function isExpoPushApiResponse(value: unknown): value is ExpoPushApiResponse {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    Array.isArray((value as { data?: unknown }).data)
+  );
+}
+
 const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
 const FETCH_TIMEOUT_MS = 10_000;
 
@@ -60,14 +73,14 @@ export class PushNotificationsService {
           continue;
         }
 
-        const json = await res.json();
-        if (!Array.isArray(json?.data)) {
+        const json: unknown = await res.json();
+        if (!isExpoPushApiResponse(json)) {
           this.logger.error(
             `Unexpected Expo push API response shape: ${JSON.stringify(json)}`,
           );
           continue;
         }
-        const data: ExpoPushTicket[] = json.data;
+        const data = json.data;
         data.forEach((ticket, i) => {
           if (ticket.status === 'error') {
             this.logger.warn(
