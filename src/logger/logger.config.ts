@@ -9,12 +9,14 @@ const logDir = process.env.LOG_DIR || 'logs';
 const consoleFormat = winston.format.combine(
   winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
   winston.format.colorize({ all: true }),
-  winston.format.printf(({ timestamp, level, message, context, trace, ...meta }) => {
-    const contextStr = context ? `[${context}]` : '';
-    const metaStr = Object.keys(meta).length ? JSON.stringify(meta) : '';
-    const traceStr = trace ? `\n${trace}` : '';
-    return `${timestamp} ${level} ${contextStr} ${message} ${metaStr}${traceStr}`;
-  }),
+  winston.format.printf(
+    ({ timestamp, level, message, context, trace, ...meta }) => {
+      const contextStr = context ? `[${context}]` : '';
+      const metaStr = Object.keys(meta).length ? JSON.stringify(meta) : '';
+      const traceStr = trace ? `\n${trace}` : '';
+      return `${timestamp} ${level} ${contextStr} ${message} ${metaStr}${traceStr}`;
+    },
+  ),
 );
 
 // JSON format for file output
@@ -53,10 +55,12 @@ const fileTransports = isProduction
 
 export const winstonConfig: WinstonModuleOptions = {
   transports: [
-    // Console transport - always enabled
+    // Console transport - always enabled. JSON in production so stdout (the
+    // only log sink Railway keeps, given the ephemeral filesystem) is
+    // machine-parseable by log aggregation tooling; colorized/readable in dev.
     new winston.transports.Console({
       level: process.env.LOG_LEVEL || 'info',
-      format: consoleFormat,
+      format: isProduction ? fileFormat : consoleFormat,
     }),
     ...fileTransports,
   ],

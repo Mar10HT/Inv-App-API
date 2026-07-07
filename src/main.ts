@@ -13,10 +13,14 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { PrismaService } from './prisma/prisma.service';
 import { UserRole } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
+import { initSentry } from './common/sentry';
 
 const logger = new Logger('Bootstrap');
 
 async function bootstrap() {
+  // Must run before the Nest app is created so Sentry's instrumentation can hook in early.
+  initSentry();
+
   const app = await NestFactory.create(AppModule, {
     bufferLogs: true, // Buffer logs until Winston is ready
   });
@@ -53,23 +57,35 @@ async function bootstrap() {
   app.use(cookieParser());
 
   // CORS middleware — must run BEFORE CSRF so all responses (including errors) have CORS headers
-  const corsOrigins = process.env.CORS_ORIGIN?.split(',').map(o => o.trim()) || ['http://localhost:4200'];
+  const corsOrigins = process.env.CORS_ORIGIN?.split(',').map((o) =>
+    o.trim(),
+  ) || ['http://localhost:4200'];
 
-  app.use(cors({
-    origin: (origin, callback) => {
-      // Allow requests with no origin (like mobile apps or curl)
-      if (!origin) return callback(null, true);
+  app.use(
+    cors({
+      origin: (origin, callback) => {
+        // Allow requests with no origin (like mobile apps or curl)
+        if (!origin) return callback(null, true);
 
-      if (corsOrigins.some(allowed => origin === allowed || origin.endsWith(allowed.replace('https://', '.')))) {
-        return callback(null, true);
-      }
+        if (
+          corsOrigins.some(
+            (allowed) =>
+              origin === allowed ||
+              origin.endsWith(allowed.replace('https://', '.')),
+          )
+        ) {
+          return callback(null, true);
+        }
 
-      logger.warn(`CORS blocked origin: ${origin}, allowed: ${corsOrigins.join(', ')}`);
-      return callback(null, false);
-    },
-    credentials: true,
-    exposedHeaders: ['set-cookie'],
-  }));
+        logger.warn(
+          `CORS blocked origin: ${origin}, allowed: ${corsOrigins.join(', ')}`,
+        );
+        return callback(null, false);
+      },
+      credentials: true,
+      exposedHeaders: ['set-cookie'],
+    }),
+  );
 
   // CSRF protection middleware (after CORS)
   // Requests using Bearer token (mobile apps, API clients) are inherently CSRF-immune
@@ -110,10 +126,14 @@ async function bootstrap() {
   );
 
   // Global exception filter for centralized error handling
-  app.useGlobalFilters(new GlobalExceptionFilter(app.get(WINSTON_MODULE_NEST_PROVIDER)));
+  app.useGlobalFilters(
+    new GlobalExceptionFilter(app.get(WINSTON_MODULE_NEST_PROVIDER)),
+  );
 
   // Global logging interceptor
-  app.useGlobalInterceptors(new LoggingInterceptor(app.get(WINSTON_MODULE_NEST_PROVIDER)));
+  app.useGlobalInterceptors(
+    new LoggingInterceptor(app.get(WINSTON_MODULE_NEST_PROVIDER)),
+  );
 
   // Global prefix for all routes
   app.setGlobalPrefix('api');
@@ -146,8 +166,12 @@ async function bootstrap() {
     const prisma = app.get(PrismaService);
     const userCount = await prisma.user.count();
     if (userCount === 0) {
-      const adminEmail = process.env.ADMIN_EMAIL || (process.env.NODE_ENV !== 'production' ? 'admin@example.com' : null);
-      const adminPassword = process.env.ADMIN_PASSWORD || (process.env.NODE_ENV !== 'production' ? 'password123' : null);
+      const adminEmail =
+        process.env.ADMIN_EMAIL ||
+        (process.env.NODE_ENV !== 'production' ? 'admin@example.com' : null);
+      const adminPassword =
+        process.env.ADMIN_PASSWORD ||
+        (process.env.NODE_ENV !== 'production' ? 'password123' : null);
 
       if (adminEmail && adminPassword) {
         const hashedPassword = await bcrypt.hash(adminPassword, 10);
@@ -161,7 +185,9 @@ async function bootstrap() {
         });
         logger.log(`Initial admin created (${adminEmail})`);
       } else {
-        logger.warn('No users exist. Set ADMIN_EMAIL and ADMIN_PASSWORD env vars to create initial admin.');
+        logger.warn(
+          'No users exist. Set ADMIN_EMAIL and ADMIN_PASSWORD env vars to create initial admin.',
+        );
       }
     }
   } catch (e) {
