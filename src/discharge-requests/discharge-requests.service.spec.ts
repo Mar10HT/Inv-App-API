@@ -60,16 +60,26 @@ describe('DischargeRequestsService', () => {
   };
 
   beforeEach(async () => {
-    const mockTransaction = jest.fn().mockImplementation(async (fn) => fn({
-      dischargeRequest: {
-        create: jest.fn().mockResolvedValue(mockRequest),
-        update: jest.fn().mockResolvedValue({ ...mockRequest, status: DischargeRequestStatus.COMPLETED }),
-      },
-      inventoryItem: {
-        findFirst: jest.fn().mockResolvedValue(mockInventoryItem),
-        update: jest.fn().mockResolvedValue(mockInventoryItem),
-      },
-    }));
+    const mockTransaction = jest.fn().mockImplementation(async (fn) =>
+      fn({
+        dischargeRequest: {
+          create: jest.fn().mockResolvedValue(mockRequest),
+          findUnique: jest.fn().mockResolvedValue(mockRequest),
+          update: jest
+            .fn()
+            .mockImplementation((...args) =>
+              mockPrismaService.dischargeRequest.update(...args),
+            ),
+        },
+        inventoryItem: {
+          findFirst: jest.fn().mockResolvedValue(mockInventoryItem),
+          update: jest.fn().mockResolvedValue(mockInventoryItem),
+        },
+        outflow: {
+          create: jest.fn().mockResolvedValue({ id: 'outflow-1' }),
+        },
+      }),
+    );
 
     const mockPrismaService = {
       inventoryItem: {
@@ -79,7 +89,10 @@ describe('DischargeRequestsService', () => {
       dischargeRequest: {
         findUnique: jest.fn(),
         findMany: jest.fn(),
-        update: jest.fn(),
+        update: jest.fn().mockResolvedValue({
+          ...mockRequest,
+          status: DischargeRequestStatus.COMPLETED,
+        }),
         count: jest.fn(),
       },
       $transaction: mockTransaction,
@@ -90,7 +103,9 @@ describe('DischargeRequestsService', () => {
     };
 
     const mockQrService = {
-      generateUrlQrDataUrl: jest.fn().mockResolvedValue('data:image/png;base64,QR'),
+      generateUrlQrDataUrl: jest
+        .fn()
+        .mockResolvedValue('data:image/png;base64,QR'),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -123,20 +138,27 @@ describe('DischargeRequestsService', () => {
     };
 
     it('creates discharge request and logs audit', async () => {
-      (prisma.inventoryItem.findUnique as jest.Mock).mockResolvedValue(mockInventoryItem);
+      (prisma.inventoryItem.findUnique as jest.Mock).mockResolvedValue(
+        mockInventoryItem,
+      );
 
       const result = await service.createFromPublicForm(dto);
 
       expect(result.requestsCreated).toBe(1);
       expect(auditService.log).toHaveBeenCalledWith(
-        expect.objectContaining({ action: 'CREATE', entity: 'DischargeRequest' }),
+        expect.objectContaining({
+          action: 'CREATE',
+          entity: 'DischargeRequest',
+        }),
       );
     });
 
     it('throws NotFoundException when inventory item not found', async () => {
       (prisma.inventoryItem.findUnique as jest.Mock).mockResolvedValue(null);
 
-      await expect(service.createFromPublicForm(dto)).rejects.toThrow(NotFoundException);
+      await expect(service.createFromPublicForm(dto)).rejects.toThrow(
+        NotFoundException,
+      );
     });
 
     it('throws BadRequestException when insufficient quantity', async () => {
@@ -144,15 +166,21 @@ describe('DischargeRequestsService', () => {
         ...dto,
         items: [{ inventoryItemId: 'item-1', quantity: 999 }],
       };
-      (prisma.inventoryItem.findUnique as jest.Mock).mockResolvedValue(mockInventoryItem);
+      (prisma.inventoryItem.findUnique as jest.Mock).mockResolvedValue(
+        mockInventoryItem,
+      );
 
-      await expect(service.createFromPublicForm(dtoOverRequest)).rejects.toThrow(BadRequestException);
+      await expect(
+        service.createFromPublicForm(dtoOverRequest),
+      ).rejects.toThrow(BadRequestException);
     });
   });
 
   describe('getAvailableItems', () => {
     it('returns items with quantity > 0 and not deleted', async () => {
-      (prisma.inventoryItem.findMany as jest.Mock).mockResolvedValue([mockInventoryItem]);
+      (prisma.inventoryItem.findMany as jest.Mock).mockResolvedValue([
+        mockInventoryItem,
+      ]);
 
       const result = await service.getAvailableItems();
 
@@ -167,7 +195,9 @@ describe('DischargeRequestsService', () => {
 
   describe('findAll', () => {
     it('returns paginated requests', async () => {
-      (prisma.dischargeRequest.findMany as jest.Mock).mockResolvedValue([mockRequest]);
+      (prisma.dischargeRequest.findMany as jest.Mock).mockResolvedValue([
+        mockRequest,
+      ]);
       (prisma.dischargeRequest.count as jest.Mock).mockResolvedValue(1);
 
       const result = await service.findAll({});
@@ -177,14 +207,18 @@ describe('DischargeRequestsService', () => {
     });
 
     it('filters by status when provided', async () => {
-      (prisma.dischargeRequest.findMany as jest.Mock).mockResolvedValue([mockRequest]);
+      (prisma.dischargeRequest.findMany as jest.Mock).mockResolvedValue([
+        mockRequest,
+      ]);
       (prisma.dischargeRequest.count as jest.Mock).mockResolvedValue(1);
 
       await service.findAll({ status: DischargeRequestStatus.PENDING });
 
       expect(prisma.dischargeRequest.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: expect.objectContaining({ status: DischargeRequestStatus.PENDING }),
+          where: expect.objectContaining({
+            status: DischargeRequestStatus.PENDING,
+          }),
         }),
       );
     });
@@ -192,7 +226,9 @@ describe('DischargeRequestsService', () => {
 
   describe('findOne', () => {
     it('returns request by id', async () => {
-      (prisma.dischargeRequest.findUnique as jest.Mock).mockResolvedValue(mockRequest);
+      (prisma.dischargeRequest.findUnique as jest.Mock).mockResolvedValue(
+        mockRequest,
+      );
 
       const result = await service.findOne('req-1');
 
@@ -202,65 +238,101 @@ describe('DischargeRequestsService', () => {
     it('throws NotFoundException when not found', async () => {
       (prisma.dischargeRequest.findUnique as jest.Mock).mockResolvedValue(null);
 
-      await expect(service.findOne('not-found')).rejects.toThrow(NotFoundException);
+      await expect(service.findOne('not-found')).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 
   describe('complete', () => {
     it('completes a pending request and decrements inventory', async () => {
-      (prisma.dischargeRequest.findUnique as jest.Mock).mockResolvedValue(mockRequest);
+      (prisma.dischargeRequest.findUnique as jest.Mock).mockResolvedValue(
+        mockRequest,
+      );
 
       const result = await service.complete('req-1', 'user-1');
 
       expect(result.status).toBe(DischargeRequestStatus.COMPLETED);
       expect(auditService.log).toHaveBeenCalledWith(
-        expect.objectContaining({ action: 'UPDATE', entity: 'DischargeRequest' }),
+        expect.objectContaining({
+          action: 'UPDATE',
+          entity: 'DischargeRequest',
+        }),
       );
     });
 
     it('throws BadRequestException when request is not PENDING', async () => {
-      const completedRequest = { ...mockRequest, status: DischargeRequestStatus.COMPLETED };
-      (prisma.dischargeRequest.findUnique as jest.Mock).mockResolvedValue(completedRequest);
+      const completedRequest = {
+        ...mockRequest,
+        status: DischargeRequestStatus.COMPLETED,
+      };
+      (prisma.dischargeRequest.findUnique as jest.Mock).mockResolvedValue(
+        completedRequest,
+      );
 
-      await expect(service.complete('req-1', 'user-1')).rejects.toThrow(BadRequestException);
+      await expect(service.complete('req-1', 'user-1')).rejects.toThrow(
+        BadRequestException,
+      );
     });
 
     it('throws NotFoundException when request not found', async () => {
       (prisma.dischargeRequest.findUnique as jest.Mock).mockResolvedValue(null);
 
-      await expect(service.complete('not-found', 'user-1')).rejects.toThrow(NotFoundException);
+      await expect(service.complete('not-found', 'user-1')).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 
   describe('reject', () => {
     it('rejects a pending request with reason', async () => {
-      const rejectedRequest = { ...mockRequest, status: DischargeRequestStatus.REJECTED, rejectedReason: 'No budget' };
-      (prisma.dischargeRequest.findUnique as jest.Mock).mockResolvedValue(mockRequest);
-      (prisma.dischargeRequest.update as jest.Mock).mockResolvedValue(rejectedRequest);
+      const rejectedRequest = {
+        ...mockRequest,
+        status: DischargeRequestStatus.REJECTED,
+        rejectedReason: 'No budget',
+      };
+      (prisma.dischargeRequest.findUnique as jest.Mock).mockResolvedValue(
+        mockRequest,
+      );
+      (prisma.dischargeRequest.update as jest.Mock).mockResolvedValue(
+        rejectedRequest,
+      );
 
       const result = await service.reject('req-1', 'user-1', 'No budget');
 
       expect(result.status).toBe(DischargeRequestStatus.REJECTED);
       expect(auditService.log).toHaveBeenCalledWith(
-        expect.objectContaining({ changes: expect.objectContaining({ status: 'REJECTED', reason: 'No budget' }) }),
+        expect.objectContaining({
+          changes: expect.objectContaining({
+            status: 'REJECTED',
+            reason: 'No budget',
+          }),
+        }),
       );
     });
 
     it('throws BadRequestException when request is not PENDING', async () => {
-      const rejectedRequest = { ...mockRequest, status: DischargeRequestStatus.REJECTED };
-      (prisma.dischargeRequest.findUnique as jest.Mock).mockResolvedValue(rejectedRequest);
+      const rejectedRequest = {
+        ...mockRequest,
+        status: DischargeRequestStatus.REJECTED,
+      };
+      (prisma.dischargeRequest.findUnique as jest.Mock).mockResolvedValue(
+        rejectedRequest,
+      );
 
-      await expect(service.reject('req-1', 'user-1')).rejects.toThrow(BadRequestException);
+      await expect(service.reject('req-1', 'user-1')).rejects.toThrow(
+        BadRequestException,
+      );
     });
   });
 
   describe('getStats', () => {
     it('returns counts by status', async () => {
       (prisma.dischargeRequest.count as jest.Mock)
-        .mockResolvedValueOnce(10)  // total
-        .mockResolvedValueOnce(4)   // pending
-        .mockResolvedValueOnce(5)   // completed
-        .mockResolvedValueOnce(1);  // rejected
+        .mockResolvedValueOnce(10) // total
+        .mockResolvedValueOnce(4) // pending
+        .mockResolvedValueOnce(5) // completed
+        .mockResolvedValueOnce(1); // rejected
 
       const result = await service.getStats();
 

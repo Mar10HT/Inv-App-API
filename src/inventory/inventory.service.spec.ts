@@ -1,8 +1,15 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
+import {
+  NotFoundException,
+  ConflictException,
+  BadRequestException,
+} from '@nestjs/common';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { InventoryService } from './inventory.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
+import { EventsService } from '../events/events.service';
+import { SearchService } from '../common/search/search.service';
 import { InventoryStatus, ItemType, Currency } from '@prisma/client';
 
 describe('InventoryService', () => {
@@ -71,10 +78,27 @@ describe('InventoryService', () => {
       user: {
         findUnique: jest.fn(),
       },
+      $queryRaw: jest.fn().mockResolvedValue([{ total: 0 }]),
     };
 
     const mockAuditService = {
       log: jest.fn(),
+    };
+
+    const mockCacheManager = {
+      get: jest.fn().mockResolvedValue(undefined),
+      set: jest.fn().mockResolvedValue(undefined),
+      reset: jest.fn().mockResolvedValue(undefined),
+    };
+
+    const mockEventsService = {
+      emitInventoryChange: jest.fn(),
+    };
+
+    const mockSearchService = {
+      syncItem: jest.fn().mockResolvedValue(undefined),
+      removeItem: jest.fn().mockResolvedValue(undefined),
+      searchInventory: jest.fn().mockResolvedValue([]),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -82,6 +106,9 @@ describe('InventoryService', () => {
         InventoryService,
         { provide: PrismaService, useValue: mockPrismaService },
         { provide: AuditService, useValue: mockAuditService },
+        { provide: CACHE_MANAGER, useValue: mockCacheManager },
+        { provide: EventsService, useValue: mockEventsService },
+        { provide: SearchService, useValue: mockSearchService },
       ],
     }).compile();
 
@@ -96,9 +123,13 @@ describe('InventoryService', () => {
 
   describe('create', () => {
     it('should create a BULK inventory item successfully', async () => {
-      (prisma.warehouse.findUnique as jest.Mock).mockResolvedValue(mockWarehouse);
+      (prisma.warehouse.findUnique as jest.Mock).mockResolvedValue(
+        mockWarehouse,
+      );
       (prisma.inventoryItem.findUnique as jest.Mock).mockResolvedValue(null);
-      (prisma.inventoryItem.create as jest.Mock).mockResolvedValue(mockInventoryItem);
+      (prisma.inventoryItem.create as jest.Mock).mockResolvedValue(
+        mockInventoryItem,
+      );
       (auditService.log as jest.Mock).mockResolvedValue(undefined);
 
       const createDto = {
@@ -135,8 +166,12 @@ describe('InventoryService', () => {
     });
 
     it('should throw ConflictException if SKU already exists', async () => {
-      (prisma.warehouse.findUnique as jest.Mock).mockResolvedValue(mockWarehouse);
-      (prisma.inventoryItem.findUnique as jest.Mock).mockResolvedValue(mockInventoryItem);
+      (prisma.warehouse.findUnique as jest.Mock).mockResolvedValue(
+        mockWarehouse,
+      );
+      (prisma.inventoryItem.findUnique as jest.Mock).mockResolvedValue(
+        mockInventoryItem,
+      );
 
       await expect(
         service.create({
@@ -150,7 +185,9 @@ describe('InventoryService', () => {
     });
 
     it('should throw BadRequestException if UNIQUE item has quantity > 1', async () => {
-      (prisma.warehouse.findUnique as jest.Mock).mockResolvedValue(mockWarehouse);
+      (prisma.warehouse.findUnique as jest.Mock).mockResolvedValue(
+        mockWarehouse,
+      );
 
       await expect(
         service.create({
@@ -165,7 +202,9 @@ describe('InventoryService', () => {
     });
 
     it('should throw BadRequestException if UNIQUE item has no serviceTag or serialNumber', async () => {
-      (prisma.warehouse.findUnique as jest.Mock).mockResolvedValue(mockWarehouse);
+      (prisma.warehouse.findUnique as jest.Mock).mockResolvedValue(
+        mockWarehouse,
+      );
 
       await expect(
         service.create({
@@ -179,7 +218,9 @@ describe('InventoryService', () => {
     });
 
     it('should auto-calculate LOW_STOCK status when quantity <= minQuantity', async () => {
-      (prisma.warehouse.findUnique as jest.Mock).mockResolvedValue(mockWarehouse);
+      (prisma.warehouse.findUnique as jest.Mock).mockResolvedValue(
+        mockWarehouse,
+      );
       (prisma.inventoryItem.findUnique as jest.Mock).mockResolvedValue(null);
       (prisma.inventoryItem.create as jest.Mock).mockImplementation((args) => {
         return Promise.resolve({
@@ -257,7 +298,9 @@ describe('InventoryService', () => {
 
   describe('findOne', () => {
     it('should return an inventory item by ID', async () => {
-      (prisma.inventoryItem.findUnique as jest.Mock).mockResolvedValue(mockInventoryItem);
+      (prisma.inventoryItem.findUnique as jest.Mock).mockResolvedValue(
+        mockInventoryItem,
+      );
 
       const result = await service.findOne('item-123');
 
@@ -271,14 +314,18 @@ describe('InventoryService', () => {
     it('should throw NotFoundException if item does not exist', async () => {
       (prisma.inventoryItem.findUnique as jest.Mock).mockResolvedValue(null);
 
-      await expect(service.findOne('nonexistent')).rejects.toThrow(NotFoundException);
+      await expect(service.findOne('nonexistent')).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 
   describe('update', () => {
     it('should update an inventory item', async () => {
       const updatedItem = { ...mockInventoryItem, name: 'Updated Item' };
-      (prisma.inventoryItem.findUnique as jest.Mock).mockResolvedValue(mockInventoryItem);
+      (prisma.inventoryItem.findUnique as jest.Mock).mockResolvedValue(
+        mockInventoryItem,
+      );
       (prisma.inventoryItem.findFirst as jest.Mock).mockResolvedValue(null);
       (prisma.inventoryItem.update as jest.Mock).mockResolvedValue(updatedItem);
 
@@ -288,7 +335,9 @@ describe('InventoryService', () => {
     });
 
     it('should throw ConflictException if updating to existing SKU', async () => {
-      (prisma.inventoryItem.findUnique as jest.Mock).mockResolvedValue(mockInventoryItem);
+      (prisma.inventoryItem.findUnique as jest.Mock).mockResolvedValue(
+        mockInventoryItem,
+      );
       (prisma.inventoryItem.findFirst as jest.Mock).mockResolvedValue({
         ...mockInventoryItem,
         id: 'other-item',
@@ -326,7 +375,9 @@ describe('InventoryService', () => {
 
   describe('remove', () => {
     it('should soft delete an inventory item', async () => {
-      (prisma.inventoryItem.findUnique as jest.Mock).mockResolvedValue(mockInventoryItem);
+      (prisma.inventoryItem.findUnique as jest.Mock).mockResolvedValue(
+        mockInventoryItem,
+      );
       (prisma.inventoryItem.update as jest.Mock).mockResolvedValue({
         ...mockInventoryItem,
         deletedAt: new Date(),
@@ -345,26 +396,20 @@ describe('InventoryService', () => {
     it('should return inventory statistics', async () => {
       (prisma.inventoryItem.count as jest.Mock)
         .mockResolvedValueOnce(100) // total
-        .mockResolvedValueOnce(80)  // inStock
-        .mockResolvedValueOnce(15)  // lowStock
-        .mockResolvedValueOnce(5);  // outOfStock
+        .mockResolvedValueOnce(80) // inStock
+        .mockResolvedValueOnce(15) // lowStock
+        .mockResolvedValueOnce(5) // outOfStock
+        .mockResolvedValueOnce(0); // inUse
 
-      (prisma.inventoryItem.findMany as jest.Mock).mockResolvedValue([
-        { price: 10, quantity: 5 },
-        { price: 20, quantity: 3 },
+      (prisma.$queryRaw as jest.Mock).mockResolvedValue([{ total: 110 }]); // 10*5 + 20*3
+
+      (prisma.inventoryItem.groupBy as jest.Mock).mockResolvedValueOnce([
+        { category: 'Electronics', _count: { category: 50 } },
+        { category: 'Furniture', _count: { category: 30 } },
       ]);
 
-      (prisma.inventoryItem.groupBy as jest.Mock)
-        .mockResolvedValueOnce([
-          { category: 'Electronics', _count: { category: 50 } },
-          { category: 'Furniture', _count: { category: 30 } },
-        ])
-        .mockResolvedValueOnce([
-          { warehouseId: 'wh-1', _count: { warehouseId: 60 } },
-        ]);
-
       (prisma.warehouse.findMany as jest.Mock).mockResolvedValue([
-        { id: 'wh-1', name: 'Warehouse 1' },
+        { id: 'wh-1', name: 'Warehouse 1', _count: { inventoryItems: 60 } },
       ]);
 
       const result = await service.getStats();
@@ -373,7 +418,7 @@ describe('InventoryService', () => {
       expect(result.inStock).toBe(80);
       expect(result.lowStock).toBe(15);
       expect(result.outOfStock).toBe(5);
-      expect(result.totalValue).toBe(110); // 10*5 + 20*3
+      expect(result.totalValue).toBe(110);
       expect(result.categories).toHaveLength(2);
       expect(result.locations).toHaveLength(1);
     });
@@ -382,10 +427,21 @@ describe('InventoryService', () => {
   describe('getLowStockItems', () => {
     it('should return items with LOW_STOCK or OUT_OF_STOCK status', async () => {
       const lowStockItems = [
-        { ...mockInventoryItem, status: InventoryStatus.LOW_STOCK, quantity: 5 },
-        { ...mockInventoryItem, id: 'item-456', status: InventoryStatus.OUT_OF_STOCK, quantity: 0 },
+        {
+          ...mockInventoryItem,
+          status: InventoryStatus.LOW_STOCK,
+          quantity: 5,
+        },
+        {
+          ...mockInventoryItem,
+          id: 'item-456',
+          status: InventoryStatus.OUT_OF_STOCK,
+          quantity: 0,
+        },
       ];
-      (prisma.inventoryItem.findMany as jest.Mock).mockResolvedValue(lowStockItems);
+      (prisma.inventoryItem.findMany as jest.Mock).mockResolvedValue(
+        lowStockItems,
+      );
 
       const result = await service.getLowStockItems();
 
@@ -406,7 +462,9 @@ describe('InventoryService', () => {
   describe('restore', () => {
     it('should restore a soft-deleted item', async () => {
       const deletedItem = { ...mockInventoryItem, deletedAt: new Date() };
-      (prisma.inventoryItem.findUnique as jest.Mock).mockResolvedValue(deletedItem);
+      (prisma.inventoryItem.findUnique as jest.Mock).mockResolvedValue(
+        deletedItem,
+      );
       (prisma.inventoryItem.update as jest.Mock).mockResolvedValue({
         ...mockInventoryItem,
         deletedAt: null,
@@ -418,9 +476,13 @@ describe('InventoryService', () => {
     });
 
     it('should throw BadRequestException if item is not deleted', async () => {
-      (prisma.inventoryItem.findUnique as jest.Mock).mockResolvedValue(mockInventoryItem);
+      (prisma.inventoryItem.findUnique as jest.Mock).mockResolvedValue(
+        mockInventoryItem,
+      );
 
-      await expect(service.restore('item-123')).rejects.toThrow(BadRequestException);
+      await expect(service.restore('item-123')).rejects.toThrow(
+        BadRequestException,
+      );
     });
   });
 });
