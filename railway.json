@@ -4,7 +4,7 @@
     "builder": "NIXPACKS"
   },
   "deploy": {
-    "startCommand": "npx prisma db push --schema=./prisma/schema.prod.prisma --skip-generate --accept-data-loss && node dist/main",
+    "startCommand": "bun run railway:start",
     "restartPolicyType": "ON_FAILURE",
     "restartPolicyMaxRetries": 10
   }

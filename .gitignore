@@ -2,6 +2,10 @@ node_modules
 # Keep environment variables out of version control
 .env
 
+# bun is the single source of truth for installs (see nixpacks.toml / CI);
+# a stray npm install regenerates this and causes bun/npm drift
+package-lock.json
+
 # Build output
 dist/
 

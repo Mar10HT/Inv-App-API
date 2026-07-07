@@ -1,6 +1,6 @@
 {
   "name": "Inv-App-API",
-  "version": "0.4.5",
+  "version": "0.6.0",
   "description": "Obsid — RESTful inventory management API built with NestJS and Prisma",
   "author": "",
   "private": true,
@@ -8,7 +8,7 @@
   "scripts": {
     "build": "nest build",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
-    "start": "prisma db execute --schema=./prisma/schema.prod.prisma --file=./prisma/migrate-loan-multi-item.sql && prisma db push --schema=./prisma/schema.prod.prisma --skip-generate && bun dist/main",
+    "start": "bun run railway:start",
     "start:dev": "cross-env NODE_ENV=development nest start --watch",
     "start:debug": "cross-env NODE_ENV=development nest start --debug --watch",
     "start:prod": "bun dist/main",
@@ -28,7 +28,7 @@
     "prisma:migrate": "prisma migrate dev --schema=./prisma/schema.prisma",
     "prisma:studio": "prisma studio --schema=./prisma/schema.prisma",
     "railway:build": "bun install && bun run prisma:generate:prod && bun run build",
-    "railway:migrate": "prisma db push --schema=./prisma/schema.prod.prisma --skip-generate",
+    "railway:migrate": "prisma db execute --schema=./prisma/schema.prod.prisma --file=./prisma/migrate-loan-multi-item.sql && prisma db push --schema=./prisma/schema.prod.prisma --skip-generate",
     "railway:start": "bun run railway:migrate && bun run start:prod"
   },
   "dependencies": {
@@ -48,6 +48,7 @@
     "@nestjs/throttler": "^6.5.0",
     "@nestjs/websockets": "^11.1.12",
     "@prisma/client": "^6.19.0",
+    "@sentry/node": "^10.63.0",
     "bcryptjs": "^3.0.3",
     "cache-manager": "^7.2.8",
     "class-transformer": "^0.5.1",
@@ -133,7 +134,6 @@
   "overrides": {
     "path-to-regexp": "8.4.1",
     "picomatch": "4.0.4",
-    "ajv": "8.18.0",
     "file-type": "22.0.0",
     "preview-email": {
       "nodemailer": "8.0.4"
