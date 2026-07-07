@@ -9,6 +9,21 @@ This project uses [Semantic Versioning](https://semver.org/). Version `0.x.x` in
 ## [Unreleased]
 
 ### Fixed
+- Railway `startCommand` no longer runs `prisma db push --accept-data-loss` directly — it now calls `railway:start` (the same hardened script `package.json`'s scripts already used), so a destructive schema change fails the deploy instead of silently applying.
+- Closed a tenant/warehouse-isolation gap in the QR confirmation paths: `LoansService.confirmReceipt`/`confirmReturn` and `TransferRequestsService.confirmReceipt` now check `userWarehouseIds` like every other mutating action on those services, instead of letting any authenticated user with `loans:manage`/`transfers:manage` confirm a scan for a warehouse they have no access to.
+- Removed the blanket `ajv@8.18.0` override that was crashing `eslint` on every invocation (ESLint's bundled `@eslint/eslintrc` needs ajv v6, not v8) — bun now resolves ajv naturally per-consumer instead of flattening to one incompatible version.
+
+### Added
+- CI (`.github/workflows/ci.yml`): install, Prisma validate, lint (non-blocking — see below), unit tests, build on every push/PR to `main`.
+- Unit tests for `OutflowsService` and `SalesService` (previously zero coverage on both).
+- `package-lock.json` is now gitignored — `bun.lock` is the only lockfile; npm/bun installs were drifting out of sync.
+
+### Known backlog
+- Enabling lint surfaced ~430 pre-existing findings across the codebase (mostly `@typescript-eslint` strict-mode rules that were never actually enforced, since the ajv crash above silently prevented lint from ever completing). CI runs lint but doesn't fail on it yet — needs a dedicated cleanup pass.
+
+## [0.6.0] - 2026-07-07
+
+### Fixed
 - RBAC seed (`PermissionsSeedService.syncRolePermissions`) no longer passes `skipDuplicates` to `rolePermission.createMany`, which SQLite (the dev datasource) does not support and threw on. This silently prevented newly-added permissions from being granted to roles in dev; `toAdd` is already deduplicated so the flag was unnecessary.
 
 ### Added

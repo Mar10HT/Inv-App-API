@@ -37,10 +37,10 @@ Handles authentication, stock operations, multi-warehouse logistics, and reporti
 
 | | Technology |
 |---|---|
-| **Framework** | NestJS 10 |
-| **ORM** | Prisma 5 |
+| **Framework** | NestJS 11 |
+| **ORM** | Prisma 6 |
 | **Database** | SQLite (dev) · PostgreSQL (prod) |
-| **Auth** | Passport JWT · bcrypt |
+| **Auth** | Passport JWT · bcryptjs |
 | **Docs** | Swagger / OpenAPI |
 | **Logging** | Winston |
 | **Testing** | Jest |
@@ -50,12 +50,12 @@ Handles authentication, stock operations, multi-warehouse logistics, and reporti
 **Prerequisites:** Node.js 20+
 
 ```bash
-npm install
+bun install
 cp .env.example .env           # Configure environment
 npx prisma db push             # Push schema to SQLite (dev)
-npm run prisma:generate        # Generate Prisma client
-npm run start:dev              # → http://localhost:3000
-# POST http://localhost:3000/api/seed  (seed admin + RBAC permissions)
+bun run prisma:generate        # Generate Prisma client
+bun run start:dev              # → http://localhost:3001
+# POST http://localhost:3001/api/seed  (seed admin + RBAC permissions)
 ```
 
 > **Note:** In dev (SQLite) use `prisma db push` + `prisma:generate`, not `prisma migrate dev` — SQLite has migration drift.

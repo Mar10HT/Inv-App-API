@@ -1,13 +1,17 @@
 # Codemap Quick Reference
 
-**Documentation Version:** 0.1.0
+**Documentation Version:** 0.6.0
 **Created:** 2026-04-03
-**Framework:** NestJS 10 + Prisma 5 + TypeScript 5.7
+**Updated:** 2026-07-07
+**Framework:** NestJS 11 + Prisma 6 + TypeScript 5.7
 
 ---
 
-## What's New (v0.5.0)
+## What's New (v0.6.0)
 
+- **Sales module** — customer-tier pricing, PDF receipts, stock decrement with cancel-to-restore
+- **Outflows module** — write-offs (damaged/lost/expired/consumed/sold) with PDF receipts
+- **Granular RBAC** — `Role`/`Permission`/`RolePermission` tables, 55 permissions across 18 modules
 - **Manual Confirmation Endpoints** — Confirm loans/transfers without QR code
 - **Sequential Inventory Updates** — Prevents race conditions in concurrent transfers
 - **Transaction Safety** — TOCTOU guards and atomic operations
@@ -411,4 +415,4 @@ Permissions are cached for 60 seconds:
 
 ---
 
-**Last Updated:** 2026-04-03 | **Version:** 0.5.0 | **Status:** Current
+**Last Updated:** 2026-07-07 | **Version:** 0.6.0 | **Status:** Current
