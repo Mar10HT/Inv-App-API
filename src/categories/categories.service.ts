@@ -6,7 +6,10 @@ import { CreateCategoryDto } from './dto/create-category.dto';
 import { UpdateCategoryDto } from './dto/update-category.dto';
 
 @Injectable()
-export class CategoriesService extends BaseRepository<CreateCategoryDto, UpdateCategoryDto> {
+export class CategoriesService extends BaseRepository<
+  CreateCategoryDto,
+  UpdateCategoryDto
+> {
   protected readonly options: BaseRepositoryOptions = {
     modelName: 'category',
     defaultOrderBy: { name: 'asc' },

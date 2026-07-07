@@ -45,7 +45,9 @@ export class UsersController {
 
   @Get()
   @Permissions('users:view')
-  findAll(@Query(new ValidationPipe({ transform: true })) pagination: PaginationDto) {
+  findAll(
+    @Query(new ValidationPipe({ transform: true })) pagination: PaginationDto,
+  ) {
     return this.usersService.findAll(pagination);
   }
 
@@ -102,10 +104,7 @@ export class UsersController {
 
   @Patch(':id/restore')
   @Permissions('users:delete')
-  restore(
-    @Param('id') id: string,
-    @CurrentUser() actor: AuthenticatedUser,
-  ) {
+  restore(@Param('id') id: string, @CurrentUser() actor: AuthenticatedUser) {
     return this.usersService.restore(id, actor.userId);
   }
 

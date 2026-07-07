@@ -23,7 +23,10 @@ import { resolveWarehouseScope } from '../common/warehouse-access/warehouse-filt
 export class ReportsController {
   constructor(private readonly reportsService: ReportsService) {}
 
-  private scope(user: AuthenticatedUser, warehouseId?: string): string[] | null {
+  private scope(
+    user: AuthenticatedUser,
+    warehouseId?: string,
+  ): string[] | null {
     try {
       return resolveWarehouseScope(user.warehouseIds, warehouseId);
     } catch {
@@ -39,10 +42,15 @@ export class ReportsController {
     @CurrentUser() user: AuthenticatedUser,
     @Res() res: Response,
   ) {
-    const buffer = await this.reportsService.generateInventoryExcel(filters, user.warehouseIds, locale);
+    const buffer = await this.reportsService.generateInventoryExcel(
+      filters,
+      user.warehouseIds,
+      locale,
+    );
 
     res.set({
-      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Type':
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       'Content-Disposition': `attachment; filename=inventario_${Date.now()}.xlsx`,
       'Content-Length': buffer.length,
     });
@@ -58,7 +66,11 @@ export class ReportsController {
     @CurrentUser() user: AuthenticatedUser,
     @Res() res: Response,
   ) {
-    const buffer = await this.reportsService.generateInventoryPdf(filters, user.warehouseIds, locale);
+    const buffer = await this.reportsService.generateInventoryPdf(
+      filters,
+      user.warehouseIds,
+      locale,
+    );
 
     res.set({
       'Content-Type': 'application/pdf',
@@ -78,10 +90,14 @@ export class ReportsController {
     @Res() res: Response,
   ) {
     const scope = this.scope(user, warehouseId);
-    const buffer = await this.reportsService.generateLowStockReport(scope, locale);
+    const buffer = await this.reportsService.generateLowStockReport(
+      scope,
+      locale,
+    );
 
     res.set({
-      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Type':
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       'Content-Disposition': `attachment; filename=stock_bajo_${Date.now()}.xlsx`,
       'Content-Length': buffer.length,
     });
@@ -110,10 +126,16 @@ export class ReportsController {
     }
 
     const scope = this.scope(user, warehouseId);
-    const buffer = await this.reportsService.generateTransactionsReport(start, end, scope, locale);
+    const buffer = await this.reportsService.generateTransactionsReport(
+      start,
+      end,
+      scope,
+      locale,
+    );
 
     res.set({
-      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Type':
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       'Content-Disposition': `attachment; filename=transacciones_${Date.now()}.xlsx`,
       'Content-Length': buffer.length,
     });
@@ -133,7 +155,8 @@ export class ReportsController {
     const buffer = await this.reportsService.generateLoansReport(scope, locale);
 
     res.set({
-      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Type':
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       'Content-Disposition': `attachment; filename=prestamos_${Date.now()}.xlsx`,
       'Content-Length': buffer.length,
     });
@@ -150,10 +173,14 @@ export class ReportsController {
     @Res() res: Response,
   ) {
     const scope = this.scope(user, warehouseId);
-    const buffer = await this.reportsService.generateTransferRequestsReport(scope, locale);
+    const buffer = await this.reportsService.generateTransferRequestsReport(
+      scope,
+      locale,
+    );
 
     res.set({
-      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Type':
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       'Content-Disposition': `attachment; filename=transferencias_${Date.now()}.xlsx`,
       'Content-Length': buffer.length,
     });
@@ -170,10 +197,14 @@ export class ReportsController {
     @Res() res: Response,
   ) {
     const scope = this.scope(user, warehouseId);
-    const buffer = await this.reportsService.generateStockTakeReport(scope, locale);
+    const buffer = await this.reportsService.generateStockTakeReport(
+      scope,
+      locale,
+    );
 
     res.set({
-      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Type':
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       'Content-Disposition': `attachment; filename=conteo_fisico_${Date.now()}.xlsx`,
       'Content-Length': buffer.length,
     });
@@ -190,10 +221,14 @@ export class ReportsController {
     @Res() res: Response,
   ) {
     const scope = this.scope(user, warehouseId);
-    const buffer = await this.reportsService.generateDischargesReport(scope, locale);
+    const buffer = await this.reportsService.generateDischargesReport(
+      scope,
+      locale,
+    );
 
     res.set({
-      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Type':
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       'Content-Disposition': `attachment; filename=bajas_${Date.now()}.xlsx`,
       'Content-Length': buffer.length,
     });
@@ -210,10 +245,14 @@ export class ReportsController {
     @Res() res: Response,
   ) {
     const scope = this.scope(user, warehouseId);
-    const buffer = await this.reportsService.generateOutflowsReport(scope, locale);
+    const buffer = await this.reportsService.generateOutflowsReport(
+      scope,
+      locale,
+    );
 
     res.set({
-      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Type':
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       'Content-Disposition': `attachment; filename=salidas_${Date.now()}.xlsx`,
       'Content-Length': buffer.length,
     });

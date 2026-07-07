@@ -2,7 +2,15 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 
-export type AuditAction = 'CREATE' | 'UPDATE' | 'DELETE' | 'RESTORE' | 'LOGIN' | 'LOGOUT' | 'PASSWORD_CHANGE' | 'ACCESS';
+export type AuditAction =
+  | 'CREATE'
+  | 'UPDATE'
+  | 'DELETE'
+  | 'RESTORE'
+  | 'LOGIN'
+  | 'LOGOUT'
+  | 'PASSWORD_CHANGE'
+  | 'ACCESS';
 
 export interface AuditLogData {
   action: AuditAction;
@@ -51,7 +59,11 @@ export class AuditService {
     });
   }
 
-  async getLogsForEntity(entity: string, entityId: string, limit: number = 100) {
+  async getLogsForEntity(
+    entity: string,
+    entityId: string,
+    limit: number = 100,
+  ) {
     return this.prisma.auditLog.findMany({
       where: {
         entity,
@@ -87,7 +99,12 @@ export class AuditService {
     'RESTORE',
   ];
 
-  async getRecentLogs(options?: { limit?: number; offset?: number; action?: string; entity?: string }) {
+  async getRecentLogs(options?: {
+    limit?: number;
+    offset?: number;
+    action?: string;
+    entity?: string;
+  }) {
     const limit = options?.limit || 50;
     const offset = options?.offset || 0;
 

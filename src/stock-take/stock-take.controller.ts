@@ -13,7 +13,10 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiQuery } from '@nestjs/swagger';
 import { StockTakeService } from './stock-take.service';
-import { CreateStockTakeDto, UpdateStockTakeItemDto } from './dto/create-stock-take.dto';
+import {
+  CreateStockTakeDto,
+  UpdateStockTakeItemDto,
+} from './dto/create-stock-take.dto';
 import { JwtAuthGuard, PermissionsGuard } from '../auth/guards';
 import { Permissions, CurrentUser } from '../auth/decorators';
 import { AuthenticatedUser } from '../auth/interfaces/auth-user.interface';
@@ -38,7 +41,11 @@ export class StockTakeController {
 
   @Get()
   @Permissions('stocktake:view')
-  @ApiQuery({ name: 'status', enum: ['IN_PROGRESS', 'COMPLETED', 'CANCELLED'], required: false })
+  @ApiQuery({
+    name: 'status',
+    enum: ['IN_PROGRESS', 'COMPLETED', 'CANCELLED'],
+    required: false,
+  })
   findAll(
     @Query(ValidationPipe) pagination: PaginationDto,
     @Query('status') status?: string,
@@ -87,10 +94,7 @@ export class StockTakeController {
 
   @Patch(':id/cancel')
   @Permissions('stocktake:manage')
-  cancel(
-    @Param('id') id: string,
-    @CurrentUser() user: AuthenticatedUser,
-  ) {
+  cancel(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
     return this.stockTakeService.cancel(id, user.userId);
   }
 }

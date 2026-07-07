@@ -1,8 +1,17 @@
-import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ConflictException,
+} from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../../audit/audit.service';
-import { PaginationDto, PaginatedResult, parsePagination, buildPaginationMeta } from '../dto';
+import {
+  PaginationDto,
+  PaginatedResult,
+  parsePagination,
+  buildPaginationMeta,
+} from '../dto';
 
 export interface BaseRepositoryOptions {
   modelName: string;
@@ -48,7 +57,8 @@ export abstract class BaseRepository<
    *   — leaking these into the audit log defeats the point of storing
    *   them hashed/encrypted in the first place.
    */
-  private static readonly AUDIT_FIELD_DENYLIST = /^(id|createdAt|updatedAt|deletedAt|password|.*token.*|.*secret.*|.*apiKey.*|.*hash.*)$/i;
+  private static readonly AUDIT_FIELD_DENYLIST =
+    /^(id|createdAt|updatedAt|deletedAt|password|.*token.*|.*secret.*|.*apiKey.*|.*hash.*)$/i;
 
   /**
    * Override to control which fields land in the audit `changes` snapshot.
@@ -73,7 +83,10 @@ export abstract class BaseRepository<
         data: createDto,
       });
     } catch (error: unknown) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      ) {
         throw new ConflictException(
           `${this.options.modelName} with this value already exists`,
         );
@@ -94,7 +107,9 @@ export abstract class BaseRepository<
 
   async findAll(pagination?: PaginationDto): Promise<PaginatedResult<TEntity>> {
     const { page, limit, skip } = parsePagination(pagination);
-    const orderBy = this.options.defaultOrderBy || { createdAt: 'desc' as const };
+    const orderBy = this.options.defaultOrderBy || {
+      createdAt: 'desc' as const,
+    };
 
     const findManyArgs: {
       skip: number;
@@ -116,7 +131,10 @@ export abstract class BaseRepository<
   }
 
   async findOne(id: string): Promise<TEntity> {
-    const findArgs: { where: { id: string }; include?: Record<string, unknown> } = { where: { id } };
+    const findArgs: {
+      where: { id: string };
+      include?: Record<string, unknown>;
+    } = { where: { id } };
 
     if (this.options.findOneInclude) {
       findArgs.include = this.options.findOneInclude;
@@ -133,7 +151,11 @@ export abstract class BaseRepository<
     return entity;
   }
 
-  async update(id: string, updateDto: TUpdate, userId?: string): Promise<TEntity> {
+  async update(
+    id: string,
+    updateDto: TUpdate,
+    userId?: string,
+  ): Promise<TEntity> {
     // Load the prior state for the audit diff. If it doesn't exist the
     // following update would 404 anyway, so this isn't an extra failure path.
     const before = await this.model.findUnique({ where: { id } });
@@ -146,8 +168,14 @@ export abstract class BaseRepository<
       });
     } catch (error: unknown) {
       if (error instanceof Prisma.PrismaClientKnownRequestError) {
-        if (error.code === 'P2002') throw new ConflictException(`${this.options.modelName} with this value already exists`);
-        if (error.code === 'P2025') throw new NotFoundException(`${this.options.modelName} with ID ${id} not found`);
+        if (error.code === 'P2002')
+          throw new ConflictException(
+            `${this.options.modelName} with this value already exists`,
+          );
+        if (error.code === 'P2025')
+          throw new NotFoundException(
+            `${this.options.modelName} with ID ${id} not found`,
+          );
       }
       throw error;
     }
@@ -175,8 +203,13 @@ export abstract class BaseRepository<
         where: { id },
       });
     } catch (error: unknown) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
-        throw new NotFoundException(`${this.options.modelName} with ID ${id} not found`);
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2025'
+      ) {
+        throw new NotFoundException(
+          `${this.options.modelName} with ID ${id} not found`,
+        );
       }
       throw error;
     }

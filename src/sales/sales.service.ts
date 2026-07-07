@@ -93,7 +93,10 @@ export class SalesService {
     userId: string,
     userWarehouseIds?: string[] | null,
   ) {
-    if (userWarehouseIds != null && !userWarehouseIds.includes(dto.warehouseId)) {
+    if (
+      userWarehouseIds != null &&
+      !userWarehouseIds.includes(dto.warehouseId)
+    ) {
       throw new ForbiddenException('You do not have access to this warehouse');
     }
 
@@ -286,7 +289,10 @@ export class SalesService {
     if (!sale) {
       throw new NotFoundException('Sale not found');
     }
-    if (userWarehouseIds != null && !userWarehouseIds.includes(sale.warehouseId)) {
+    if (
+      userWarehouseIds != null &&
+      !userWarehouseIds.includes(sale.warehouseId)
+    ) {
       throw new ForbiddenException('You do not have access to this sale');
     }
     return sale;

@@ -20,10 +20,10 @@ export class PermissionsGuard implements CanActivate {
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const required = this.reflector.getAllAndOverride<string[]>(PERMISSIONS_KEY, [
-      context.getHandler(),
-      context.getClass(),
-    ]);
+    const required = this.reflector.getAllAndOverride<string[]>(
+      PERMISSIONS_KEY,
+      [context.getHandler(), context.getClass()],
+    );
 
     // Open-by-default: if no @Permissions() decorator is present on the handler
     // or its class, ANY authenticated user is allowed through (including EXTERNAL
@@ -34,7 +34,9 @@ export class PermissionsGuard implements CanActivate {
     // must bypass JwtAuthGuard as well.
     if (!required || required.length === 0) return true;
 
-    const request = context.switchToHttp().getRequest<Request & { user?: AuthenticatedUser }>();
+    const request = context
+      .switchToHttp()
+      .getRequest<Request & { user?: AuthenticatedUser }>();
     const { user } = request;
 
     if (!user) throw new ForbiddenException('User not authenticated');

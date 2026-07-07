@@ -1,9 +1,17 @@
-import { Injectable, Logger, NotFoundException, ForbiddenException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  NotFoundException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
 import { ReportsService } from '../reports/reports.service';
 import { EmailService } from '../email/email.service';
-import { CreateScheduledReportDto, UpdateScheduledReportDto } from './dto/create-scheduled-report.dto';
+import {
+  CreateScheduledReportDto,
+  UpdateScheduledReportDto,
+} from './dto/create-scheduled-report.dto';
 import { ReportFrequency, ReportType, ScheduledReport } from '@prisma/client';
 
 @Injectable()
@@ -16,7 +24,10 @@ export class ScheduledReportsService {
     private emailService: EmailService,
   ) {}
 
-  async create(dto: CreateScheduledReportDto, userId: string): Promise<ScheduledReport> {
+  async create(
+    dto: CreateScheduledReportDto,
+    userId: string,
+  ): Promise<ScheduledReport> {
     return this.prisma.scheduledReport.create({
       data: {
         userId,
@@ -42,16 +53,23 @@ export class ScheduledReportsService {
     const report = await this.prisma.scheduledReport.findFirst({
       where: { id, userId, deletedAt: null },
     });
-    if (!report) throw new NotFoundException(`Scheduled report ${id} not found`);
+    if (!report)
+      throw new NotFoundException(`Scheduled report ${id} not found`);
     return report;
   }
 
-  async update(id: string, dto: UpdateScheduledReportDto, userId: string): Promise<ScheduledReport> {
+  async update(
+    id: string,
+    dto: UpdateScheduledReportDto,
+    userId: string,
+  ): Promise<ScheduledReport> {
     await this.findOne(id, userId);
 
     const data = {
       ...dto,
-      ...(dto.frequency ? { nextSendAt: this.computeNextSendAt(dto.frequency) } : {}),
+      ...(dto.frequency
+        ? { nextSendAt: this.computeNextSendAt(dto.frequency) }
+        : {}),
     };
 
     return this.prisma.scheduledReport.update({ where: { id }, data });
@@ -78,7 +96,11 @@ export class ScheduledReportsService {
   @Cron('0 6 * * *')
   async runDailyCheck(): Promise<void> {
     const due = await this.prisma.scheduledReport.findMany({
-      where: { isActive: true, deletedAt: null, nextSendAt: { lte: new Date() } },
+      where: {
+        isActive: true,
+        deletedAt: null,
+        nextSendAt: { lte: new Date() },
+      },
     });
 
     for (const report of due) {
@@ -92,13 +114,15 @@ export class ScheduledReportsService {
           },
         });
       } catch (err) {
-        this.logger.error(`Scheduled report ${report.id} failed: ${err.message}`);
+        this.logger.error(
+          `Scheduled report ${report.id} failed: ${err.message}`,
+        );
       }
     }
   }
 
   private async generateAndSend(report: ScheduledReport): Promise<void> {
-    const locale = (report.locale === 'en' ? 'en' : 'es') as 'en' | 'es';
+    const locale = report.locale === 'en' ? 'en' : 'es';
     const warehouseIds = report.warehouseId ? [report.warehouseId] : null;
     let buffer: Buffer;
     let filename: string;
@@ -106,38 +130,65 @@ export class ScheduledReportsService {
 
     switch (report.reportType) {
       case ReportType.INVENTORY:
-        buffer = await this.reportsService.generateInventoryExcel(undefined, warehouseIds, locale);
+        buffer = await this.reportsService.generateInventoryExcel(
+          undefined,
+          warehouseIds,
+          locale,
+        );
         filename = `inventario_${ts}.xlsx`;
         break;
       case ReportType.LOW_STOCK:
-        buffer = await this.reportsService.generateLowStockReport(warehouseIds, locale);
+        buffer = await this.reportsService.generateLowStockReport(
+          warehouseIds,
+          locale,
+        );
         filename = `stock_bajo_${ts}.xlsx`;
         break;
       case ReportType.TRANSACTIONS:
-        buffer = await this.reportsService.generateTransactionsReport(undefined, undefined, warehouseIds, locale);
+        buffer = await this.reportsService.generateTransactionsReport(
+          undefined,
+          undefined,
+          warehouseIds,
+          locale,
+        );
         filename = `transacciones_${ts}.xlsx`;
         break;
       case ReportType.LOANS:
-        buffer = await this.reportsService.generateLoansReport(warehouseIds, locale);
+        buffer = await this.reportsService.generateLoansReport(
+          warehouseIds,
+          locale,
+        );
         filename = `prestamos_${ts}.xlsx`;
         break;
       case ReportType.TRANSFERS:
-        buffer = await this.reportsService.generateTransferRequestsReport(warehouseIds, locale);
+        buffer = await this.reportsService.generateTransferRequestsReport(
+          warehouseIds,
+          locale,
+        );
         filename = `transferencias_${ts}.xlsx`;
         break;
       case ReportType.STOCK_TAKES:
-        buffer = await this.reportsService.generateStockTakeReport(warehouseIds, locale);
+        buffer = await this.reportsService.generateStockTakeReport(
+          warehouseIds,
+          locale,
+        );
         filename = `conteo_fisico_${ts}.xlsx`;
         break;
       case ReportType.DISCHARGES:
-        buffer = await this.reportsService.generateDischargesReport(warehouseIds, locale);
+        buffer = await this.reportsService.generateDischargesReport(
+          warehouseIds,
+          locale,
+        );
         filename = `bajas_${ts}.xlsx`;
         break;
       default:
         throw new Error(`Unknown report type: ${report.reportType}`);
     }
 
-    const emails = report.recipientEmails.split(',').map(e => e.trim()).filter(Boolean);
+    const emails = report.recipientEmails
+      .split(',')
+      .map((e) => e.trim())
+      .filter(Boolean);
     for (const email of emails) {
       await this.emailService.sendEmailWithAttachment({
         to: email,

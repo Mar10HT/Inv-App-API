@@ -34,7 +34,8 @@ export class SalesController {
   @HttpCode(HttpStatus.CREATED)
   @Permissions('sales:create')
   create(
-    @Body(new ValidationPipe({ whitelist: true, transform: true })) dto: CreateSaleDto,
+    @Body(new ValidationPipe({ whitelist: true, transform: true }))
+    dto: CreateSaleDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.salesService.create(dto, user.userId, user.warehouseIds);
@@ -43,7 +44,8 @@ export class SalesController {
   @Get()
   @Permissions('sales:view')
   findAll(
-    @Query(new ValidationPipe({ whitelist: true, transform: true })) filters: FilterSaleDto,
+    @Query(new ValidationPipe({ whitelist: true, transform: true }))
+    filters: FilterSaleDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.salesService.findAll(filters, user.warehouseIds);
@@ -71,7 +73,10 @@ export class SalesController {
   ) {
     const resolvedLocale = locale === 'en' ? 'en' : 'es';
     await this.salesService.findOne(id, user.warehouseIds);
-    const buffer = await this.pdfReceipts.generateSaleReceipt(id, resolvedLocale);
+    const buffer = await this.pdfReceipts.generateSaleReceipt(
+      id,
+      resolvedLocale,
+    );
 
     res.set({
       'Content-Type': 'application/pdf',
@@ -88,6 +93,11 @@ export class SalesController {
     @Body(new ValidationPipe({ whitelist: true })) dto: CancelSaleDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.salesService.cancel(id, user.userId, dto.reason, user.warehouseIds);
+    return this.salesService.cancel(
+      id,
+      user.userId,
+      dto.reason,
+      user.warehouseIds,
+    );
   }
 }

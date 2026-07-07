@@ -4,7 +4,11 @@ import { PrismaService } from '../prisma/prisma.service';
 import { EventsService } from '../events/events.service';
 import { PushNotificationsService } from '../push-notifications/push-notifications.service';
 import { AlertType, InventoryStatus } from '@prisma/client';
-import { PaginationDto, parsePagination, buildPaginationMeta } from '../common/dto';
+import {
+  PaginationDto,
+  parsePagination,
+  buildPaginationMeta,
+} from '../common/dto';
 
 const ALERT_PUSH_TITLE: Record<AlertType, string> = {
   LOW_STOCK: '⚠️ Stock bajo',
@@ -61,7 +65,10 @@ export class AlertsService {
         select: { id: true, itemId: true, type: true },
       });
       // Keep first occurrence per itemId — guards against duplicate unresolved alerts in DB
-      const existingStockAlertByItemId = new Map<string, typeof existingStockAlerts[0]>();
+      const existingStockAlertByItemId = new Map<
+        string,
+        (typeof existingStockAlerts)[0]
+      >();
       for (const a of existingStockAlerts) {
         if (!existingStockAlertByItemId.has(a.itemId)) {
           existingStockAlertByItemId.set(a.itemId, a);
@@ -74,9 +81,8 @@ export class AlertsService {
 
         if (!existingAlert) {
           // Create new alert
-          const alertType = item.quantity === 0
-            ? AlertType.OUT_OF_STOCK
-            : AlertType.LOW_STOCK;
+          const alertType =
+            item.quantity === 0 ? AlertType.OUT_OF_STOCK : AlertType.LOW_STOCK;
 
           const newAlert = await this.prisma.stockAlert.create({
             data: {
@@ -89,13 +95,29 @@ export class AlertsService {
             },
           });
 
-          this.eventsService.emitAlertChange('created', newAlert.id, { type: alertType, itemName: item.name });
+          this.eventsService.emitAlertChange('created', newAlert.id, {
+            type: alertType,
+            itemName: item.name,
+          });
           alertsCreated++;
-          this.logger.log(`Alert created for item ${item.name} (${item.id}): ${alertType}`);
+          this.logger.log(
+            `Alert created for item ${item.name} (${item.id}): ${alertType}`,
+          );
 
           // Send push notification (fire-and-forget)
-          this.sendAlertPushNotification(alertType, item.id, item.warehouseId, item.name, item.warehouse?.name).catch((err) => this.logger.error('Failed to send alert push notification', err));
-        } else if (existingAlert.type !== AlertType.OUT_OF_STOCK && item.quantity === 0) {
+          this.sendAlertPushNotification(
+            alertType,
+            item.id,
+            item.warehouseId,
+            item.name,
+            item.warehouse?.name,
+          ).catch((err) =>
+            this.logger.error('Failed to send alert push notification', err),
+          );
+        } else if (
+          existingAlert.type !== AlertType.OUT_OF_STOCK &&
+          item.quantity === 0
+        ) {
           // Update existing alert if item went from LOW_STOCK to OUT_OF_STOCK
           await this.prisma.stockAlert.update({
             where: { id: existingAlert.id },
@@ -134,7 +156,9 @@ export class AlertsService {
         },
         select: { id: true, itemId: true },
       });
-      const existingExpiryAlertItemIds = new Set(existingExpiryAlerts.map((a) => a.itemId));
+      const existingExpiryAlertItemIds = new Set(
+        existingExpiryAlerts.map((a) => a.itemId),
+      );
 
       for (const item of expiringItems) {
         // Check if there's already an unresolved EXPIRING_SOON alert
@@ -153,10 +177,22 @@ export class AlertsService {
           });
 
           alertsCreated++;
-          this.logger.log(`Expiring soon alert created for item ${item.name} (${item.id})`);
+          this.logger.log(
+            `Expiring soon alert created for item ${item.name} (${item.id})`,
+          );
 
-          this.sendAlertPushNotification(AlertType.EXPIRING_SOON, item.id, item.warehouseId, item.name, item.warehouse?.name)
-            .catch((err) => this.logger.error('Failed to send expiring soon push notification', err));
+          this.sendAlertPushNotification(
+            AlertType.EXPIRING_SOON,
+            item.id,
+            item.warehouseId,
+            item.name,
+            item.warehouse?.name,
+          ).catch((err) =>
+            this.logger.error(
+              'Failed to send expiring soon push notification',
+              err,
+            ),
+          );
         }
       }
 
@@ -174,10 +210,14 @@ export class AlertsService {
       });
 
       if (resolvedAlerts.count > 0) {
-        this.eventsService.emitAlertChange('bulk_updated', undefined, { resolved: resolvedAlerts.count });
+        this.eventsService.emitAlertChange('bulk_updated', undefined, {
+          resolved: resolvedAlerts.count,
+        });
       }
 
-      this.logger.log(`Low stock check complete. Created: ${alertsCreated}, Resolved: ${resolvedAlerts.count}`);
+      this.logger.log(
+        `Low stock check complete. Created: ${alertsCreated}, Resolved: ${resolvedAlerts.count}`,
+      );
     } catch (error) {
       this.logger.error('Error during low stock check:', error);
     } finally {
@@ -287,14 +327,23 @@ export class AlertsService {
   }
 
   async getStats() {
-    const [total, active, lowStock, outOfStock, expiringItems, notified] = await Promise.all([
-      this.prisma.stockAlert.count(),
-      this.prisma.stockAlert.count({ where: { resolvedAt: null } }),
-      this.prisma.stockAlert.count({ where: { type: AlertType.LOW_STOCK, resolvedAt: null } }),
-      this.prisma.stockAlert.count({ where: { type: AlertType.OUT_OF_STOCK, resolvedAt: null } }),
-      this.prisma.stockAlert.count({ where: { type: AlertType.EXPIRING_SOON, resolvedAt: null } }),
-      this.prisma.stockAlert.count({ where: { notified: true, resolvedAt: null } }),
-    ]);
+    const [total, active, lowStock, outOfStock, expiringItems, notified] =
+      await Promise.all([
+        this.prisma.stockAlert.count(),
+        this.prisma.stockAlert.count({ where: { resolvedAt: null } }),
+        this.prisma.stockAlert.count({
+          where: { type: AlertType.LOW_STOCK, resolvedAt: null },
+        }),
+        this.prisma.stockAlert.count({
+          where: { type: AlertType.OUT_OF_STOCK, resolvedAt: null },
+        }),
+        this.prisma.stockAlert.count({
+          where: { type: AlertType.EXPIRING_SOON, resolvedAt: null },
+        }),
+        this.prisma.stockAlert.count({
+          where: { notified: true, resolvedAt: null },
+        }),
+      ]);
 
     return {
       total,

@@ -5,7 +5,14 @@ describe('LoggingInterceptor', () => {
   let interceptor: LoggingInterceptor;
   let mockLogger: { log: jest.Mock; error: jest.Mock };
 
-  const buildContext = (overrides: Partial<{ method: string; url: string; body: any; user: any }> = {}) => {
+  const buildContext = (
+    overrides: Partial<{
+      method: string;
+      url: string;
+      body: any;
+      user: any;
+    }> = {},
+  ) => {
     const req = {
       method: overrides.method ?? 'GET',
       url: overrides.url ?? '/test',

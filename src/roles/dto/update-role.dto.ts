@@ -1,4 +1,12 @@
-import { IsString, IsOptional, IsArray, IsNotEmpty, MaxLength, ArrayMaxSize, ArrayMinSize } from 'class-validator';
+import {
+  IsString,
+  IsOptional,
+  IsArray,
+  IsNotEmpty,
+  MaxLength,
+  ArrayMaxSize,
+  ArrayMinSize,
+} from 'class-validator';
 
 export class UpdateRoleDto {
   /** Editable even for isSystem roles. */

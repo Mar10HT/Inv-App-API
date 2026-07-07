@@ -1,6 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { PERMISSIONS, INITIAL_ROLES, ROLE_PERMISSIONS } from '../common/constants';
+import {
+  PERMISSIONS,
+  INITIAL_ROLES,
+  ROLE_PERMISSIONS,
+} from '../common/constants';
 
 @Injectable()
 export class PermissionsSeedService {
@@ -21,9 +25,9 @@ export class PermissionsSeedService {
     this.logger.log('Starting RBAC permissions seed...');
 
     const permissionsSeeded = await this.seedPermissions();
-    const rolesSeeded       = await this.seedRoles();
+    const rolesSeeded = await this.seedRoles();
     await this.syncRolePermissions();
-    const usersLinked       = await this.migrateUserRoles();
+    const usersLinked = await this.migrateUserRoles();
 
     this.logger.log('RBAC seed complete.');
 
@@ -37,9 +41,18 @@ export class PermissionsSeedService {
 
     for (const p of PERMISSIONS) {
       await this.prisma.permission.upsert({
-        where:  { key: p.key },
-        update: { module: p.module, action: p.action, description: p.description },
-        create: { key: p.key, module: p.module, action: p.action, description: p.description },
+        where: { key: p.key },
+        update: {
+          module: p.module,
+          action: p.action,
+          description: p.description,
+        },
+        create: {
+          key: p.key,
+          module: p.module,
+          action: p.action,
+          description: p.description,
+        },
       });
       count++;
     }
@@ -55,9 +68,14 @@ export class PermissionsSeedService {
 
     for (const r of INITIAL_ROLES) {
       await this.prisma.role.upsert({
-        where:  { name: r.name },
+        where: { name: r.name },
         update: { displayName: r.displayName, description: r.description },
-        create: { name: r.name, displayName: r.displayName, description: r.description, isSystem: true },
+        create: {
+          name: r.name,
+          displayName: r.displayName,
+          description: r.description,
+          isSystem: true,
+        },
       });
       count++;
     }
@@ -76,12 +94,14 @@ export class PermissionsSeedService {
     ]);
 
     const roleByName = new Map(allRoles.map((r) => [r.name, r]));
-    const permByKey  = new Map(allPermissions.map((p) => [p.key, p]));
+    const permByKey = new Map(allPermissions.map((p) => [p.key, p]));
 
     for (const [roleName, permKeys] of Object.entries(ROLE_PERMISSIONS)) {
       const role = roleByName.get(roleName);
       if (!role) {
-        this.logger.warn(`Role not found: ${roleName} — skipping permission sync.`);
+        this.logger.warn(
+          `Role not found: ${roleName} — skipping permission sync.`,
+        );
         continue;
       }
 
@@ -98,13 +118,13 @@ export class PermissionsSeedService {
 
       // Load the current DB assignments for this role.
       const existing = await this.prisma.rolePermission.findMany({
-        where:  { roleId: role.id },
+        where: { roleId: role.id },
         select: { permissionId: true },
       });
       const existingIds = new Set(existing.map((rp) => rp.permissionId));
 
       // Add missing, remove stale — keeps the DB in sync with the constant.
-      const toAdd    = [...desiredPermIds].filter((id) => !existingIds.has(id));
+      const toAdd = [...desiredPermIds].filter((id) => !existingIds.has(id));
       const toRemove = [...existingIds].filter((id) => !desiredPermIds.has(id));
 
       if (toAdd.length > 0) {
@@ -112,7 +132,10 @@ export class PermissionsSeedService {
         // row is unique and new — no need for `skipDuplicates`, which SQLite
         // (the dev datasource) does not support and would throw on.
         await this.prisma.rolePermission.createMany({
-          data: toAdd.map((permissionId) => ({ roleId: role.id, permissionId })),
+          data: toAdd.map((permissionId) => ({
+            roleId: role.id,
+            permissionId,
+          })),
         });
       }
 
@@ -144,13 +167,15 @@ export class PermissionsSeedService {
       });
 
       if (!roleRecord) {
-        this.logger.warn(`No Role record found for enum value "${user.role}" (userId: ${user.id}) — skipping.`);
+        this.logger.warn(
+          `No Role record found for enum value "${user.role}" (userId: ${user.id}) — skipping.`,
+        );
         continue;
       }
 
       await this.prisma.user.update({
         where: { id: user.id },
-        data:  { roleId: roleRecord.id },
+        data: { roleId: roleRecord.id },
       });
 
       count++;
@@ -163,6 +188,6 @@ export class PermissionsSeedService {
 
 interface SeedResult {
   permissionsSeeded: number;
-  rolesSeeded:       number;
-  usersLinked:       number;
+  rolesSeeded: number;
+  usersLinked: number;
 }

@@ -1,4 +1,13 @@
-import { IsArray, IsString, IsOptional, IsNumber, ValidateNested, IsEnum, ArrayMinSize, ArrayMaxSize } from 'class-validator';
+import {
+  IsArray,
+  IsString,
+  IsOptional,
+  IsNumber,
+  ValidateNested,
+  IsEnum,
+  ArrayMinSize,
+  ArrayMaxSize,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 import { InventoryStatus, Currency, ItemType } from '@prisma/client';
 

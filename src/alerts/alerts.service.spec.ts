@@ -68,7 +68,10 @@ describe('AlertsService', () => {
         AlertsService,
         { provide: PrismaService, useValue: mockPrismaService },
         { provide: EventsService, useValue: mockEventsService },
-        { provide: PushNotificationsService, useValue: mockPushNotificationsService },
+        {
+          provide: PushNotificationsService,
+          useValue: mockPushNotificationsService,
+        },
       ],
     }).compile();
 
@@ -151,13 +154,19 @@ describe('AlertsService', () => {
     it('throws NotFoundException when alert not found', async () => {
       (prisma.stockAlert.findUnique as jest.Mock).mockResolvedValue(null);
 
-      await expect(service.findOne('not-found')).rejects.toThrow(NotFoundException);
+      await expect(service.findOne('not-found')).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 
   describe('markAsNotified', () => {
     it('marks alert as notified', async () => {
-      const notifiedAlert = { ...mockAlert, notified: true, notifiedAt: new Date() };
+      const notifiedAlert = {
+        ...mockAlert,
+        notified: true,
+        notifiedAt: new Date(),
+      };
       (prisma.stockAlert.findUnique as jest.Mock).mockResolvedValue(mockAlert);
       (prisma.stockAlert.update as jest.Mock).mockResolvedValue(notifiedAlert);
 
@@ -175,7 +184,9 @@ describe('AlertsService', () => {
     it('throws NotFoundException when alert not found', async () => {
       (prisma.stockAlert.findUnique as jest.Mock).mockResolvedValue(null);
 
-      await expect(service.markAsNotified('not-found')).rejects.toThrow(NotFoundException);
+      await expect(service.markAsNotified('not-found')).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 
@@ -199,19 +210,21 @@ describe('AlertsService', () => {
     it('throws NotFoundException when alert not found', async () => {
       (prisma.stockAlert.findUnique as jest.Mock).mockResolvedValue(null);
 
-      await expect(service.resolve('not-found')).rejects.toThrow(NotFoundException);
+      await expect(service.resolve('not-found')).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 
   describe('getStats', () => {
     it('returns alert stats by type', async () => {
       (prisma.stockAlert.count as jest.Mock)
-        .mockResolvedValueOnce(20)   // total
-        .mockResolvedValueOnce(8)    // active
-        .mockResolvedValueOnce(3)    // lowStock
-        .mockResolvedValueOnce(2)    // outOfStock
-        .mockResolvedValueOnce(1)    // expiringItems
-        .mockResolvedValueOnce(4);   // notified
+        .mockResolvedValueOnce(20) // total
+        .mockResolvedValueOnce(8) // active
+        .mockResolvedValueOnce(3) // lowStock
+        .mockResolvedValueOnce(2) // outOfStock
+        .mockResolvedValueOnce(1) // expiringItems
+        .mockResolvedValueOnce(4); // notified
 
       const result = await service.getStats();
 
@@ -229,13 +242,13 @@ describe('AlertsService', () => {
   describe('checkLowStock', () => {
     it('creates alert for low stock item without existing alert', async () => {
       (prisma.inventoryItem.findMany as jest.Mock)
-        .mockResolvedValueOnce([mockItem])  // low stock items
-        .mockResolvedValueOnce([]);          // expiring items
+        .mockResolvedValueOnce([mockItem]) // low stock items
+        .mockResolvedValueOnce([]); // expiring items
 
       // findMany for existing stock alerts (empty = no existing alert)
       (prisma.stockAlert.findMany as jest.Mock)
-        .mockResolvedValueOnce([])   // existing stock alerts
-        .mockResolvedValueOnce([]);  // existing expiry alerts
+        .mockResolvedValueOnce([]) // existing stock alerts
+        .mockResolvedValueOnce([]); // existing expiry alerts
       (prisma.stockAlert.create as jest.Mock).mockResolvedValue(mockAlert);
 
       await service.checkLowStock();
@@ -251,7 +264,11 @@ describe('AlertsService', () => {
     });
 
     it('creates OUT_OF_STOCK alert when quantity is 0', async () => {
-      const outOfStockItem = { ...mockItem, quantity: 0, status: InventoryStatus.OUT_OF_STOCK };
+      const outOfStockItem = {
+        ...mockItem,
+        quantity: 0,
+        status: InventoryStatus.OUT_OF_STOCK,
+      };
 
       (prisma.inventoryItem.findMany as jest.Mock)
         .mockResolvedValueOnce([outOfStockItem])
@@ -260,7 +277,10 @@ describe('AlertsService', () => {
       (prisma.stockAlert.findMany as jest.Mock)
         .mockResolvedValueOnce([])
         .mockResolvedValueOnce([]);
-      (prisma.stockAlert.create as jest.Mock).mockResolvedValue({ ...mockAlert, type: AlertType.OUT_OF_STOCK });
+      (prisma.stockAlert.create as jest.Mock).mockResolvedValue({
+        ...mockAlert,
+        type: AlertType.OUT_OF_STOCK,
+      });
 
       await service.checkLowStock();
 
@@ -272,8 +292,16 @@ describe('AlertsService', () => {
     });
 
     it('upgrades existing LOW_STOCK alert to OUT_OF_STOCK when quantity hits 0', async () => {
-      const outOfStockItem = { ...mockItem, quantity: 0, status: InventoryStatus.OUT_OF_STOCK };
-      const existingAlert = { id: 'alert-1', itemId: 'item-1', type: AlertType.LOW_STOCK };
+      const outOfStockItem = {
+        ...mockItem,
+        quantity: 0,
+        status: InventoryStatus.OUT_OF_STOCK,
+      };
+      const existingAlert = {
+        id: 'alert-1',
+        itemId: 'item-1',
+        type: AlertType.LOW_STOCK,
+      };
 
       (prisma.inventoryItem.findMany as jest.Mock)
         .mockResolvedValueOnce([outOfStockItem])
@@ -282,19 +310,29 @@ describe('AlertsService', () => {
       (prisma.stockAlert.findMany as jest.Mock)
         .mockResolvedValueOnce([existingAlert])
         .mockResolvedValueOnce([]);
-      (prisma.stockAlert.update as jest.Mock).mockResolvedValue({ ...existingAlert, type: AlertType.OUT_OF_STOCK });
+      (prisma.stockAlert.update as jest.Mock).mockResolvedValue({
+        ...existingAlert,
+        type: AlertType.OUT_OF_STOCK,
+      });
 
       await service.checkLowStock();
 
       expect(prisma.stockAlert.update).toHaveBeenCalledWith(
         expect.objectContaining({
-          data: expect.objectContaining({ type: AlertType.OUT_OF_STOCK, currentQty: 0 }),
+          data: expect.objectContaining({
+            type: AlertType.OUT_OF_STOCK,
+            currentQty: 0,
+          }),
         }),
       );
     });
 
     it('skips creating alert when unresolved alert already exists', async () => {
-      const existingAlert = { id: 'alert-1', itemId: 'item-1', type: AlertType.LOW_STOCK };
+      const existingAlert = {
+        id: 'alert-1',
+        itemId: 'item-1',
+        type: AlertType.LOW_STOCK,
+      };
 
       (prisma.inventoryItem.findMany as jest.Mock)
         .mockResolvedValueOnce([mockItem])

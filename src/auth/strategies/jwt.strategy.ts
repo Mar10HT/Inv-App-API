@@ -33,7 +33,9 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   ) {
     const secret = configService.get<string>('JWT_SECRET');
     if (!secret) {
-      throw new Error('JWT_SECRET environment variable is not set. Please configure it in your .env file.');
+      throw new Error(
+        'JWT_SECRET environment variable is not set. Please configure it in your .env file.',
+      );
     }
     super({
       jwtFromRequest: extractJwtFromCookieOrBearer,

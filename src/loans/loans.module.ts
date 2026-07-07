@@ -8,7 +8,13 @@ import { AuditModule } from '../audit/audit.module';
 import { PdfReceiptsModule } from '../pdf-receipts/pdf-receipts.module';
 
 @Module({
-  imports: [PrismaModule, EventsModule, PermissionsModule, AuditModule, PdfReceiptsModule],
+  imports: [
+    PrismaModule,
+    EventsModule,
+    PermissionsModule,
+    AuditModule,
+    PdfReceiptsModule,
+  ],
   controllers: [LoansController],
   providers: [LoansService],
   exports: [LoansService],

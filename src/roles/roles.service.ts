@@ -77,32 +77,42 @@ export class RolesService {
   }
 
   async create(dto: CreateRoleDto, actorUserId?: string) {
-    const existing = await this.prisma.role.findUnique({ where: { name: dto.name } });
-    if (existing) throw new ConflictException(`Role name '${dto.name}' is already taken`);
+    const existing = await this.prisma.role.findUnique({
+      where: { name: dto.name },
+    });
+    if (existing)
+      throw new ConflictException(`Role name '${dto.name}' is already taken`);
 
     if (dto.permissionIds?.length) {
       await this.validatePermissionIds(dto.permissionIds);
     }
 
-    const role = await this.prisma.role.create({
-      data: {
-        name: dto.name,
-        displayName: dto.displayName,
-        description: dto.description,
-        isSystem: false,
-        ...(dto.permissionIds?.length
-          ? {
-              permissions: {
-                create: dto.permissionIds.map((permissionId) => ({ permissionId })),
-              },
-            }
-          : {}),
-      },
-    }).catch((err: { code?: string }) => {
-      // Guard against a race-condition duplicate (P2002 unique constraint)
-      if (err.code === 'P2002') throw new ConflictException(`Role name '${dto.name}' is already taken`);
-      throw err;
-    });
+    const role = await this.prisma.role
+      .create({
+        data: {
+          name: dto.name,
+          displayName: dto.displayName,
+          description: dto.description,
+          isSystem: false,
+          ...(dto.permissionIds?.length
+            ? {
+                permissions: {
+                  create: dto.permissionIds.map((permissionId) => ({
+                    permissionId,
+                  })),
+                },
+              }
+            : {}),
+        },
+      })
+      .catch((err: { code?: string }) => {
+        // Guard against a race-condition duplicate (P2002 unique constraint)
+        if (err.code === 'P2002')
+          throw new ConflictException(
+            `Role name '${dto.name}' is already taken`,
+          );
+        throw err;
+      });
 
     this.auditService.logSafe({
       action: 'CREATE',
@@ -130,7 +140,9 @@ export class RolesService {
     if (!role) throw new NotFoundException('Role not found');
 
     if (role.isSystem && dto.permissionIds !== undefined) {
-      throw new BadRequestException('System role permissions cannot be modified');
+      throw new BadRequestException(
+        'System role permissions cannot be modified',
+      );
     }
 
     if (dto.permissionIds?.length) {
@@ -143,8 +155,12 @@ export class RolesService {
       await tx.role.update({
         where: { id },
         data: {
-          ...(dto.displayName !== undefined ? { displayName: dto.displayName } : {}),
-          ...(dto.description !== undefined ? { description: dto.description } : {}),
+          ...(dto.displayName !== undefined
+            ? { displayName: dto.displayName }
+            : {}),
+          ...(dto.description !== undefined
+            ? { description: dto.description }
+            : {}),
         },
       });
 
@@ -154,7 +170,10 @@ export class RolesService {
 
         if (dto.permissionIds.length > 0) {
           await tx.rolePermission.createMany({
-            data: dto.permissionIds.map((permissionId) => ({ roleId: id, permissionId })),
+            data: dto.permissionIds.map((permissionId) => ({
+              roleId: id,
+              permissionId,
+            })),
           });
         }
 
@@ -194,7 +213,8 @@ export class RolesService {
         after: {
           displayName: dto.displayName ?? role.displayName,
           description: dto.description ?? role.description,
-          permissionIds: dto.permissionIds ?? role.permissions.map((p) => p.permissionId),
+          permissionIds:
+            dto.permissionIds ?? role.permissions.map((p) => p.permissionId),
         },
         fields: Object.keys(dto),
       },
@@ -210,7 +230,8 @@ export class RolesService {
     });
 
     if (!role) throw new NotFoundException('Role not found');
-    if (role.isSystem) throw new BadRequestException('System roles cannot be deleted');
+    if (role.isSystem)
+      throw new BadRequestException('System roles cannot be deleted');
     if (role._count.users > 0) {
       throw new BadRequestException(
         `Cannot delete role: ${role._count.users} user(s) are assigned to it`,
@@ -253,7 +274,9 @@ export class RolesService {
     if (found.length !== uniqueIds.length) {
       const foundSet = new Set(found.map((p) => p.id));
       const invalid = uniqueIds.filter((id) => !foundSet.has(id));
-      throw new BadRequestException(`Invalid permission IDs: ${invalid.join(', ')}`);
+      throw new BadRequestException(
+        `Invalid permission IDs: ${invalid.join(', ')}`,
+      );
     }
   }
 
@@ -264,15 +287,32 @@ export class RolesService {
   async getAllPermissions() {
     const permissions = await this.prisma.permission.findMany({
       orderBy: [{ module: 'asc' }, { action: 'asc' }],
-      select: { id: true, key: true, module: true, action: true, description: true },
+      select: {
+        id: true,
+        key: true,
+        module: true,
+        action: true,
+        description: true,
+      },
     });
 
-    const grouped: Record<string, { id: string; key: string; action: string; description: string }[]> = {};
+    const grouped: Record<
+      string,
+      { id: string; key: string; action: string; description: string }[]
+    > = {};
     for (const perm of permissions) {
       if (!grouped[perm.module]) grouped[perm.module] = [];
-      grouped[perm.module].push({ id: perm.id, key: perm.key, action: perm.action, description: perm.description });
+      grouped[perm.module].push({
+        id: perm.id,
+        key: perm.key,
+        action: perm.action,
+        description: perm.description,
+      });
     }
 
-    return Object.entries(grouped).map(([module, permissions]) => ({ module, permissions }));
+    return Object.entries(grouped).map(([module, permissions]) => ({
+      module,
+      permissions,
+    }));
   }
 }

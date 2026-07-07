@@ -35,8 +35,15 @@ export class LoggingInterceptor implements NestInterceptor {
           const { statusCode } = response;
 
           const logMessage = `${method} ${url} ${statusCode} - ${duration}ms - ${userId} - ${ip}`;
-          if (sanitizedBody && Object.keys(sanitizedBody).length > 0 && method !== 'GET') {
-            this.logger.log(`${logMessage} - body: ${JSON.stringify(sanitizedBody)}`, 'HTTP');
+          if (
+            sanitizedBody &&
+            Object.keys(sanitizedBody).length > 0 &&
+            method !== 'GET'
+          ) {
+            this.logger.log(
+              `${logMessage} - body: ${JSON.stringify(sanitizedBody)}`,
+              'HTTP',
+            );
           } else {
             this.logger.log(logMessage, 'HTTP');
           }
@@ -59,7 +66,13 @@ export class LoggingInterceptor implements NestInterceptor {
     if (!body) return undefined;
 
     const sanitized = { ...body };
-    const sensitiveFields = ['password', 'currentPassword', 'newPassword', 'token', 'secret'];
+    const sensitiveFields = [
+      'password',
+      'currentPassword',
+      'newPassword',
+      'token',
+      'secret',
+    ];
 
     for (const field of sensitiveFields) {
       if (sanitized[field]) {

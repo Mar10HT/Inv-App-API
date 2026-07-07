@@ -54,19 +54,25 @@ export class PushNotificationsService {
         clearTimeout(timeout);
 
         if (!res.ok) {
-          this.logger.error(`Expo push API error: ${res.status} ${res.statusText}`);
+          this.logger.error(
+            `Expo push API error: ${res.status} ${res.statusText}`,
+          );
           continue;
         }
 
         const json = await res.json();
         if (!Array.isArray(json?.data)) {
-          this.logger.error(`Unexpected Expo push API response shape: ${JSON.stringify(json)}`);
+          this.logger.error(
+            `Unexpected Expo push API response shape: ${JSON.stringify(json)}`,
+          );
           continue;
         }
         const data: ExpoPushTicket[] = json.data;
         data.forEach((ticket, i) => {
           if (ticket.status === 'error') {
-            this.logger.warn(`Push ticket error: ${ticket.message} (${ticket.details?.error})`);
+            this.logger.warn(
+              `Push ticket error: ${ticket.message} (${ticket.details?.error})`,
+            );
             if (ticket.details?.error === 'DeviceNotRegistered') {
               staleTokens.push(chunk[i].to);
             }
@@ -75,7 +81,9 @@ export class PushNotificationsService {
       } catch (err) {
         clearTimeout(timeout);
         if ((err as Error).name === 'AbortError') {
-          this.logger.error(`Expo push API timed out after ${FETCH_TIMEOUT_MS}ms`);
+          this.logger.error(
+            `Expo push API timed out after ${FETCH_TIMEOUT_MS}ms`,
+          );
         } else {
           this.logger.error('Failed to send push notifications', err);
         }

@@ -8,7 +8,13 @@ import { PermissionsModule } from '../permissions/permissions.module';
 import { PdfReceiptsModule } from '../pdf-receipts/pdf-receipts.module';
 
 @Module({
-  imports: [PrismaModule, AuditModule, QrModule, PermissionsModule, PdfReceiptsModule],
+  imports: [
+    PrismaModule,
+    AuditModule,
+    QrModule,
+    PermissionsModule,
+    PdfReceiptsModule,
+  ],
   controllers: [TransferRequestsController],
   providers: [TransferRequestsService],
   exports: [TransferRequestsService],

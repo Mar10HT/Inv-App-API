@@ -114,7 +114,10 @@ describe('AuditService', () => {
       const logs = [mockAuditLog];
       (prisma.auditLog.findMany as jest.Mock).mockResolvedValue(logs);
 
-      const result = await service.getLogsForEntity('InventoryItem', 'item-123');
+      const result = await service.getLogsForEntity(
+        'InventoryItem',
+        'item-123',
+      );
 
       expect(result).toEqual(logs);
       expect(prisma.auditLog.findMany).toHaveBeenCalledWith({
@@ -139,7 +142,10 @@ describe('AuditService', () => {
     it('should return empty array when no logs found', async () => {
       (prisma.auditLog.findMany as jest.Mock).mockResolvedValue([]);
 
-      const result = await service.getLogsForEntity('InventoryItem', 'nonexistent');
+      const result = await service.getLogsForEntity(
+        'InventoryItem',
+        'nonexistent',
+      );
 
       expect(result).toEqual([]);
     });
@@ -170,7 +176,11 @@ describe('AuditService', () => {
       (prisma.auditLog.findMany as jest.Mock).mockResolvedValue([]);
       (prisma.auditLog.count as jest.Mock).mockResolvedValue(0);
 
-      const result = await service.getRecentLogs({ limit: 10, offset: 5, action: 'CREATE' });
+      const result = await service.getRecentLogs({
+        limit: 10,
+        offset: 5,
+        action: 'CREATE',
+      });
 
       expect(result).toEqual({
         data: [],

@@ -37,7 +37,9 @@ export class SuppliersController {
 
   @Get()
   @Permissions('suppliers:view')
-  findAll(@Query(new ValidationPipe({ transform: true })) pagination: PaginationDto) {
+  findAll(
+    @Query(new ValidationPipe({ transform: true })) pagination: PaginationDto,
+  ) {
     return this.suppliersService.findAll(pagination);
   }
 

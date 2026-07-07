@@ -20,7 +20,10 @@ export class EmailService {
   private readonly isConfigured: boolean;
 
   constructor(private configService: ConfigService) {
-    this.fromEmail = this.configService.get<string>('SMTP_FROM_EMAIL', 'noreply@invapp.com');
+    this.fromEmail = this.configService.get<string>(
+      'SMTP_FROM_EMAIL',
+      'noreply@invapp.com',
+    );
     this.fromName = this.configService.get<string>('SMTP_FROM_NAME', 'InvApp');
     this.appUrl =
       this.configService.get<string>('FRONTEND_URL') ||
@@ -54,7 +57,9 @@ export class EmailService {
 
   async sendEmail(options: EmailOptions): Promise<boolean> {
     if (!this.isConfigured || !this.transporter) {
-      this.logger.warn(`Email not sent (not configured): ${options.subject} to ${options.to}`);
+      this.logger.warn(
+        `Email not sent (not configured): ${options.subject} to ${options.to}`,
+      );
       // In development, log the email content
       if (this.configService.get('NODE_ENV') === 'development') {
         this.logger.debug(`Email content:\n${options.text || options.html}`);
@@ -83,7 +88,11 @@ export class EmailService {
     return this.sendEmail(options);
   }
 
-  async sendPasswordResetEmail(email: string, token: string, userName?: string): Promise<boolean> {
+  async sendPasswordResetEmail(
+    email: string,
+    token: string,
+    userName?: string,
+  ): Promise<boolean> {
     const resetUrl = `${this.appUrl}/reset-password/${token}`;
     const name = userName || email.split('@')[0];
 
@@ -135,7 +144,10 @@ The InvApp Team
     });
   }
 
-  async sendPasswordChangedEmail(email: string, userName?: string): Promise<boolean> {
+  async sendPasswordChangedEmail(
+    email: string,
+    userName?: string,
+  ): Promise<boolean> {
     const name = userName || email.split('@')[0];
 
     const html = this.getPasswordChangedTemplate(name);

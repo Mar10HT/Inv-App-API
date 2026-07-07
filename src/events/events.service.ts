@@ -3,7 +3,13 @@ import { EventsGateway } from './events.gateway';
 
 export interface EventPayload {
   entity: string;
-  action: 'created' | 'updated' | 'deleted' | 'bulk_updated' | 'bulk_deleted' | 'imported';
+  action:
+    | 'created'
+    | 'updated'
+    | 'deleted'
+    | 'bulk_updated'
+    | 'bulk_deleted'
+    | 'imported';
   entityId?: string;
   data?: Record<string, unknown>;
 }
@@ -25,7 +31,11 @@ export class EventsService {
   }
 
   // Convenience methods for common events
-  emitInventoryChange(action: EventPayload['action'], entityId?: string, data?: Record<string, unknown>): void {
+  emitInventoryChange(
+    action: EventPayload['action'],
+    entityId?: string,
+    data?: Record<string, unknown>,
+  ): void {
     this.broadcast('inventory:change', {
       entity: 'inventory',
       action,
@@ -34,7 +44,11 @@ export class EventsService {
     });
   }
 
-  emitLoanChange(action: EventPayload['action'], entityId?: string, data?: Record<string, unknown>): void {
+  emitLoanChange(
+    action: EventPayload['action'],
+    entityId?: string,
+    data?: Record<string, unknown>,
+  ): void {
     this.broadcast('loan:change', {
       entity: 'loan',
       action,
@@ -43,7 +57,11 @@ export class EventsService {
     });
   }
 
-  emitTransactionChange(action: EventPayload['action'], entityId?: string, data?: Record<string, unknown>): void {
+  emitTransactionChange(
+    action: EventPayload['action'],
+    entityId?: string,
+    data?: Record<string, unknown>,
+  ): void {
     this.broadcast('transaction:change', {
       entity: 'transaction',
       action,
@@ -52,7 +70,11 @@ export class EventsService {
     });
   }
 
-  emitAlertChange(action: EventPayload['action'], entityId?: string, data?: Record<string, unknown>): void {
+  emitAlertChange(
+    action: EventPayload['action'],
+    entityId?: string,
+    data?: Record<string, unknown>,
+  ): void {
     this.broadcast('alert:change', {
       entity: 'alert',
       action,

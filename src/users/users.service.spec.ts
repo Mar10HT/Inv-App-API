@@ -7,7 +7,10 @@ import { EmailService } from '../email/email.service';
 import { AuditService } from '../audit/audit.service';
 
 const prismaError = (code: string) =>
-  new Prisma.PrismaClientKnownRequestError('test error', { code, clientVersion: '6.x' });
+  new Prisma.PrismaClientKnownRequestError('test error', {
+    code,
+    clientVersion: '6.x',
+  });
 import * as bcrypt from 'bcryptjs';
 
 jest.mock('bcryptjs', () => ({
@@ -59,7 +62,13 @@ describe('UsersService', () => {
         UsersService,
         { provide: PrismaService, useValue: mockPrismaService },
         { provide: EmailService, useValue: mockEmailService },
-        { provide: AuditService, useValue: { log: jest.fn().mockResolvedValue(undefined), logSafe: jest.fn() } },
+        {
+          provide: AuditService,
+          useValue: {
+            log: jest.fn().mockResolvedValue(undefined),
+            logSafe: jest.fn(),
+          },
+        },
       ],
     }).compile();
 
@@ -143,7 +152,9 @@ describe('UsersService', () => {
 
   describe('findOne', () => {
     it('should return a user by ID', async () => {
-      (prisma.user.findUnique as jest.Mock).mockResolvedValue(mockUserWithoutPassword);
+      (prisma.user.findUnique as jest.Mock).mockResolvedValue(
+        mockUserWithoutPassword,
+      );
 
       const result = await service.findOne('user-123');
 
@@ -153,7 +164,9 @@ describe('UsersService', () => {
     it('should throw NotFoundException if user does not exist', async () => {
       (prisma.user.findUnique as jest.Mock).mockResolvedValue(null);
 
-      await expect(service.findOne('nonexistent')).rejects.toThrow(NotFoundException);
+      await expect(service.findOne('nonexistent')).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 
@@ -202,7 +215,9 @@ describe('UsersService', () => {
     it('should throw NotFoundException if user does not exist', async () => {
       (prisma.user.update as jest.Mock).mockRejectedValue(prismaError('P2025'));
 
-      await expect(service.remove('nonexistent')).rejects.toThrow(NotFoundException);
+      await expect(service.remove('nonexistent')).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 
@@ -227,13 +242,17 @@ describe('UsersService', () => {
     it('should throw NotFoundException if user does not exist', async () => {
       (prisma.user.findUnique as jest.Mock).mockResolvedValue(null);
 
-      await expect(service.restore('nonexistent')).rejects.toThrow(NotFoundException);
+      await expect(service.restore('nonexistent')).rejects.toThrow(
+        NotFoundException,
+      );
     });
 
     it('should throw ConflictException if user is not deleted', async () => {
       (prisma.user.findUnique as jest.Mock).mockResolvedValue(mockUser);
 
-      await expect(service.restore('user-123')).rejects.toThrow(ConflictException);
+      await expect(service.restore('user-123')).rejects.toThrow(
+        ConflictException,
+      );
     });
   });
 
@@ -290,7 +309,10 @@ describe('UsersService', () => {
         email: 'test@example.com',
       });
 
-      const result = await service.updatePassword('user-123', 'newHashedPassword');
+      const result = await service.updatePassword(
+        'user-123',
+        'newHashedPassword',
+      );
 
       expect(prisma.user.update).toHaveBeenCalledWith({
         where: { id: 'user-123' },

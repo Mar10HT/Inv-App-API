@@ -1,10 +1,19 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { QrService } from '../qr/qr.service';
 import { CreateDischargeRequestDto } from './dto/create-discharge-request.dto';
 import { FilterDischargeRequestDto } from './dto/filter-discharge-request.dto';
-import { DischargeRequestStatus, OutflowReason, OutflowStatus, Prisma } from '@prisma/client';
+import {
+  DischargeRequestStatus,
+  OutflowReason,
+  OutflowStatus,
+  Prisma,
+} from '@prisma/client';
 import { warehouseFilter } from '../common/warehouse-access/warehouse-filter.util';
 
 @Injectable()
@@ -20,7 +29,9 @@ export class DischargeRequestsService {
     resolvedBy: { select: { id: true, name: true, email: true } },
     items: {
       include: {
-        inventoryItem: { select: { id: true, name: true, serviceTag: true, quantity: true } },
+        inventoryItem: {
+          select: { id: true, name: true, serviceTag: true, quantity: true },
+        },
       },
     },
   };
@@ -76,7 +87,9 @@ export class DischargeRequestsService {
 
     // Create N discharge requests in a transaction (one per warehouse)
     const createdRequests = await this.prisma.$transaction(async (tx) => {
-      const requests: Awaited<ReturnType<typeof this.prisma.dischargeRequest.create>>[] = [];
+      const requests: Awaited<
+        ReturnType<typeof this.prisma.dischargeRequest.create>
+      >[] = [];
 
       for (const [warehouseId, items] of groupedByWarehouse) {
         const request = await tx.dischargeRequest.create({
@@ -152,7 +165,10 @@ export class DischargeRequestsService {
   /**
    * Find all discharge requests with filters and pagination
    */
-  async findAll(filters: FilterDischargeRequestDto, warehouseIds?: string[] | null) {
+  async findAll(
+    filters: FilterDischargeRequestDto,
+    warehouseIds?: string[] | null,
+  ) {
     const page = filters.page || 1;
     const limit = filters.limit || 10;
     const skip = (page - 1) * limit;
@@ -302,7 +318,11 @@ export class DischargeRequestsService {
       entity: 'DischargeRequest',
       entityId: id,
       userId: resolvedById,
-      changes: { status: 'COMPLETED', itemsDelivered: request.items.length, outflowId: createdOutflowId },
+      changes: {
+        status: 'COMPLETED',
+        itemsDelivered: request.items.length,
+        outflowId: createdOutflowId,
+      },
     });
 
     if (createdOutflowId) {
@@ -381,9 +401,15 @@ export class DischargeRequestsService {
 
     const [total, pending, completed, rejected] = await Promise.all([
       this.prisma.dischargeRequest.count({ where: { ...wFilter } }),
-      this.prisma.dischargeRequest.count({ where: { status: DischargeRequestStatus.PENDING, ...wFilter } }),
-      this.prisma.dischargeRequest.count({ where: { status: DischargeRequestStatus.COMPLETED, ...wFilter } }),
-      this.prisma.dischargeRequest.count({ where: { status: DischargeRequestStatus.REJECTED, ...wFilter } }),
+      this.prisma.dischargeRequest.count({
+        where: { status: DischargeRequestStatus.PENDING, ...wFilter },
+      }),
+      this.prisma.dischargeRequest.count({
+        where: { status: DischargeRequestStatus.COMPLETED, ...wFilter },
+      }),
+      this.prisma.dischargeRequest.count({
+        where: { status: DischargeRequestStatus.REJECTED, ...wFilter },
+      }),
     ]);
 
     return {
@@ -399,7 +425,9 @@ export class DischargeRequestsService {
    */
   async getRequestFormQr() {
     const frontendUrl =
-      process.env.FRONTEND_URL || process.env.APP_URL || 'http://localhost:4200';
+      process.env.FRONTEND_URL ||
+      process.env.APP_URL ||
+      'http://localhost:4200';
     const requestFormUrl = `${frontendUrl}/request`;
     const qrDataUrl = await this.qrService.generateUrlQrDataUrl(requestFormUrl);
     return { url: requestFormUrl, qrDataUrl };

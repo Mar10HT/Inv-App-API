@@ -4,10 +4,7 @@ import type { Request, Response } from 'express';
 
 // Initialize CSRF protection at module level to avoid NestJS constructor issues
 // Note: csrf-csrf v4 returns { generateCsrfToken, doubleCsrfProtection, ... }
-const {
-  generateCsrfToken,
-  doubleCsrfProtection,
-} = doubleCsrf({
+const { generateCsrfToken, doubleCsrfProtection } = doubleCsrf({
   getSecret: () => {
     const secret = process.env.CSRF_SECRET;
     if (!secret) {
@@ -21,7 +18,10 @@ const {
   cookieName: '_csrf',
   cookieOptions: {
     httpOnly: true,
-    sameSite: process.env.NODE_ENV === 'production' ? 'none' as const : 'strict' as const,
+    sameSite:
+      process.env.NODE_ENV === 'production'
+        ? ('none' as const)
+        : ('strict' as const),
     secure: process.env.NODE_ENV === 'production',
     maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
   },

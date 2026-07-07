@@ -86,7 +86,10 @@ export class OutflowsService {
     userId: string,
     userWarehouseIds?: string[] | null,
   ) {
-    if (userWarehouseIds != null && !userWarehouseIds.includes(dto.warehouseId)) {
+    if (
+      userWarehouseIds != null &&
+      !userWarehouseIds.includes(dto.warehouseId)
+    ) {
       throw new ForbiddenException('You do not have access to this warehouse');
     }
 
@@ -96,7 +99,9 @@ export class OutflowsService {
 
     const ids = dto.items.map((i) => i.inventoryItemId);
     if (new Set(ids).size !== ids.length) {
-      throw new BadRequestException('Duplicate inventory item in outflow payload');
+      throw new BadRequestException(
+        'Duplicate inventory item in outflow payload',
+      );
     }
 
     // Snapshot price/currency at outflow time so PDFs and reports reflect the
@@ -265,7 +270,10 @@ export class OutflowsService {
     if (!outflow) {
       throw new NotFoundException('Outflow not found');
     }
-    if (userWarehouseIds != null && !userWarehouseIds.includes(outflow.warehouseId)) {
+    if (
+      userWarehouseIds != null &&
+      !userWarehouseIds.includes(outflow.warehouseId)
+    ) {
       throw new ForbiddenException('You do not have access to this outflow');
     }
     return outflow;

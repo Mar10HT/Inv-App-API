@@ -1,11 +1,22 @@
-import { Injectable, NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ConflictException,
+  BadRequestException,
+} from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { EmailService } from '../email/email.service';
 import { AuditService } from '../audit/audit.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
-import { PaginationDto, PaginatedResult, parsePagination, buildPaginationMeta, parseSortOrder } from '../common/dto';
+import {
+  PaginationDto,
+  PaginatedResult,
+  parsePagination,
+  buildPaginationMeta,
+  parseSortOrder,
+} from '../common/dto';
 import * as bcrypt from 'bcryptjs';
 
 @Injectable()
@@ -59,8 +70,12 @@ export class UsersService {
       const { roleId, ...rest } = createUserDto;
 
       if (roleId) {
-        const roleExists = await this.prisma.role.findUnique({ where: { id: roleId }, select: { id: true } });
-        if (!roleExists) throw new BadRequestException(`Role '${roleId}' not found`);
+        const roleExists = await this.prisma.role.findUnique({
+          where: { id: roleId },
+          select: { id: true },
+        });
+        if (!roleExists)
+          throw new BadRequestException(`Role '${roleId}' not found`);
       }
 
       const user = await this.prisma.user.create({
@@ -73,7 +88,9 @@ export class UsersService {
       });
 
       // Send welcome email (fire-and-forget)
-      this.emailService.sendWelcomeEmail(user.email, user.name || undefined).catch(() => {});
+      this.emailService
+        .sendWelcomeEmail(user.email, user.name || undefined)
+        .catch(() => {});
 
       this.auditService.logSafe({
         action: 'CREATE',
@@ -87,7 +104,10 @@ export class UsersService {
       const { password, ...result } = user;
       return result;
     } catch (error: unknown) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      ) {
         throw new ConflictException('User with this email already exists');
       }
       throw error;
@@ -135,7 +155,9 @@ export class UsersService {
 
   async update(id: string, updateUserDto: UpdateUserDto, actorUserId?: string) {
     if (updateUserDto.role === 'SYSTEM_ADMIN') {
-      throw new BadRequestException('Cannot assign SYSTEM_ADMIN role through this endpoint');
+      throw new BadRequestException(
+        'Cannot assign SYSTEM_ADMIN role through this endpoint',
+      );
     }
 
     if (updateUserDto.roleId) {
@@ -143,9 +165,14 @@ export class UsersService {
         where: { id: updateUserDto.roleId },
         select: { id: true, name: true },
       });
-      if (!targetRole) throw new BadRequestException(`Role '${updateUserDto.roleId}' not found`);
+      if (!targetRole)
+        throw new BadRequestException(
+          `Role '${updateUserDto.roleId}' not found`,
+        );
       if (targetRole.name === 'SYSTEM_ADMIN') {
-        throw new BadRequestException('Cannot assign SYSTEM_ADMIN role through this endpoint');
+        throw new BadRequestException(
+          'Cannot assign SYSTEM_ADMIN role through this endpoint',
+        );
       }
     }
 
@@ -185,8 +212,10 @@ export class UsersService {
       return user;
     } catch (error: unknown) {
       if (error instanceof Prisma.PrismaClientKnownRequestError) {
-        if (error.code === 'P2002') throw new ConflictException('User with this email already exists');
-        if (error.code === 'P2025') throw new NotFoundException(`User with ID ${id} not found`);
+        if (error.code === 'P2002')
+          throw new ConflictException('User with this email already exists');
+        if (error.code === 'P2025')
+          throw new NotFoundException(`User with ID ${id} not found`);
       }
       throw error;
     }
@@ -205,7 +234,10 @@ export class UsersService {
         data: { deletedAt: new Date() },
       });
     } catch (error: unknown) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2025'
+      ) {
         throw new NotFoundException(`User with ID ${id} not found`);
       }
       throw error;
@@ -275,7 +307,10 @@ export class UsersService {
     return user;
   }
 
-  async updatePreferences(userId: string, prefs: { emailNotifications?: boolean; lowStockAlerts?: boolean }) {
+  async updatePreferences(
+    userId: string,
+    prefs: { emailNotifications?: boolean; lowStockAlerts?: boolean },
+  ) {
     try {
       return await this.prisma.user.update({
         where: { id: userId },
@@ -286,7 +321,10 @@ export class UsersService {
         },
       });
     } catch (error: unknown) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2025'
+      ) {
         throw new NotFoundException(`User with ID ${userId} not found`);
       }
       throw error;
@@ -353,7 +391,10 @@ export class UsersService {
         });
       });
     } catch (error: unknown) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2025'
+      ) {
         throw new NotFoundException(`User with ID ${userId} not found`);
       }
       throw error;

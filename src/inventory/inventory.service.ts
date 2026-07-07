@@ -1,4 +1,10 @@
-import { Injectable, NotFoundException, ConflictException, BadRequestException, Inject } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ConflictException,
+  BadRequestException,
+  Inject,
+} from '@nestjs/common';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import type { Cache } from 'cache-manager';
 import { PrismaService } from '../prisma/prisma.service';
@@ -14,7 +20,12 @@ import {
   BulkImportDto,
   BulkOperationResultDto,
 } from './dto/bulk-operations.dto';
-import { InventoryItem, InventoryStatus, ItemType, Prisma } from '@prisma/client';
+import {
+  InventoryItem,
+  InventoryStatus,
+  ItemType,
+  Prisma,
+} from '@prisma/client';
 import { EventsService } from '../events/events.service';
 import { SearchService } from '../common/search/search.service';
 import { warehouseFilter } from '../common/warehouse-access/warehouse-filter.util';
@@ -68,18 +79,27 @@ export class InventoryService {
 
     // Validate UNIQUE item requirements
     if (itemType === ItemType.UNIQUE) {
-      if (createInventoryDto.quantity !== 0 && createInventoryDto.quantity !== 1) {
-        throw new BadRequestException('UNIQUE items must have quantity of 0 or 1');
+      if (
+        createInventoryDto.quantity !== 0 &&
+        createInventoryDto.quantity !== 1
+      ) {
+        throw new BadRequestException(
+          'UNIQUE items must have quantity of 0 or 1',
+        );
       }
       if (!createInventoryDto.serviceTag && !createInventoryDto.serialNumber) {
-        throw new BadRequestException('UNIQUE items must have either serviceTag or serialNumber');
+        throw new BadRequestException(
+          'UNIQUE items must have either serviceTag or serialNumber',
+        );
       }
     }
 
     // Validate BULK item requirements
     if (itemType === ItemType.BULK) {
       if (createInventoryDto.serviceTag || createInventoryDto.serialNumber) {
-        throw new BadRequestException('BULK items cannot have serviceTag or serialNumber');
+        throw new BadRequestException(
+          'BULK items cannot have serviceTag or serialNumber',
+        );
       }
       if (createInventoryDto.assignedToUserId) {
         throw new BadRequestException('BULK items cannot be assigned to users');
@@ -92,7 +112,9 @@ export class InventoryService {
         where: { sku: createInventoryDto.sku },
       });
       if (existing) {
-        throw new ConflictException(`Item with SKU ${createInventoryDto.sku} already exists`);
+        throw new ConflictException(
+          `Item with SKU ${createInventoryDto.sku} already exists`,
+        );
       }
     }
 
@@ -102,7 +124,9 @@ export class InventoryService {
         where: { serviceTag: createInventoryDto.serviceTag },
       });
       if (existing) {
-        throw new ConflictException(`Item with service tag ${createInventoryDto.serviceTag} already exists`);
+        throw new ConflictException(
+          `Item with service tag ${createInventoryDto.serviceTag} already exists`,
+        );
       }
     }
 
@@ -114,7 +138,10 @@ export class InventoryService {
         if (createInventoryDto.assignedToUserId) {
           status = InventoryStatus.IN_USE;
         } else {
-          status = createInventoryDto.quantity === 1 ? InventoryStatus.IN_STOCK : InventoryStatus.OUT_OF_STOCK;
+          status =
+            createInventoryDto.quantity === 1
+              ? InventoryStatus.IN_STOCK
+              : InventoryStatus.OUT_OF_STOCK;
         }
       }
       // BULK items: IN_STOCK, LOW_STOCK, or OUT_OF_STOCK based on quantity and minQuantity
@@ -166,14 +193,22 @@ export class InventoryService {
       entity: 'InventoryItem',
       entityId: item.id,
       userId: createInventoryDto.createdById,
-      changes: { after: { name: item.name, quantity: item.quantity, category: item.category } },
+      changes: {
+        after: {
+          name: item.name,
+          quantity: item.quantity,
+          category: item.category,
+        },
+      },
     });
 
     // Invalidate cache
     await this.invalidateCache();
 
     // Emit WebSocket event
-    this.eventsService.emitInventoryChange('created', item.id, { name: item.name });
+    this.eventsService.emitInventoryChange('created', item.id, {
+      name: item.name,
+    });
 
     // Sync FTS index
     this.searchService.syncItem(item.id).catch(() => {});
@@ -181,7 +216,10 @@ export class InventoryService {
     return item;
   }
 
-  async findAll(filters?: FilterInventoryDto, warehouseIds?: string[] | null): Promise<PaginatedResponseDto<InventoryItem>> {
+  async findAll(
+    filters?: FilterInventoryDto,
+    warehouseIds?: string[] | null,
+  ): Promise<PaginatedResponseDto<InventoryItem>> {
     const page = filters?.page || 1;
     const limit = filters?.limit || 10;
     const skip = (page - 1) * limit;
@@ -318,7 +356,11 @@ export class InventoryService {
     return item;
   }
 
-  async update(id: string, updateInventoryDto: UpdateInventoryDto, userId?: string): Promise<InventoryItem> {
+  async update(
+    id: string,
+    updateInventoryDto: UpdateInventoryDto,
+    userId?: string,
+  ): Promise<InventoryItem> {
     // Capture item before update for audit log
     const oldItem = await this.findOne(id);
 
@@ -331,22 +373,31 @@ export class InventoryService {
         },
       });
       if (existing) {
-        throw new ConflictException(`Item with SKU ${updateInventoryDto.sku} already exists`);
+        throw new ConflictException(
+          `Item with SKU ${updateInventoryDto.sku} already exists`,
+        );
       }
     }
 
     // Auto-update status if quantity or assignment is being updated
     let status = updateInventoryDto.status;
-    if ((updateInventoryDto.quantity !== undefined || updateInventoryDto.assignedToUserId !== undefined) && !status) {
-      const item = await this.prisma.inventoryItem.findUnique({ where: { id } });
+    if (
+      (updateInventoryDto.quantity !== undefined ||
+        updateInventoryDto.assignedToUserId !== undefined) &&
+      !status
+    ) {
+      const item = await this.prisma.inventoryItem.findUnique({
+        where: { id },
+      });
       if (!item) {
         throw new NotFoundException('Inventory item not found');
       }
       const quantity = updateInventoryDto.quantity ?? item.quantity;
       const minQty = updateInventoryDto.minQuantity ?? item.minQuantity;
-      const assignedToUserId = updateInventoryDto.assignedToUserId !== undefined
-        ? updateInventoryDto.assignedToUserId
-        : item.assignedToUserId;
+      const assignedToUserId =
+        updateInventoryDto.assignedToUserId !== undefined
+          ? updateInventoryDto.assignedToUserId
+          : item.assignedToUserId;
 
       if (item.itemType === ItemType.UNIQUE && assignedToUserId) {
         status = InventoryStatus.IN_USE;
@@ -383,8 +434,18 @@ export class InventoryService {
       entityId: id,
       userId,
       changes: {
-        before: { name: oldItem.name, quantity: oldItem.quantity, category: oldItem.category, status: oldItem.status },
-        after: { name: updatedItem.name, quantity: updatedItem.quantity, category: updatedItem.category, status: updatedItem.status },
+        before: {
+          name: oldItem.name,
+          quantity: oldItem.quantity,
+          category: oldItem.category,
+          status: oldItem.status,
+        },
+        after: {
+          name: updatedItem.name,
+          quantity: updatedItem.quantity,
+          category: updatedItem.category,
+          status: updatedItem.status,
+        },
         fields: Object.keys(updateInventoryDto),
       },
     });
@@ -460,7 +521,9 @@ export class InventoryService {
   async getStats(warehouseIds?: string[] | null): Promise<StatsResponseDto> {
     // Skip cache when filtering by warehouse (per-user)
     if (warehouseIds === undefined || warehouseIds === null) {
-      const cachedStats = await this.cacheManager.get<StatsResponseDto>(this.CACHE_KEYS.STATS);
+      const cachedStats = await this.cacheManager.get<StatsResponseDto>(
+        this.CACHE_KEYS.STATS,
+      );
       if (cachedStats) {
         return cachedStats;
       }
@@ -480,11 +543,33 @@ export class InventoryService {
       categoryStats,
       warehousesWithCounts,
     ] = await Promise.all([
-      this.prisma.inventoryItem.count({ where: { deletedAt: null, ...wFilter } }),
-      this.prisma.inventoryItem.count({ where: { status: InventoryStatus.IN_STOCK, deletedAt: null, ...wFilter } }),
-      this.prisma.inventoryItem.count({ where: { status: InventoryStatus.LOW_STOCK, deletedAt: null, ...wFilter } }),
-      this.prisma.inventoryItem.count({ where: { status: InventoryStatus.OUT_OF_STOCK, deletedAt: null, ...wFilter } }),
-      this.prisma.inventoryItem.count({ where: { status: InventoryStatus.IN_USE, deletedAt: null, ...wFilter } }),
+      this.prisma.inventoryItem.count({
+        where: { deletedAt: null, ...wFilter },
+      }),
+      this.prisma.inventoryItem.count({
+        where: {
+          status: InventoryStatus.IN_STOCK,
+          deletedAt: null,
+          ...wFilter,
+        },
+      }),
+      this.prisma.inventoryItem.count({
+        where: {
+          status: InventoryStatus.LOW_STOCK,
+          deletedAt: null,
+          ...wFilter,
+        },
+      }),
+      this.prisma.inventoryItem.count({
+        where: {
+          status: InventoryStatus.OUT_OF_STOCK,
+          deletedAt: null,
+          ...wFilter,
+        },
+      }),
+      this.prisma.inventoryItem.count({
+        where: { status: InventoryStatus.IN_USE, deletedAt: null, ...wFilter },
+      }),
       // Compute SUM(price * quantity) in the DB to avoid loading all rows into memory.
       // Prisma cannot express price * quantity natively, so a raw query is used here.
       // warehouseIds === undefined means the value was never passed (admin global view),
@@ -493,7 +578,9 @@ export class InventoryService {
       // models don't use @map. Using snake_case here breaks on both SQLite
       // (column not found) and Postgres (unquoted identifiers fold to
       // lowercase and miss the actual `"deletedAt"`/`"warehouseId"` columns).
-      warehouseIds != null && warehouseIds !== undefined && warehouseIds.length > 0
+      warehouseIds != null &&
+      warehouseIds !== undefined &&
+      warehouseIds.length > 0
         ? this.prisma.$queryRaw<[{ total: number }]>`
             SELECT COALESCE(SUM(price * quantity), 0) AS total
             FROM inventory_items
@@ -529,10 +616,12 @@ export class InventoryService {
       }),
     ]);
 
-    const totalValue = parseFloat(String((totalValueResult as [{ total: unknown }])[0]?.total ?? 0));
+    const totalValue = parseFloat(
+      String((totalValueResult as [{ total: unknown }])[0]?.total ?? 0),
+    );
 
     // No need for extra query - warehouse counts are already included
-    const locationStats = warehousesWithCounts.map(warehouse => ({
+    const locationStats = warehousesWithCounts.map((warehouse) => ({
       name: warehouse.name || 'Unknown',
       count: warehouse._count.inventoryItems,
     }));
@@ -544,7 +633,7 @@ export class InventoryService {
       outOfStock,
       inUse,
       totalValue,
-      categories: categoryStats.map(stat => ({
+      categories: categoryStats.map((stat) => ({
         name: stat.category,
         count: stat._count.category,
       })),
@@ -559,7 +648,9 @@ export class InventoryService {
     return stats;
   }
 
-  async getLowStockItems(warehouseIds?: string[] | null): Promise<InventoryItem[]> {
+  async getLowStockItems(
+    warehouseIds?: string[] | null,
+  ): Promise<InventoryItem[]> {
     return this.prisma.inventoryItem.findMany({
       where: {
         ...warehouseFilter(warehouseIds),
@@ -598,7 +689,9 @@ export class InventoryService {
       select: { category: true },
       orderBy: { category: 'asc' },
     });
-    const result = categories.map(c => c.category).filter((c): c is string => c !== null);
+    const result = categories
+      .map((c) => c.category)
+      .filter((c): c is string => c !== null);
 
     // Cache for 5 minutes
     await this.cacheManager.set(cacheKey, result, 300000);
@@ -617,13 +710,15 @@ export class InventoryService {
       return cached;
     }
 
-    const where = warehouseIds?.length ? { id: { in: warehouseIds }, deletedAt: null } : {};
+    const where = warehouseIds?.length
+      ? { id: { in: warehouseIds }, deletedAt: null }
+      : {};
     const warehouses = await this.prisma.warehouse.findMany({
       where,
       orderBy: { name: 'asc' },
       select: { name: true },
     });
-    const result = warehouses.map(w => w.name);
+    const result = warehouses.map((w) => w.name);
 
     // Cache for 5 minutes
     await this.cacheManager.set(cacheKey, result, 300000);
@@ -642,7 +737,10 @@ export class InventoryService {
 
   // Bulk Operations
 
-  async bulkUpdate(dto: BulkUpdateDto, userId?: string): Promise<BulkOperationResultDto> {
+  async bulkUpdate(
+    dto: BulkUpdateDto,
+    userId?: string,
+  ): Promise<BulkOperationResultDto> {
     const result: BulkOperationResultDto = {
       success: 0,
       failed: 0,
@@ -688,7 +786,10 @@ export class InventoryService {
         let status = item.status;
         if (item.quantity !== undefined && !status) {
           const minQty = item.minQuantity || existing.minQuantity;
-          if (existing.itemType === ItemType.UNIQUE && existing.assignedToUserId) {
+          if (
+            existing.itemType === ItemType.UNIQUE &&
+            existing.assignedToUserId
+          ) {
             status = InventoryStatus.IN_USE;
           } else if (item.quantity === 0) {
             status = InventoryStatus.OUT_OF_STOCK;
@@ -734,13 +835,18 @@ export class InventoryService {
     // Invalidate cache if any updates were successful
     if (result.success > 0) {
       await this.invalidateCache();
-      this.eventsService.emitInventoryChange('bulk_updated', undefined, { count: result.success });
+      this.eventsService.emitInventoryChange('bulk_updated', undefined, {
+        count: result.success,
+      });
     }
 
     return result;
   }
 
-  async bulkDelete(dto: BulkDeleteDto, userId?: string): Promise<BulkOperationResultDto> {
+  async bulkDelete(
+    dto: BulkDeleteDto,
+    userId?: string,
+  ): Promise<BulkOperationResultDto> {
     const result: BulkOperationResultDto = {
       success: 0,
       failed: 0,
@@ -796,7 +902,9 @@ export class InventoryService {
     // Invalidate cache if any deletes were successful
     if (result.success > 0) {
       await this.invalidateCache();
-      this.eventsService.emitInventoryChange('bulk_deleted', undefined, { count: result.success });
+      this.eventsService.emitInventoryChange('bulk_deleted', undefined, {
+        count: result.success,
+      });
     }
 
     return result;
@@ -899,14 +1007,18 @@ export class InventoryService {
     // Invalidate cache if any imports were successful
     if (result.success > 0) {
       await this.invalidateCache();
-      this.eventsService.emitInventoryChange('imported', undefined, { count: result.success });
+      this.eventsService.emitInventoryChange('imported', undefined, {
+        count: result.success,
+      });
     }
 
     return result;
   }
 
   async resetAll(userId?: string): Promise<{ deletedCount: number }> {
-    const count = await this.prisma.inventoryItem.count({ where: { deletedAt: null } });
+    const count = await this.prisma.inventoryItem.count({
+      where: { deletedAt: null },
+    });
 
     await this.prisma.$transaction(async (tx) => {
       await tx.inventoryItem.updateMany({
@@ -939,8 +1051,12 @@ export class InventoryService {
     const worksheet = workbook.addWorksheet('Importar Inventario');
 
     // Load reference data from DB
-    const warehouses = await this.prisma.warehouse.findMany({ select: { name: true } });
-    const suppliers = await this.prisma.supplier.findMany({ select: { name: true } });
+    const warehouses = await this.prisma.warehouse.findMany({
+      select: { name: true },
+    });
+    const suppliers = await this.prisma.supplier.findMany({
+      select: { name: true },
+    });
     const categoryRows = await this.prisma.inventoryItem.findMany({
       where: { deletedAt: null },
       select: { category: true },
@@ -948,9 +1064,9 @@ export class InventoryService {
       orderBy: { category: 'asc' },
     });
 
-    const warehouseNames = warehouses.map(w => w.name).filter(Boolean);
-    const supplierNames = suppliers.map(s => s.name).filter(Boolean);
-    const categoryNames = categoryRows.map(r => r.category).filter(Boolean);
+    const warehouseNames = warehouses.map((w) => w.name).filter(Boolean);
+    const supplierNames = suppliers.map((s) => s.name).filter(Boolean);
+    const categoryNames = categoryRows.map((r) => r.category).filter(Boolean);
 
     // Define 14 columns (A-N)
     worksheet.columns = [
@@ -973,9 +1089,18 @@ export class InventoryService {
     // Style header row
     const headerRow = worksheet.getRow(1);
     headerRow.height = 22;
-    headerRow.eachCell(cell => {
-      cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11, name: 'Calibri' };
-      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1F4E3D' } };
+    headerRow.eachCell((cell) => {
+      cell.font = {
+        bold: true,
+        color: { argb: 'FFFFFFFF' },
+        size: 11,
+        name: 'Calibri',
+      };
+      cell.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FF1F4E3D' },
+      };
       cell.alignment = { vertical: 'middle', horizontal: 'center' };
       cell.border = {
         bottom: { style: 'medium', color: { argb: 'FF4D7C6F' } },
@@ -1005,25 +1130,33 @@ export class InventoryService {
     const categoryFormula = toFormula(categoryNames);
     if (categoryFormula) {
       worksheet.dataValidations.add(`E2:E${DATA_ROWS + 1}`, {
-        type: 'list', allowBlank: true, formulae: [categoryFormula],
+        type: 'list',
+        allowBlank: true,
+        formulae: [categoryFormula],
       });
     }
 
     // F: Tipo dropdown
     worksheet.dataValidations.add(`F2:F${DATA_ROWS + 1}`, {
-      type: 'list', allowBlank: true, formulae: ['"BULK,UNIQUE"'],
+      type: 'list',
+      allowBlank: true,
+      formulae: ['"BULK,UNIQUE"'],
     });
 
     // J: Moneda dropdown
     worksheet.dataValidations.add(`J2:J${DATA_ROWS + 1}`, {
-      type: 'list', allowBlank: true, formulae: ['"USD,HNL"'],
+      type: 'list',
+      allowBlank: true,
+      formulae: ['"USD,HNL"'],
     });
 
     // K: Almacén dropdown
     const warehouseFormula = toFormula(warehouseNames);
     if (warehouseFormula) {
       worksheet.dataValidations.add(`K2:K${DATA_ROWS + 1}`, {
-        type: 'list', allowBlank: true, formulae: [warehouseFormula],
+        type: 'list',
+        allowBlank: true,
+        formulae: [warehouseFormula],
       });
     }
 
@@ -1031,7 +1164,9 @@ export class InventoryService {
     const supplierFormula = toFormula(supplierNames);
     if (supplierFormula) {
       worksheet.dataValidations.add(`L2:L${DATA_ROWS + 1}`, {
-        type: 'list', allowBlank: true, formulae: [supplierFormula],
+        type: 'list',
+        allowBlank: true,
+        formulae: [supplierFormula],
       });
     }
 
@@ -1041,22 +1176,52 @@ export class InventoryService {
     const exampleSupplier = supplierNames[0] || '';
 
     worksheet.addRow([
-      'Laptop Dell Latitude 5430', 'Laptop empresarial 14"', 1, 1,
-      exampleCategory, 'UNIQUE', 'LAP-DELL-001', '', 1200.00, 'USD',
-      exampleWarehouse, exampleSupplier, 'ABC-TAG-001', 'SN-456789',
+      'Laptop Dell Latitude 5430',
+      'Laptop empresarial 14"',
+      1,
+      1,
+      exampleCategory,
+      'UNIQUE',
+      'LAP-DELL-001',
+      '',
+      1200.0,
+      'USD',
+      exampleWarehouse,
+      exampleSupplier,
+      'ABC-TAG-001',
+      'SN-456789',
     ]);
     worksheet.addRow([
-      'Papel A4 500 Hojas', 'Papel blanco para impresión', 100, 20,
-      exampleCategory, 'BULK', 'PAP-A4-500', '1234567890', 5.99, 'USD',
-      exampleWarehouse, '', '', '',
+      'Papel A4 500 Hojas',
+      'Papel blanco para impresión',
+      100,
+      20,
+      exampleCategory,
+      'BULK',
+      'PAP-A4-500',
+      '1234567890',
+      5.99,
+      'USD',
+      exampleWarehouse,
+      '',
+      '',
+      '',
     ]);
 
     // Light style for example rows
-    [2, 3].forEach(rowNum => {
+    [2, 3].forEach((rowNum) => {
       const row = worksheet.getRow(rowNum);
-      row.eachCell(cell => {
-        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF5F9F7' } };
-        cell.font = { color: { argb: 'FF555555' }, italic: true, name: 'Calibri' };
+      row.eachCell((cell) => {
+        cell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: 'FFF5F9F7' },
+        };
+        cell.font = {
+          color: { argb: 'FF555555' },
+          italic: true,
+          name: 'Calibri',
+        };
       });
     });
 
@@ -1074,22 +1239,36 @@ export class InventoryService {
     }
 
     // Pre-load warehouses and suppliers for name-based lookup
-    const warehouses = await this.prisma.warehouse.findMany({ select: { id: true, name: true } });
-    const suppliers = await this.prisma.supplier.findMany({ select: { id: true, name: true } });
-    const warehouseMap = new Map(warehouses.map(w => [w.name.toLowerCase(), w.id]));
-    const supplierMap = new Map(suppliers.map(s => [s.name.toLowerCase(), s.id]));
+    const warehouses = await this.prisma.warehouse.findMany({
+      select: { id: true, name: true },
+    });
+    const suppliers = await this.prisma.supplier.findMany({
+      select: { id: true, name: true },
+    });
+    const warehouseMap = new Map(
+      warehouses.map((w) => [w.name.toLowerCase(), w.id]),
+    );
+    const supplierMap = new Map(
+      suppliers.map((s) => [s.name.toLowerCase(), s.id]),
+    );
 
     const items: BulkImportDto['items'] = [];
     const headers: string[] = [];
 
     // Normalize header: strip *, remove diacritics, lowercase, trim
     const normalizeHeader = (raw: string): string =>
-      raw.replace(/\*/g, '').trim().toLowerCase()
-        .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      raw
+        .replace(/\*/g, '')
+        .trim()
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '');
 
     // Get headers from first row
     worksheet.getRow(1).eachCell((cell, colNumber) => {
-      headers[colNumber] = cell.value ? normalizeHeader(cell.value.toString()) : '';
+      headers[colNumber] = cell.value
+        ? normalizeHeader(cell.value.toString())
+        : '';
     });
 
     // Parse data rows
@@ -1135,7 +1314,8 @@ export class InventoryService {
             break;
           case 'currency':
           case 'moneda':
-            item.currency = value?.toString().toUpperCase() === 'HNL' ? 'HNL' : 'USD';
+            item.currency =
+              value?.toString().toUpperCase() === 'HNL' ? 'HNL' : 'USD';
             break;
           case 'sku':
             item.sku = value?.toString();
@@ -1147,7 +1327,8 @@ export class InventoryService {
             break;
           case 'itemtype':
           case 'tipo':
-            item.itemType = value?.toString().toUpperCase() === 'UNIQUE' ? 'UNIQUE' : 'BULK';
+            item.itemType =
+              value?.toString().toUpperCase() === 'UNIQUE' ? 'UNIQUE' : 'BULK';
             break;
           case 'servicetag':
           case 'service_tag':
@@ -1166,7 +1347,8 @@ export class InventoryService {
           case 'almacen': {
             // Resolve by name first, fall back to raw value (UUID)
             const wName = value?.toString()?.toLowerCase();
-            item.warehouseId = (wName && warehouseMap.get(wName)) || value?.toString();
+            item.warehouseId =
+              (wName && warehouseMap.get(wName)) || value?.toString();
             break;
           }
           case 'supplierid':

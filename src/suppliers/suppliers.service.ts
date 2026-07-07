@@ -6,7 +6,10 @@ import { CreateSupplierDto } from './dto/create-supplier.dto';
 import { UpdateSupplierDto } from './dto/update-supplier.dto';
 
 @Injectable()
-export class SuppliersService extends BaseRepository<CreateSupplierDto, UpdateSupplierDto> {
+export class SuppliersService extends BaseRepository<
+  CreateSupplierDto,
+  UpdateSupplierDto
+> {
   protected readonly options: BaseRepositoryOptions = {
     modelName: 'supplier',
     defaultOrderBy: { createdAt: 'desc' },

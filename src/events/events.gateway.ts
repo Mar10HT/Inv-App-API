@@ -17,7 +17,10 @@ interface AuthenticatedSocket extends Socket {
 
 @WebSocketGateway({
   cors: {
-    origin: (origin: string, callback: (err: Error | null, allow?: boolean) => void) => {
+    origin: (
+      origin: string,
+      callback: (err: Error | null, allow?: boolean) => void,
+    ) => {
       if (!origin) return callback(null, true);
       callback(null, true);
     },
@@ -61,7 +64,9 @@ export class EventsGateway
       await client.join(`user:${payload.sub}`);
       await client.join(`role:${payload.role}`);
 
-      this.logger.log(`Client connected: ${client.id} (user: ${payload.sub}, role: ${payload.role})`);
+      this.logger.log(
+        `Client connected: ${client.id} (user: ${payload.sub}, role: ${payload.role})`,
+      );
     } catch {
       this.logger.warn(`Client ${client.id} disconnected: invalid token`);
       client.disconnect();

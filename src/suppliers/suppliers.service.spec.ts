@@ -6,7 +6,10 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 
 const prismaError = (code: string) =>
-  new Prisma.PrismaClientKnownRequestError('test error', { code, clientVersion: '6.x' });
+  new Prisma.PrismaClientKnownRequestError('test error', {
+    code,
+    clientVersion: '6.x',
+  });
 
 describe('SuppliersService', () => {
   let service: SuppliersService;
@@ -40,7 +43,13 @@ describe('SuppliersService', () => {
       providers: [
         SuppliersService,
         { provide: PrismaService, useValue: mockPrismaService },
-        { provide: AuditService, useValue: { log: jest.fn().mockResolvedValue(undefined), logSafe: jest.fn() } },
+        {
+          provide: AuditService,
+          useValue: {
+            log: jest.fn().mockResolvedValue(undefined),
+            logSafe: jest.fn(),
+          },
+        },
       ],
     }).compile();
 
@@ -135,7 +144,9 @@ describe('SuppliersService', () => {
     it('should throw NotFoundException if supplier does not exist', async () => {
       (prisma.supplier.findUnique as jest.Mock).mockResolvedValue(null);
 
-      await expect(service.findOne('nonexistent')).rejects.toThrow(NotFoundException);
+      await expect(service.findOne('nonexistent')).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 
@@ -144,13 +155,17 @@ describe('SuppliersService', () => {
       const updatedSupplier = { ...mockSupplier, name: 'Updated Supplier' };
       (prisma.supplier.update as jest.Mock).mockResolvedValue(updatedSupplier);
 
-      const result = await service.update('supplier-123', { name: 'Updated Supplier' });
+      const result = await service.update('supplier-123', {
+        name: 'Updated Supplier',
+      });
 
       expect(result.name).toBe('Updated Supplier');
     });
 
     it('should throw NotFoundException if supplier does not exist', async () => {
-      (prisma.supplier.update as jest.Mock).mockRejectedValue(prismaError('P2025'));
+      (prisma.supplier.update as jest.Mock).mockRejectedValue(
+        prismaError('P2025'),
+      );
 
       await expect(
         service.update('nonexistent', { name: 'Test' }),
@@ -170,9 +185,13 @@ describe('SuppliersService', () => {
     });
 
     it('should throw NotFoundException if supplier does not exist', async () => {
-      (prisma.supplier.delete as jest.Mock).mockRejectedValue(prismaError('P2025'));
+      (prisma.supplier.delete as jest.Mock).mockRejectedValue(
+        prismaError('P2025'),
+      );
 
-      await expect(service.remove('nonexistent')).rejects.toThrow(NotFoundException);
+      await expect(service.remove('nonexistent')).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 });

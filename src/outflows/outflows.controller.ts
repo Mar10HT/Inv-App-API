@@ -34,7 +34,8 @@ export class OutflowsController {
   @HttpCode(HttpStatus.CREATED)
   @Permissions('outflows:create')
   create(
-    @Body(new ValidationPipe({ whitelist: true, transform: true })) dto: CreateOutflowDto,
+    @Body(new ValidationPipe({ whitelist: true, transform: true }))
+    dto: CreateOutflowDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.outflowsService.create(dto, user.userId, user.warehouseIds);
@@ -43,7 +44,8 @@ export class OutflowsController {
   @Get()
   @Permissions('outflows:view')
   findAll(
-    @Query(new ValidationPipe({ whitelist: true, transform: true })) filters: FilterOutflowDto,
+    @Query(new ValidationPipe({ whitelist: true, transform: true }))
+    filters: FilterOutflowDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.outflowsService.findAll(filters, user.warehouseIds);
@@ -71,7 +73,10 @@ export class OutflowsController {
   ) {
     const resolvedLocale = locale === 'en' ? 'en' : 'es';
     await this.outflowsService.findOne(id, user.warehouseIds);
-    const buffer = await this.pdfReceipts.generateOutflowReceipt(id, resolvedLocale);
+    const buffer = await this.pdfReceipts.generateOutflowReceipt(
+      id,
+      resolvedLocale,
+    );
 
     res.set({
       'Content-Type': 'application/pdf',
@@ -88,6 +93,11 @@ export class OutflowsController {
     @Body(new ValidationPipe({ whitelist: true })) dto: CancelOutflowDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.outflowsService.cancel(id, user.userId, dto.reason, user.warehouseIds);
+    return this.outflowsService.cancel(
+      id,
+      user.userId,
+      dto.reason,
+      user.warehouseIds,
+    );
   }
 }

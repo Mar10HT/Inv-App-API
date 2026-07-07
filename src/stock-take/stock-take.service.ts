@@ -1,9 +1,20 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
-import { CreateStockTakeDto, UpdateStockTakeItemDto } from './dto/create-stock-take.dto';
+import {
+  CreateStockTakeDto,
+  UpdateStockTakeItemDto,
+} from './dto/create-stock-take.dto';
 import { StockTakeStatus } from '@prisma/client';
-import { PaginationDto, parsePagination, buildPaginationMeta } from '../common/dto';
+import {
+  PaginationDto,
+  parsePagination,
+  buildPaginationMeta,
+} from '../common/dto';
 
 @Injectable()
 export class StockTakeService {
@@ -19,7 +30,9 @@ export class StockTakeService {
     });
 
     if (!warehouse) {
-      throw new NotFoundException(`Warehouse with ID ${dto.warehouseId} not found`);
+      throw new NotFoundException(
+        `Warehouse with ID ${dto.warehouseId} not found`,
+      );
     }
 
     // Check for existing in-progress stock take
@@ -32,7 +45,7 @@ export class StockTakeService {
 
     if (existing) {
       throw new BadRequestException(
-        `There is already an in-progress stock take for this warehouse (ID: ${existing.id})`
+        `There is already an in-progress stock take for this warehouse (ID: ${existing.id})`,
       );
     }
 
@@ -51,7 +64,7 @@ export class StockTakeService {
         startedById,
         notes: dto.notes,
         items: {
-          create: items.map(item => ({
+          create: items.map((item) => ({
             itemId: item.id,
             expectedQty: item.quantity,
           })),
@@ -129,11 +142,17 @@ export class StockTakeService {
     return stockTake;
   }
 
-  async updateItem(stockTakeId: string, dto: UpdateStockTakeItemDto, userId: string) {
+  async updateItem(
+    stockTakeId: string,
+    dto: UpdateStockTakeItemDto,
+    userId: string,
+  ) {
     const stockTake = await this.findOne(stockTakeId);
 
     if (stockTake.status !== StockTakeStatus.IN_PROGRESS) {
-      throw new BadRequestException('Cannot update items on a completed or cancelled stock take');
+      throw new BadRequestException(
+        'Cannot update items on a completed or cancelled stock take',
+      );
     }
 
     const stockTakeItem = await this.prisma.stockTakeItem.findFirst({
@@ -144,7 +163,9 @@ export class StockTakeService {
     });
 
     if (!stockTakeItem) {
-      throw new NotFoundException(`Item ${dto.itemId} not found in this stock take`);
+      throw new NotFoundException(
+        `Item ${dto.itemId} not found in this stock take`,
+      );
     }
 
     const variance = dto.countedQty - stockTakeItem.expectedQty;
@@ -165,7 +186,11 @@ export class StockTakeService {
     return updated;
   }
 
-  async complete(id: string, completedById: string, applyChanges: boolean = false) {
+  async complete(
+    id: string,
+    completedById: string,
+    applyChanges: boolean = false,
+  ) {
     const stockTake = await this.findOne(id);
 
     if (stockTake.status !== StockTakeStatus.IN_PROGRESS) {
@@ -173,10 +198,12 @@ export class StockTakeService {
     }
 
     // Check if all items have been counted
-    const uncountedItems = stockTake.items.filter(item => item.countedQty === null);
+    const uncountedItems = stockTake.items.filter(
+      (item) => item.countedQty === null,
+    );
     if (uncountedItems.length > 0) {
       throw new BadRequestException(
-        `${uncountedItems.length} items have not been counted yet`
+        `${uncountedItems.length} items have not been counted yet`,
       );
     }
 
@@ -280,20 +307,22 @@ export class StockTakeService {
     const stockTake = await this.findOne(id);
 
     const itemsWithVariance = stockTake.items.filter(
-      item => item.variance !== null && item.variance !== 0
+      (item) => item.variance !== null && item.variance !== 0,
     );
 
     const summary = {
       totalItems: stockTake.items.length,
-      countedItems: stockTake.items.filter(i => i.countedQty !== null).length,
+      countedItems: stockTake.items.filter((i) => i.countedQty !== null).length,
       itemsWithVariance: itemsWithVariance.length,
-      positiveVariance: itemsWithVariance.filter(i => (i.variance || 0) > 0).length,
-      negativeVariance: itemsWithVariance.filter(i => (i.variance || 0) < 0).length,
+      positiveVariance: itemsWithVariance.filter((i) => (i.variance || 0) > 0)
+        .length,
+      negativeVariance: itemsWithVariance.filter((i) => (i.variance || 0) < 0)
+        .length,
       totalPositiveVariance: itemsWithVariance
-        .filter(i => (i.variance || 0) > 0)
+        .filter((i) => (i.variance || 0) > 0)
         .reduce((sum, i) => sum + (i.variance || 0), 0),
       totalNegativeVariance: itemsWithVariance
-        .filter(i => (i.variance || 0) < 0)
+        .filter((i) => (i.variance || 0) < 0)
         .reduce((sum, i) => sum + (i.variance || 0), 0),
     };
 
@@ -306,7 +335,7 @@ export class StockTakeService {
         completedAt: stockTake.completedAt,
       },
       summary,
-      items: itemsWithVariance.map(item => ({
+      items: itemsWithVariance.map((item) => ({
         id: item.id,
         itemId: item.itemId,
         itemName: item.item.name,
@@ -322,9 +351,15 @@ export class StockTakeService {
   async getStats() {
     const [total, inProgress, completed, cancelled] = await Promise.all([
       this.prisma.stockTake.count(),
-      this.prisma.stockTake.count({ where: { status: StockTakeStatus.IN_PROGRESS } }),
-      this.prisma.stockTake.count({ where: { status: StockTakeStatus.COMPLETED } }),
-      this.prisma.stockTake.count({ where: { status: StockTakeStatus.CANCELLED } }),
+      this.prisma.stockTake.count({
+        where: { status: StockTakeStatus.IN_PROGRESS },
+      }),
+      this.prisma.stockTake.count({
+        where: { status: StockTakeStatus.COMPLETED },
+      }),
+      this.prisma.stockTake.count({
+        where: { status: StockTakeStatus.CANCELLED },
+      }),
     ]);
 
     // Get recent stock takes with variances
@@ -349,7 +384,7 @@ export class StockTakeService {
         completed,
         cancelled,
       },
-      recentCompleted: recentWithVariances.map(st => ({
+      recentCompleted: recentWithVariances.map((st) => ({
         id: st.id,
         warehouse: st.warehouse.name,
         completedAt: st.completedAt,

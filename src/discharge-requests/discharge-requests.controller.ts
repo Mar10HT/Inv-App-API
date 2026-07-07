@@ -23,7 +23,9 @@ import { AuthenticatedUser } from '../auth/interfaces/auth-user.interface';
 @ApiTags('discharge-requests')
 @Controller('discharge-requests')
 export class DischargeRequestsController {
-  constructor(private readonly dischargeRequestsService: DischargeRequestsService) {}
+  constructor(
+    private readonly dischargeRequestsService: DischargeRequestsService,
+  ) {}
 
   // ==================== Public Endpoints (no auth) ====================
 
@@ -76,10 +78,7 @@ export class DischargeRequestsController {
   @Patch(':id/complete')
   @UseGuards(JwtAuthGuard, PermissionsGuard)
   @Permissions('discharges:manage')
-  complete(
-    @Param('id') id: string,
-    @CurrentUser() user: AuthenticatedUser,
-  ) {
+  complete(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
     return this.dischargeRequestsService.complete(id, user.userId);
   }
 

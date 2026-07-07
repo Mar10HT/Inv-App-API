@@ -18,11 +18,16 @@ import { PermissionsModule } from '../permissions/permissions.module';
       useFactory: async (configService: ConfigService) => {
         const secret = configService.get<string>('JWT_SECRET');
         if (!secret) {
-          throw new Error('JWT_SECRET environment variable is not set. Please configure it in your .env file.');
+          throw new Error(
+            'JWT_SECRET environment variable is not set. Please configure it in your .env file.',
+          );
         }
         return {
           secret,
-          signOptions: { expiresIn: (configService.get<string>('JWT_EXPIRES_IN') || '15m') as any },
+          signOptions: {
+            expiresIn: (configService.get<string>('JWT_EXPIRES_IN') ||
+              '15m') as any,
+          },
         };
       },
       inject: [ConfigService],

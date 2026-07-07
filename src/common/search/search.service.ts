@@ -70,7 +70,10 @@ export class SearchService implements OnModuleInit {
       this.ftsAvailable = true;
       this.logger.log('FTS5 search available');
     } catch (error) {
-      this.logger.warn('FTS5 not available, falling back to LIKE search', error);
+      this.logger.warn(
+        'FTS5 not available, falling back to LIKE search',
+        error,
+      );
       this.ftsAvailable = false;
     }
   }

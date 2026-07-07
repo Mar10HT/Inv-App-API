@@ -146,7 +146,10 @@ const STRINGS = {
 export class PdfReceiptsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async generateLoanReceipt(loanId: string, locale: Locale = 'es'): Promise<Buffer> {
+  async generateLoanReceipt(
+    loanId: string,
+    locale: Locale = 'es',
+  ): Promise<Buffer> {
     const loan = await this.prisma.loan.findUnique({
       where: { id: loanId },
       include: {
@@ -155,7 +158,14 @@ export class PdfReceiptsService {
         createdBy: { select: { name: true, email: true } },
         items: {
           include: {
-            inventoryItem: { select: { name: true, serviceTag: true, price: true, currency: true } },
+            inventoryItem: {
+              select: {
+                name: true,
+                serviceTag: true,
+                price: true,
+                currency: true,
+              },
+            },
           },
         },
       },
@@ -163,28 +173,34 @@ export class PdfReceiptsService {
 
     if (!loan) throw new NotFoundException('Loan not found');
 
-    return this.render({
-      documentType: 'loan',
-      id: loan.id,
-      name: loan.name,
-      status: loan.status,
-      sourceWarehouse: loan.sourceWarehouse?.name ?? '',
-      destinationWarehouse: loan.destinationWarehouse?.name ?? '',
-      createdAt: loan.createdAt,
-      dueDate: loan.dueDate,
-      createdBy: loan.createdBy?.name || loan.createdBy?.email || '',
-      items: loan.items.map((li) => ({
-        name: li.inventoryItem?.name ?? '',
-        serviceTag: li.inventoryItem?.serviceTag,
-        quantity: li.quantity,
-        unitPrice: li.inventoryItem?.price ?? null,
-        currency: li.inventoryItem?.currency ?? null,
-      })),
-      notes: loan.notes,
-    }, locale);
+    return this.render(
+      {
+        documentType: 'loan',
+        id: loan.id,
+        name: loan.name,
+        status: loan.status,
+        sourceWarehouse: loan.sourceWarehouse?.name ?? '',
+        destinationWarehouse: loan.destinationWarehouse?.name ?? '',
+        createdAt: loan.createdAt,
+        dueDate: loan.dueDate,
+        createdBy: loan.createdBy?.name || loan.createdBy?.email || '',
+        items: loan.items.map((li) => ({
+          name: li.inventoryItem?.name ?? '',
+          serviceTag: li.inventoryItem?.serviceTag,
+          quantity: li.quantity,
+          unitPrice: li.inventoryItem?.price ?? null,
+          currency: li.inventoryItem?.currency ?? null,
+        })),
+        notes: loan.notes,
+      },
+      locale,
+    );
   }
 
-  async generateOutflowReceipt(outflowId: string, locale: Locale = 'es'): Promise<Buffer> {
+  async generateOutflowReceipt(
+    outflowId: string,
+    locale: Locale = 'es',
+  ): Promise<Buffer> {
     const outflow = await this.prisma.outflow.findUnique({
       where: { id: outflowId },
       include: {
@@ -200,30 +216,36 @@ export class PdfReceiptsService {
 
     if (!outflow) throw new NotFoundException('Outflow not found');
 
-    return this.render({
-      documentType: 'outflow',
-      id: outflow.id,
-      name: outflow.name,
-      status: outflow.status,
-      sourceWarehouse: outflow.warehouse?.name ?? '',
-      destinationWarehouse: '',
-      warehouseLabel: outflow.warehouse?.name ?? '',
-      reason: outflow.reason,
-      createdAt: outflow.createdAt,
-      createdBy: outflow.createdBy?.name || outflow.createdBy?.email || '',
-      items: outflow.items.map((line) => ({
-        // Prefer snapshot fields — they survive item renames and deletions.
-        name: line.itemName ?? line.inventoryItem?.name ?? '',
-        serviceTag: line.serviceTag ?? line.inventoryItem?.serviceTag,
-        quantity: line.quantity,
-        unitPrice: line.unitPrice ?? null,
-        currency: line.currency ?? null,
-      })),
-      notes: outflow.notes,
-    }, locale);
+    return this.render(
+      {
+        documentType: 'outflow',
+        id: outflow.id,
+        name: outflow.name,
+        status: outflow.status,
+        sourceWarehouse: outflow.warehouse?.name ?? '',
+        destinationWarehouse: '',
+        warehouseLabel: outflow.warehouse?.name ?? '',
+        reason: outflow.reason,
+        createdAt: outflow.createdAt,
+        createdBy: outflow.createdBy?.name || outflow.createdBy?.email || '',
+        items: outflow.items.map((line) => ({
+          // Prefer snapshot fields — they survive item renames and deletions.
+          name: line.itemName ?? line.inventoryItem?.name ?? '',
+          serviceTag: line.serviceTag ?? line.inventoryItem?.serviceTag,
+          quantity: line.quantity,
+          unitPrice: line.unitPrice ?? null,
+          currency: line.currency ?? null,
+        })),
+        notes: outflow.notes,
+      },
+      locale,
+    );
   }
 
-  async generateSaleReceipt(saleId: string, locale: Locale = 'es'): Promise<Buffer> {
+  async generateSaleReceipt(
+    saleId: string,
+    locale: Locale = 'es',
+  ): Promise<Buffer> {
     const sale = await this.prisma.sale.findUnique({
       where: { id: saleId },
       include: {
@@ -239,31 +261,37 @@ export class PdfReceiptsService {
 
     if (!sale) throw new NotFoundException('Sale not found');
 
-    return this.render({
-      documentType: 'sale',
-      id: sale.id,
-      name: sale.name,
-      status: sale.status,
-      sourceWarehouse: sale.warehouse?.name ?? '',
-      destinationWarehouse: '',
-      warehouseLabel: sale.warehouse?.name ?? '',
-      customerName: sale.customerName,
-      customerType: sale.customerType,
-      createdAt: sale.createdAt,
-      createdBy: sale.createdBy?.name || sale.createdBy?.email || '',
-      items: sale.items.map((line) => ({
-        // Prefer snapshot fields — they survive item renames and deletions.
-        name: line.itemName ?? line.inventoryItem?.name ?? '',
-        serviceTag: line.serviceTag ?? line.inventoryItem?.serviceTag,
-        quantity: line.quantity,
-        unitPrice: line.unitPrice ?? null,
-        currency: line.currency ?? null,
-      })),
-      notes: sale.notes,
-    }, locale);
+    return this.render(
+      {
+        documentType: 'sale',
+        id: sale.id,
+        name: sale.name,
+        status: sale.status,
+        sourceWarehouse: sale.warehouse?.name ?? '',
+        destinationWarehouse: '',
+        warehouseLabel: sale.warehouse?.name ?? '',
+        customerName: sale.customerName,
+        customerType: sale.customerType,
+        createdAt: sale.createdAt,
+        createdBy: sale.createdBy?.name || sale.createdBy?.email || '',
+        items: sale.items.map((line) => ({
+          // Prefer snapshot fields — they survive item renames and deletions.
+          name: line.itemName ?? line.inventoryItem?.name ?? '',
+          serviceTag: line.serviceTag ?? line.inventoryItem?.serviceTag,
+          quantity: line.quantity,
+          unitPrice: line.unitPrice ?? null,
+          currency: line.currency ?? null,
+        })),
+        notes: sale.notes,
+      },
+      locale,
+    );
   }
 
-  async generateTransferReceipt(transferId: string, locale: Locale = 'es'): Promise<Buffer> {
+  async generateTransferReceipt(
+    transferId: string,
+    locale: Locale = 'es',
+  ): Promise<Buffer> {
     const transfer = await this.prisma.transferRequest.findUnique({
       where: { id: transferId },
       include: {
@@ -272,7 +300,14 @@ export class PdfReceiptsService {
         requestedBy: { select: { name: true, email: true } },
         items: {
           include: {
-            inventoryItem: { select: { name: true, serviceTag: true, price: true, currency: true } },
+            inventoryItem: {
+              select: {
+                name: true,
+                serviceTag: true,
+                price: true,
+                currency: true,
+              },
+            },
           },
         },
       },
@@ -280,25 +315,29 @@ export class PdfReceiptsService {
 
     if (!transfer) throw new NotFoundException('Transfer request not found');
 
-    return this.render({
-      documentType: 'transfer',
-      id: transfer.id,
-      name: transfer.name,
-      status: transfer.status,
-      sourceWarehouse: transfer.sourceWarehouse?.name ?? '',
-      destinationWarehouse: transfer.destinationWarehouse?.name ?? '',
-      createdAt: transfer.createdAt,
-      createdBy: transfer.requestedBy?.name || transfer.requestedBy?.email || '',
-      items: transfer.items.map((li) => ({
-        name: li.inventoryItem?.name ?? '',
-        serviceTag: li.inventoryItem?.serviceTag,
-        quantity: li.quantity,
-        // TransferRequestItem doesn't currently carry per-line price; fall back to the item's price.
-        unitPrice: li.inventoryItem?.price ?? null,
-        currency: li.inventoryItem?.currency ?? null,
-      })),
-      notes: transfer.notes,
-    }, locale);
+    return this.render(
+      {
+        documentType: 'transfer',
+        id: transfer.id,
+        name: transfer.name,
+        status: transfer.status,
+        sourceWarehouse: transfer.sourceWarehouse?.name ?? '',
+        destinationWarehouse: transfer.destinationWarehouse?.name ?? '',
+        createdAt: transfer.createdAt,
+        createdBy:
+          transfer.requestedBy?.name || transfer.requestedBy?.email || '',
+        items: transfer.items.map((li) => ({
+          name: li.inventoryItem?.name ?? '',
+          serviceTag: li.inventoryItem?.serviceTag,
+          quantity: li.quantity,
+          // TransferRequestItem doesn't currently carry per-line price; fall back to the item's price.
+          unitPrice: li.inventoryItem?.price ?? null,
+          currency: li.inventoryItem?.currency ?? null,
+        })),
+        notes: transfer.notes,
+      },
+      locale,
+    );
   }
 
   private render(ctx: ReceiptContext, locale: Locale): Promise<Buffer> {
@@ -313,13 +352,19 @@ export class PdfReceiptsService {
         minute: '2-digit',
       });
     const fmtAmount = (amount: number | null, currency: string | null) =>
-      amount == null ? t.noPrice : `${currency ?? ''} ${amount.toFixed(2)}`.trim();
+      amount == null
+        ? t.noPrice
+        : `${currency ?? ''} ${amount.toFixed(2)}`.trim();
 
     return new Promise((resolve, reject) => {
       const chunks: Buffer[] = [];
       // bufferPages so we can stamp the void watermark across every page once
       // the body has been laid out.
-      const doc = new PDFDocument({ size: 'LETTER', margin: 50, bufferPages: true });
+      const doc = new PDFDocument({
+        size: 'LETTER',
+        margin: 50,
+        bufferPages: true,
+      });
       doc.on('data', (c: Buffer) => chunks.push(c));
       doc.on('end', () => resolve(Buffer.concat(chunks)));
       doc.on('error', reject);
@@ -335,7 +380,10 @@ export class PdfReceiptsService {
               : t.outflowTitle;
       doc.fontSize(18).font('Helvetica-Bold').text(title, { align: 'center' });
       doc.moveDown(0.5);
-      doc.fontSize(10).font('Helvetica').fillColor('#666666')
+      doc
+        .fontSize(10)
+        .font('Helvetica')
+        .fillColor('#666666')
         .text(`${t.id}: ${ctx.id}`, { align: 'center' });
       doc.fillColor('#000000');
       doc.moveDown(1.5);
@@ -347,19 +395,39 @@ export class PdfReceiptsService {
       const right = left + colWidth + 10;
 
       const writeRow = (label: string, value: string, y: number, x: number) => {
-        doc.font('Helvetica-Bold').fontSize(9).fillColor('#555555').text(label, x, y, { width: colWidth - 10 });
-        doc.font('Helvetica').fontSize(11).fillColor('#000000').text(value || '—', x, y + 12, { width: colWidth - 10 });
+        doc
+          .font('Helvetica-Bold')
+          .fontSize(9)
+          .fillColor('#555555')
+          .text(label, x, y, { width: colWidth - 10 });
+        doc
+          .font('Helvetica')
+          .fontSize(11)
+          .fillColor('#000000')
+          .text(value || '—', x, y + 12, { width: colWidth - 10 });
       };
 
       writeRow(t.name, ctx.name ?? '—', metaTop, left);
       writeRow(t.status, ctx.status, metaTop, right);
 
       if (ctx.documentType === 'outflow') {
-        writeRow(t.warehouse, ctx.warehouseLabel ?? ctx.sourceWarehouse, metaTop + 42, left);
-        const reasonLabel = ctx.reason ? (t.reasons[ctx.reason] ?? ctx.reason) : '—';
+        writeRow(
+          t.warehouse,
+          ctx.warehouseLabel ?? ctx.sourceWarehouse,
+          metaTop + 42,
+          left,
+        );
+        const reasonLabel = ctx.reason
+          ? (t.reasons[ctx.reason] ?? ctx.reason)
+          : '—';
         writeRow(t.reason, reasonLabel, metaTop + 42, right);
       } else if (ctx.documentType === 'sale') {
-        writeRow(t.warehouse, ctx.warehouseLabel ?? ctx.sourceWarehouse, metaTop + 42, left);
+        writeRow(
+          t.warehouse,
+          ctx.warehouseLabel ?? ctx.sourceWarehouse,
+          metaTop + 42,
+          left,
+        );
         const typeLabel = ctx.customerType
           ? (t.customerTypes[ctx.customerType] ?? ctx.customerType)
           : '—';
@@ -370,7 +438,8 @@ export class PdfReceiptsService {
       }
 
       writeRow(t.created, fmtDate(ctx.createdAt), metaTop + 84, left);
-      if (ctx.dueDate) writeRow(t.dueDate, fmtDate(ctx.dueDate), metaTop + 84, right);
+      if (ctx.dueDate)
+        writeRow(t.dueDate, fmtDate(ctx.dueDate), metaTop + 84, right);
       // Reuse the right slot (free for sales — no due date) for the customer name.
       if (ctx.documentType === 'sale') {
         writeRow(t.customer, ctx.customerName ?? '—', metaTop + 84, right);
@@ -383,7 +452,11 @@ export class PdfReceiptsService {
 
       // Items table
       doc.moveDown(0.5);
-      doc.font('Helvetica-Bold').fontSize(12).fillColor('#000000').text(t.items);
+      doc
+        .font('Helvetica-Bold')
+        .fontSize(12)
+        .fillColor('#000000')
+        .text(t.items);
       doc.moveDown(0.3);
 
       const tableTop = doc.y;
@@ -400,7 +473,11 @@ export class PdfReceiptsService {
       doc.text(t.colUnit, colUnit, tableTop, { width: 80, align: 'right' });
       doc.text(t.colSubtotal, colSub, tableTop, { width: 70, align: 'right' });
 
-      doc.moveTo(left, tableTop + 14).lineTo(doc.page.width - 50, tableTop + 14).strokeColor('#cccccc').stroke();
+      doc
+        .moveTo(left, tableTop + 14)
+        .lineTo(doc.page.width - 50, tableTop + 14)
+        .strokeColor('#cccccc')
+        .stroke();
 
       let cursor = tableTop + 20;
       // One running total per currency; items with no price contribute to nothing.
@@ -423,14 +500,27 @@ export class PdfReceiptsService {
 
         doc.text(item.name || '—', colItem, cursor, { width: 195 });
         doc.text(item.serviceTag ?? '—', colTag, cursor, { width: 115 });
-        doc.text(String(item.quantity), colQty, cursor, { width: 35, align: 'right' });
-        doc.text(fmtAmount(unit, item.currency), colUnit, cursor, { width: 80, align: 'right' });
-        doc.text(fmtAmount(sub, item.currency), colSub, cursor, { width: 70, align: 'right' });
+        doc.text(String(item.quantity), colQty, cursor, {
+          width: 35,
+          align: 'right',
+        });
+        doc.text(fmtAmount(unit, item.currency), colUnit, cursor, {
+          width: 80,
+          align: 'right',
+        });
+        doc.text(fmtAmount(sub, item.currency), colSub, cursor, {
+          width: 70,
+          align: 'right',
+        });
         cursor += 18;
       }
 
       // Totals — one row per currency present. If none have prices, show a single em-dash.
-      doc.moveTo(colUnit, cursor + 4).lineTo(doc.page.width - 50, cursor + 4).strokeColor('#cccccc').stroke();
+      doc
+        .moveTo(colUnit, cursor + 4)
+        .lineTo(doc.page.width - 50, cursor + 4)
+        .strokeColor('#cccccc')
+        .stroke();
       doc.font('Helvetica-Bold').fontSize(11).fillColor('#000000');
 
       if (totalsByCurrency.size === 0) {
@@ -439,12 +529,17 @@ export class PdfReceiptsService {
         cursor += 26;
       } else {
         // Stable order: known currencies first, then alphabetical
-        const entries = Array.from(totalsByCurrency.entries()).sort(([a], [b]) => a.localeCompare(b));
+        const entries = Array.from(totalsByCurrency.entries()).sort(
+          ([a], [b]) => a.localeCompare(b),
+        );
         let row = cursor + 10;
         for (const [currency, amount] of entries) {
           const label = currency ? `${t.total} ${currency}` : t.total;
           doc.text(label, colUnit, row, { width: 80, align: 'right' });
-          doc.text(fmtAmount(amount, currency || null), colSub, row, { width: 70, align: 'right' });
+          doc.text(fmtAmount(amount, currency || null), colSub, row, {
+            width: 70,
+            align: 'right',
+          });
           row += 16;
         }
         cursor = row;
@@ -456,24 +551,56 @@ export class PdfReceiptsService {
       // Notes
       if (ctx.notes) {
         doc.moveDown(1);
-        doc.font('Helvetica-Bold').fontSize(10).fillColor('#555555').text(t.notes);
-        doc.font('Helvetica').fontSize(10).fillColor('#000000').text(ctx.notes, { width: doc.page.width - 100 });
+        doc
+          .font('Helvetica-Bold')
+          .fontSize(10)
+          .fillColor('#555555')
+          .text(t.notes);
+        doc
+          .font('Helvetica')
+          .fontSize(10)
+          .fillColor('#000000')
+          .text(ctx.notes, { width: doc.page.width - 100 });
       }
 
       // Signatures
       const sigTop = Math.max(doc.y + 50, doc.page.height - 180);
-      doc.font('Helvetica-Bold').fontSize(12).fillColor('#000000').text(t.signaturesHeader, left, sigTop);
+      doc
+        .font('Helvetica-Bold')
+        .fontSize(12)
+        .fillColor('#000000')
+        .text(t.signaturesHeader, left, sigTop);
 
       const sigRow = sigTop + 40;
       const sigCol1 = left;
       const sigCol2 = left + colWidth + 10;
 
       const drawSignatureBlock = (label: string, x: number, y: number) => {
-        doc.font('Helvetica-Bold').fontSize(9).fillColor('#555555').text(label, x, y);
-        doc.moveTo(x, y + 30).lineTo(x + colWidth - 20, y + 30).strokeColor('#000000').stroke();
-        doc.font('Helvetica').fontSize(8).fillColor('#666666').text(t.nameLine, x, y + 33);
-        doc.moveTo(x, y + 65).lineTo(x + colWidth - 20, y + 65).strokeColor('#000000').stroke();
-        doc.font('Helvetica').fontSize(8).fillColor('#666666').text(t.dateLine, x, y + 68);
+        doc
+          .font('Helvetica-Bold')
+          .fontSize(9)
+          .fillColor('#555555')
+          .text(label, x, y);
+        doc
+          .moveTo(x, y + 30)
+          .lineTo(x + colWidth - 20, y + 30)
+          .strokeColor('#000000')
+          .stroke();
+        doc
+          .font('Helvetica')
+          .fontSize(8)
+          .fillColor('#666666')
+          .text(t.nameLine, x, y + 33);
+        doc
+          .moveTo(x, y + 65)
+          .lineTo(x + colWidth - 20, y + 65)
+          .strokeColor('#000000')
+          .stroke();
+        doc
+          .font('Helvetica')
+          .fontSize(8)
+          .fillColor('#666666')
+          .text(t.dateLine, x, y + 68);
       };
 
       if (ctx.documentType === 'outflow') {
@@ -489,17 +616,17 @@ export class PdfReceiptsService {
       }
 
       // Footer
-      doc.font('Helvetica').fontSize(8).fillColor('#999999').text(
-        t.autoGenerated,
-        50,
-        doc.page.height - 40,
-        { align: 'center' },
-      );
+      doc
+        .font('Helvetica')
+        .fontSize(8)
+        .fillColor('#999999')
+        .text(t.autoGenerated, 50, doc.page.height - 40, { align: 'center' });
 
       // Void watermark for CANCELLED / REJECTED — stamped on every page so a
       // printed PDF can't be confused with a real receipt.
       if (VOID_STATUSES.has(ctx.status)) {
-        const label = ctx.status === 'REJECTED' ? t.voidRejected : t.voidCancelled;
+        const label =
+          ctx.status === 'REJECTED' ? t.voidRejected : t.voidCancelled;
         const { width, height } = doc.page;
         const range = doc.bufferedPageRange();
         for (let i = range.start; i < range.start + range.count; i++) {

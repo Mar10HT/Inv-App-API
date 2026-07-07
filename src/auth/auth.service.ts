@@ -101,7 +101,10 @@ export class AuthService {
   // Refresh Token Methods
   // ============================================
 
-  async createRefreshToken(userId: string, rememberMe = false): Promise<string> {
+  async createRefreshToken(
+    userId: string,
+    rememberMe = false,
+  ): Promise<string> {
     const token = randomBytes(64).toString('hex');
     const expiryDays = rememberMe
       ? this.REFRESH_TOKEN_EXPIRY_REMEMBER_DAYS
@@ -170,7 +173,11 @@ export class AuthService {
     };
     const accessToken = this.jwtService.sign(payload);
 
-    const warehouseIds = await this.warehouseAccessService.getAccessibleWarehouseIds(storedToken.user.id, storedToken.user.role) ?? [];
+    const warehouseIds =
+      (await this.warehouseAccessService.getAccessibleWarehouseIds(
+        storedToken.user.id,
+        storedToken.user.role,
+      )) ?? [];
 
     return {
       access_token: accessToken,
@@ -254,7 +261,12 @@ export class AuthService {
     if (user) {
       this.emailService
         .sendPasswordResetEmail(user.email, token, user.name || undefined)
-        .catch((err) => this.logger.error('Failed to send password reset email', err?.message));
+        .catch((err) =>
+          this.logger.error(
+            'Failed to send password reset email',
+            err?.message,
+          ),
+        );
     }
 
     return token;
@@ -349,7 +361,12 @@ export class AuthService {
         resetToken.user.email,
         resetToken.user.name || undefined,
       )
-      .catch((err) => this.logger.error('Failed to send password changed email', err?.message));
+      .catch((err) =>
+        this.logger.error(
+          'Failed to send password changed email',
+          err?.message,
+        ),
+      );
   }
 
   // ============================================
@@ -397,7 +414,11 @@ export class AuthService {
       loginDto.rememberMe,
     );
 
-    const warehouseIds = await this.warehouseAccessService.getAccessibleWarehouseIds(user.id, user.role) ?? [];
+    const warehouseIds =
+      (await this.warehouseAccessService.getAccessibleWarehouseIds(
+        user.id,
+        user.role,
+      )) ?? [];
 
     return {
       access_token: accessToken,
@@ -521,7 +542,12 @@ export class AuthService {
     // Send confirmation email
     this.emailService
       .sendPasswordChangedEmail(user.email, user.name || undefined)
-      .catch((err) => this.logger.error('Failed to send password changed email', err?.message));
+      .catch((err) =>
+        this.logger.error(
+          'Failed to send password changed email',
+          err?.message,
+        ),
+      );
 
     return { message: 'Password changed successfully' };
   }

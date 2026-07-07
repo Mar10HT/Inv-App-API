@@ -37,7 +37,9 @@ export class CategoriesController {
 
   @Get()
   @Permissions('categories:view')
-  findAll(@Query(new ValidationPipe({ transform: true })) pagination: PaginationDto) {
+  findAll(
+    @Query(new ValidationPipe({ transform: true })) pagination: PaginationDto,
+  ) {
     return this.categoriesService.findAll(pagination);
   }
 

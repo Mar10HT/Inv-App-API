@@ -1,6 +1,10 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { JwtService } from '@nestjs/jwt';
-import { UnauthorizedException, ConflictException, BadRequestException } from '@nestjs/common';
+import {
+  UnauthorizedException,
+  ConflictException,
+  BadRequestException,
+} from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { UsersService } from '../users/users.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -95,7 +99,10 @@ describe('AuthService', () => {
         { provide: JwtService, useValue: mockJwtService },
         { provide: PrismaService, useValue: mockPrismaService },
         { provide: EmailService, useValue: mockEmailService },
-        { provide: WarehouseAccessService, useValue: mockWarehouseAccessService },
+        {
+          provide: WarehouseAccessService,
+          useValue: mockWarehouseAccessService,
+        },
         { provide: AuditService, useValue: mockAuditService },
       ],
     }).compile();
@@ -133,14 +140,20 @@ describe('AuthService', () => {
       });
       expect(result.refresh_token).toBeDefined();
       expect(usersService.findByEmail).toHaveBeenCalledWith('test@example.com');
-      expect(bcrypt.compare).toHaveBeenCalledWith('password123', mockUser.password);
+      expect(bcrypt.compare).toHaveBeenCalledWith(
+        'password123',
+        mockUser.password,
+      );
     });
 
     it('should throw UnauthorizedException for non-existent user', async () => {
       usersService.findByEmail.mockResolvedValue(null);
 
       await expect(
-        service.login({ email: 'nonexistent@example.com', password: 'password123' }),
+        service.login({
+          email: 'nonexistent@example.com',
+          password: 'password123',
+        }),
       ).rejects.toThrow(UnauthorizedException);
     });
 
@@ -222,7 +235,10 @@ describe('AuthService', () => {
       });
 
       expect(result).toEqual({ message: 'Password changed successfully' });
-      expect(usersService.updatePassword).toHaveBeenCalledWith('user-123', 'newHashedPassword');
+      expect(usersService.updatePassword).toHaveBeenCalledWith(
+        'user-123',
+        'newHashedPassword',
+      );
     });
 
     it('should throw UnauthorizedException if user not found', async () => {

@@ -21,10 +21,7 @@ describe('RolesGuard', () => {
     };
 
     const module: TestingModule = await Test.createTestingModule({
-      providers: [
-        RolesGuard,
-        { provide: Reflector, useValue: mockReflector },
-      ],
+      providers: [RolesGuard, { provide: Reflector, useValue: mockReflector }],
     }).compile();
 
     guard = module.get<RolesGuard>(RolesGuard);
@@ -53,18 +50,30 @@ describe('RolesGuard', () => {
     });
 
     it('should throw ForbiddenException when user is not authenticated', () => {
-      (reflector.getAllAndOverride as jest.Mock).mockReturnValue(['SYSTEM_ADMIN']);
-      (mockExecutionContext.switchToHttp().getRequest as jest.Mock).mockReturnValue({
+      (reflector.getAllAndOverride as jest.Mock).mockReturnValue([
+        'SYSTEM_ADMIN',
+      ]);
+      (
+        mockExecutionContext.switchToHttp().getRequest as jest.Mock
+      ).mockReturnValue({
         user: undefined,
       });
 
-      expect(() => guard.canActivate(mockExecutionContext)).toThrow(ForbiddenException);
-      expect(() => guard.canActivate(mockExecutionContext)).toThrow('User not authenticated');
+      expect(() => guard.canActivate(mockExecutionContext)).toThrow(
+        ForbiddenException,
+      );
+      expect(() => guard.canActivate(mockExecutionContext)).toThrow(
+        'User not authenticated',
+      );
     });
 
     it('should allow access when user has required role', () => {
-      (reflector.getAllAndOverride as jest.Mock).mockReturnValue(['SYSTEM_ADMIN']);
-      (mockExecutionContext.switchToHttp().getRequest as jest.Mock).mockReturnValue({
+      (reflector.getAllAndOverride as jest.Mock).mockReturnValue([
+        'SYSTEM_ADMIN',
+      ]);
+      (
+        mockExecutionContext.switchToHttp().getRequest as jest.Mock
+      ).mockReturnValue({
         user: { id: 'user-123', role: 'SYSTEM_ADMIN' },
       });
 
@@ -78,7 +87,9 @@ describe('RolesGuard', () => {
         'SYSTEM_ADMIN',
         'WAREHOUSE_MANAGER',
       ]);
-      (mockExecutionContext.switchToHttp().getRequest as jest.Mock).mockReturnValue({
+      (
+        mockExecutionContext.switchToHttp().getRequest as jest.Mock
+      ).mockReturnValue({
         user: { id: 'user-123', role: 'WAREHOUSE_MANAGER' },
       });
 
@@ -88,12 +99,18 @@ describe('RolesGuard', () => {
     });
 
     it('should throw ForbiddenException when user does not have required role', () => {
-      (reflector.getAllAndOverride as jest.Mock).mockReturnValue(['SYSTEM_ADMIN']);
-      (mockExecutionContext.switchToHttp().getRequest as jest.Mock).mockReturnValue({
+      (reflector.getAllAndOverride as jest.Mock).mockReturnValue([
+        'SYSTEM_ADMIN',
+      ]);
+      (
+        mockExecutionContext.switchToHttp().getRequest as jest.Mock
+      ).mockReturnValue({
         user: { id: 'user-123', role: 'USER' },
       });
 
-      expect(() => guard.canActivate(mockExecutionContext)).toThrow(ForbiddenException);
+      expect(() => guard.canActivate(mockExecutionContext)).toThrow(
+        ForbiddenException,
+      );
     });
 
     it('should include role information in error message', () => {
@@ -101,7 +118,9 @@ describe('RolesGuard', () => {
         'SYSTEM_ADMIN',
         'WAREHOUSE_MANAGER',
       ]);
-      (mockExecutionContext.switchToHttp().getRequest as jest.Mock).mockReturnValue({
+      (
+        mockExecutionContext.switchToHttp().getRequest as jest.Mock
+      ).mockReturnValue({
         user: { id: 'user-123', role: 'VIEWER' },
       });
 

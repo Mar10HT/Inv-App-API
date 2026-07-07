@@ -4,6 +4,6 @@ export interface AuthenticatedUser {
   email: string;
   role: string;
   warehouseIds: string[] | null; // null = SYSTEM_ADMIN (unrestricted access)
-  permissions?: string[];        // Loaded lazily via /auth/me polling
-  permissionsVersion?: number;   // Incremented when role permissions change
+  permissions?: string[]; // Loaded lazily via /auth/me polling
+  permissionsVersion?: number; // Incremented when role permissions change
 }

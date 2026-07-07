@@ -1,10 +1,20 @@
-import { Injectable, NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ConflictException,
+  BadRequestException,
+} from '@nestjs/common';
 import { Prisma, Warehouse } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { CreateWarehouseDto } from './dto/create-warehouse.dto';
 import { UpdateWarehouseDto } from './dto/update-warehouse.dto';
-import { PaginationDto, PaginatedResult, parsePagination, buildPaginationMeta } from '../common/dto';
+import {
+  PaginationDto,
+  PaginatedResult,
+  parsePagination,
+  buildPaginationMeta,
+} from '../common/dto';
 import { warehouseFilter } from '../common/warehouse-access/warehouse-filter.util';
 
 @Injectable()
@@ -14,7 +24,9 @@ export class WarehousesService {
     private readonly auditService: AuditService,
   ) {}
 
-  private normalizeManagerId(value: string | null | undefined): string | null | undefined {
+  private normalizeManagerId(
+    value: string | null | undefined,
+  ): string | null | undefined {
     if (value === undefined) return undefined;
     if (value === null || value === '') return null;
     return value;
@@ -28,7 +40,10 @@ export class WarehousesService {
     if (!user) throw new BadRequestException('Manager user not found');
   }
 
-  async create(createDto: CreateWarehouseDto, userId?: string): Promise<Warehouse> {
+  async create(
+    createDto: CreateWarehouseDto,
+    userId?: string,
+  ): Promise<Warehouse> {
     const managerId = this.normalizeManagerId(createDto.managerId);
     if (managerId) await this.assertManagerExists(managerId);
 
@@ -43,7 +58,12 @@ export class WarehousesService {
         });
         if (managerId) {
           await tx.userWarehouse.upsert({
-            where: { userId_warehouseId: { userId: managerId, warehouseId: created.id } },
+            where: {
+              userId_warehouseId: {
+                userId: managerId,
+                warehouseId: created.id,
+              },
+            },
             create: { userId: managerId, warehouseId: created.id },
             update: {},
           });
@@ -51,7 +71,10 @@ export class WarehousesService {
         return created;
       });
     } catch (error: unknown) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      ) {
         throw new ConflictException('Warehouse with this value already exists');
       }
       throw error;
@@ -129,11 +152,20 @@ export class WarehousesService {
     return entity;
   }
 
-  async update(id: string, updateDto: UpdateWarehouseDto, userId?: string): Promise<Warehouse> {
+  async update(
+    id: string,
+    updateDto: UpdateWarehouseDto,
+    userId?: string,
+  ): Promise<Warehouse> {
     const before = await this.prisma.warehouse.findUnique({ where: { id } });
 
-    const managerIdProvided = Object.prototype.hasOwnProperty.call(updateDto, 'managerId');
-    const managerId = managerIdProvided ? this.normalizeManagerId(updateDto.managerId) : undefined;
+    const managerIdProvided = Object.prototype.hasOwnProperty.call(
+      updateDto,
+      'managerId',
+    );
+    const managerId = managerIdProvided
+      ? this.normalizeManagerId(updateDto.managerId)
+      : undefined;
     if (managerId) await this.assertManagerExists(managerId);
 
     const { managerId: _ignored, ...rest } = updateDto;
@@ -151,7 +183,9 @@ export class WarehousesService {
         const updated = await tx.warehouse.update({ where: { id }, data });
         if (managerIdProvided && managerId) {
           await tx.userWarehouse.upsert({
-            where: { userId_warehouseId: { userId: managerId, warehouseId: id } },
+            where: {
+              userId_warehouseId: { userId: managerId, warehouseId: id },
+            },
             create: { userId: managerId, warehouseId: id },
             update: {},
           });
@@ -160,8 +194,12 @@ export class WarehousesService {
       });
     } catch (error: unknown) {
       if (error instanceof Prisma.PrismaClientKnownRequestError) {
-        if (error.code === 'P2002') throw new ConflictException('Warehouse with this value already exists');
-        if (error.code === 'P2025') throw new NotFoundException(`Warehouse with ID ${id} not found`);
+        if (error.code === 'P2002')
+          throw new ConflictException(
+            'Warehouse with this value already exists',
+          );
+        if (error.code === 'P2025')
+          throw new NotFoundException(`Warehouse with ID ${id} not found`);
       }
       throw error;
     }
@@ -203,7 +241,10 @@ export class WarehousesService {
         where: { id },
       });
     } catch (error: unknown) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2025'
+      ) {
         throw new NotFoundException(`Warehouse with ID ${id} not found`);
       }
       throw error;
