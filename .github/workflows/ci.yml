@@ -9,6 +9,11 @@ on:
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
+    env:
+      # prisma validate/generate resolve env("DATABASE_URL") from the schema
+      # even though neither actually connects to a database — any
+      # syntactically valid SQLite URL satisfies it here.
+      DATABASE_URL: "file:./ci.db"
     steps:
       - uses: actions/checkout@v4
 
