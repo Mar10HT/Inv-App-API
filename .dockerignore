@@ -1,0 +1,16 @@
+node_modules
+dist
+coverage
+logs
+*.log
+.env
+*.db
+*.db-journal
+*.db.bak
+.git
+.github
+context
+CLAUDE.md
+*.md
+test
+src/**/*.spec.ts
