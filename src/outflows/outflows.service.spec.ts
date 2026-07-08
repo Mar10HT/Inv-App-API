@@ -4,16 +4,29 @@ import {
   BadRequestException,
   ForbiddenException,
 } from '@nestjs/common';
-import { OutflowReason, OutflowStatus } from '@prisma/client';
+import {
+  OutflowReason,
+  OutflowStatus,
+  type Outflow,
+  type InventoryItem,
+  type Warehouse,
+} from '@prisma/client';
+import { mockDeep, type DeepMockProxy } from 'jest-mock-extended';
 import { OutflowsService } from './outflows.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 
 describe('OutflowsService', () => {
   let service: OutflowsService;
-  let prisma: any;
+  let prisma: DeepMockProxy<PrismaService>;
 
-  const mockWarehouse = { id: 'wh-1', name: 'Main' };
+  // Fixtures deliberately only populate the fields each test actually reads;
+  // cast once here (rather than at each mockResolvedValue call site) now that
+  // `prisma` is a fully-typed DeepMockProxy<PrismaService>.
+  const mockWarehouse = {
+    id: 'wh-1',
+    name: 'Main',
+  } as unknown as Warehouse;
 
   const mockItem = {
     id: 'item-1',
@@ -23,7 +36,7 @@ describe('OutflowsService', () => {
     quantity: 10,
     price: 50,
     currency: 'USD',
-  };
+  } as unknown as InventoryItem;
 
   const mockOutflow = {
     id: 'outflow-1',
@@ -49,24 +62,13 @@ describe('OutflowsService', () => {
       },
     ],
     warehouse: mockWarehouse,
-  };
+  } as unknown as Outflow;
 
   beforeEach(async () => {
-    prisma = {
-      inventoryItem: {
-        findMany: jest.fn(),
-        update: jest.fn(),
-      },
-      outflow: {
-        create: jest.fn(),
-        findMany: jest.fn(),
-        findUnique: jest.fn(),
-        update: jest.fn(),
-        count: jest.fn(),
-        groupBy: jest.fn(),
-      },
-      $transaction: jest.fn((cb: (tx: any) => any) => cb(prisma)),
-    };
+    prisma = mockDeep<PrismaService>();
+    prisma.$transaction.mockImplementation(((
+      cb: (tx: DeepMockProxy<PrismaService>) => unknown,
+    ) => cb(prisma)) as never);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -100,6 +102,10 @@ describe('OutflowsService', () => {
       const result = await service.create(baseDto(), 'user-1');
 
       expect(result).toEqual(mockOutflow);
+      // jest-mock-extended's DeepMockProxy methods are real jest.Mock functions
+      // at runtime, but their static type doesn't carry that through cleanly
+      // enough for this rule to recognize them as safe to reference unbound.
+      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(prisma.inventoryItem.update).toHaveBeenCalledWith({
         where: { id: 'item-1' },
         data: { quantity: { decrement: 2 } },
@@ -201,6 +207,7 @@ describe('OutflowsService', () => {
       const result = await service.cancel('outflow-1', 'user-2', 'Mistake');
 
       expect(result.status).toBe(OutflowStatus.CANCELLED);
+      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(prisma.inventoryItem.update).toHaveBeenCalledWith({
         where: { id: 'item-1' },
         data: { quantity: { increment: 2 } },
@@ -239,7 +246,7 @@ describe('OutflowsService', () => {
       prisma.outflow.groupBy.mockResolvedValue([
         { reason: OutflowReason.DAMAGED, _count: { _all: 4 } },
         { reason: OutflowReason.LOST, _count: { _all: 3 } },
-      ]);
+      ] as never);
 
       const result = await service.getStats();
 

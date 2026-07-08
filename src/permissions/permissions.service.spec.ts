@@ -1,21 +1,15 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import type { User, RolePermission } from '@prisma/client';
+import { mockDeep, type DeepMockProxy } from 'jest-mock-extended';
 import { PermissionsService } from './permissions.service';
 import { PrismaService } from '../prisma/prisma.service';
 
 describe('PermissionsService', () => {
   let service: PermissionsService;
-  let prisma: any;
+  let prisma: DeepMockProxy<PrismaService>;
 
   beforeEach(async () => {
-    prisma = {
-      user: {
-        findUnique: jest.fn(),
-        findMany: jest.fn(),
-      },
-      rolePermission: {
-        findMany: jest.fn(),
-      },
-    };
+    prisma = mockDeep<PrismaService>();
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -35,11 +29,11 @@ describe('PermissionsService', () => {
         role: 'STAFF',
         roleId: 'role-1',
         permissionsVersion: 3,
-      });
+      } as unknown as User);
       prisma.rolePermission.findMany.mockResolvedValue([
         { permission: { key: 'inventory:view' } },
         { permission: { key: 'inventory:edit' } },
-      ]);
+      ] as unknown as RolePermission[]);
 
       const result = await service.getPermissionsForUser('user-1');
 
@@ -54,6 +48,10 @@ describe('PermissionsService', () => {
       const result = await service.getPermissionsWithVersion('missing');
 
       expect(result).toEqual({ permissions: [], version: 0 });
+      // jest-mock-extended's DeepMockProxy methods are real jest.Mock functions
+      // at runtime, but their static type doesn't carry that through cleanly
+      // enough for this rule to recognize them as safe to reference unbound.
+      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(prisma.rolePermission.findMany).not.toHaveBeenCalled();
     });
 
@@ -62,11 +60,12 @@ describe('PermissionsService', () => {
         role: 'SYSTEM_ADMIN',
         roleId: null,
         permissionsVersion: 1,
-      });
+      } as unknown as User);
 
       const result = await service.getPermissionsWithVersion('admin-1');
 
       expect(result).toEqual({ permissions: ['*'], version: 1 });
+      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(prisma.rolePermission.findMany).not.toHaveBeenCalled();
     });
 
@@ -75,11 +74,12 @@ describe('PermissionsService', () => {
         role: 'STAFF',
         roleId: null,
         permissionsVersion: 2,
-      });
+      } as unknown as User);
 
       const result = await service.getPermissionsWithVersion('user-1');
 
       expect(result).toEqual({ permissions: [], version: 2 });
+      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(prisma.rolePermission.findMany).not.toHaveBeenCalled();
     });
 
@@ -88,14 +88,15 @@ describe('PermissionsService', () => {
         role: 'STAFF',
         roleId: 'role-1',
         permissionsVersion: 5,
-      });
+      } as unknown as User);
       prisma.rolePermission.findMany.mockResolvedValue([
         { permission: { key: 'inventory:view' } },
-      ]);
+      ] as unknown as RolePermission[]);
 
       const result = await service.getPermissionsWithVersion('user-1');
 
       expect(result).toEqual({ permissions: ['inventory:view'], version: 5 });
+      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(prisma.rolePermission.findMany).toHaveBeenCalledWith({
         where: { roleId: 'role-1' },
         include: { permission: { select: { key: true } } },
@@ -107,16 +108,17 @@ describe('PermissionsService', () => {
         role: 'STAFF',
         roleId: 'role-1',
         permissionsVersion: 1,
-      });
+      } as unknown as User);
       prisma.rolePermission.findMany.mockResolvedValue([
         { permission: { key: 'inventory:view' } },
-      ]);
+      ] as unknown as RolePermission[]);
 
       const first = await service.getPermissionsWithVersion('user-1');
       const second = await service.getPermissionsWithVersion('user-1');
 
       expect(first).toEqual({ permissions: ['inventory:view'], version: 1 });
       expect(second).toEqual({ permissions: ['inventory:view'], version: 1 });
+      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(prisma.user.findUnique).toHaveBeenCalledTimes(1);
     });
 
@@ -125,10 +127,10 @@ describe('PermissionsService', () => {
         role: 'STAFF',
         roleId: 'role-1',
         permissionsVersion: 1,
-      });
+      } as unknown as User);
       prisma.rolePermission.findMany.mockResolvedValue([
         { permission: { key: 'inventory:view' } },
-      ]);
+      ] as unknown as RolePermission[]);
 
       const nowSpy = jest.spyOn(Date, 'now');
       try {
@@ -138,6 +140,7 @@ describe('PermissionsService', () => {
         nowSpy.mockReturnValue(1_000_000 + 60_001);
         await service.getPermissionsWithVersion('user-1');
 
+        // eslint-disable-next-line @typescript-eslint/unbound-method
         expect(prisma.user.findUnique).toHaveBeenCalledTimes(2);
       } finally {
         nowSpy.mockRestore();
@@ -150,11 +153,12 @@ describe('PermissionsService', () => {
       prisma.rolePermission.findMany.mockResolvedValue([
         { permission: { key: 'inventory:view' } },
         { permission: { key: 'inventory:create' } },
-      ]);
+      ] as unknown as RolePermission[]);
 
       const result = await service.getPermissionsForRole('role-1');
 
       expect(result).toEqual(['inventory:view', 'inventory:create']);
+      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(prisma.rolePermission.findMany).toHaveBeenCalledWith({
         where: { roleId: 'role-1' },
         include: { permission: { select: { key: true } } },
@@ -176,13 +180,16 @@ describe('PermissionsService', () => {
         role: 'STAFF',
         roleId: 'role-1',
         permissionsVersion: 1,
-      });
-      prisma.rolePermission.findMany.mockResolvedValue([]);
+      } as unknown as User);
+      prisma.rolePermission.findMany.mockResolvedValue(
+        [] as unknown as RolePermission[],
+      );
 
       await service.getPermissionsWithVersion('user-1');
       service.invalidateUserCache('user-1');
       await service.getPermissionsWithVersion('user-1');
 
+      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(prisma.user.findUnique).toHaveBeenCalledTimes(2);
     });
 
@@ -197,8 +204,10 @@ describe('PermissionsService', () => {
         role: 'STAFF',
         roleId: 'role-1',
         permissionsVersion: 1,
-      });
-      prisma.rolePermission.findMany.mockResolvedValue([]);
+      } as unknown as User);
+      prisma.rolePermission.findMany.mockResolvedValue(
+        [] as unknown as RolePermission[],
+      );
 
       await service.getPermissionsWithVersion('user-1');
       await service.getPermissionsWithVersion('user-2');
@@ -208,6 +217,7 @@ describe('PermissionsService', () => {
       await service.getPermissionsWithVersion('user-1');
       await service.getPermissionsWithVersion('user-2');
 
+      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(prisma.user.findUnique).toHaveBeenCalledTimes(4);
     });
 
@@ -221,22 +231,26 @@ describe('PermissionsService', () => {
       prisma.user.findMany.mockResolvedValue([
         { id: 'user-1' },
         { id: 'user-2' },
-      ]);
+      ] as unknown as User[]);
       prisma.user.findUnique.mockResolvedValue({
         role: 'STAFF',
         roleId: 'role-9',
         permissionsVersion: 1,
-      });
-      prisma.rolePermission.findMany.mockResolvedValue([]);
+      } as unknown as User);
+      prisma.rolePermission.findMany.mockResolvedValue(
+        [] as unknown as RolePermission[],
+      );
 
       await service.getPermissionsWithVersion('user-1'); // populate cache
       await service.invalidateRoleCache('role-9');
       await service.getPermissionsWithVersion('user-1'); // should re-fetch
 
+      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(prisma.user.findMany).toHaveBeenCalledWith({
         where: { roleId: 'role-9' },
         select: { id: true },
       });
+      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(prisma.user.findUnique).toHaveBeenCalledTimes(2);
     });
   });

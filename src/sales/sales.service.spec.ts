@@ -4,16 +4,29 @@ import {
   BadRequestException,
   ForbiddenException,
 } from '@nestjs/common';
-import { CustomerType, SaleStatus } from '@prisma/client';
+import {
+  CustomerType,
+  SaleStatus,
+  type Sale,
+  type InventoryItem,
+  type Warehouse,
+} from '@prisma/client';
+import { mockDeep, type DeepMockProxy } from 'jest-mock-extended';
 import { SalesService } from './sales.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 
 describe('SalesService', () => {
   let service: SalesService;
-  let prisma: any;
+  let prisma: DeepMockProxy<PrismaService>;
 
-  const mockWarehouse = { id: 'wh-1', name: 'Main' };
+  // Fixtures deliberately only populate the fields each test actually reads;
+  // cast once here (rather than at each mockResolvedValue call site) now that
+  // `prisma` is a fully-typed DeepMockProxy<PrismaService>.
+  const mockWarehouse = {
+    id: 'wh-1',
+    name: 'Main',
+  } as unknown as Warehouse;
 
   const mockItem = {
     id: 'item-1',
@@ -21,7 +34,7 @@ describe('SalesService', () => {
     serviceTag: null,
     warehouseId: 'wh-1',
     quantity: 10,
-  };
+  } as unknown as InventoryItem;
 
   const mockSale = {
     id: 'sale-1',
@@ -51,24 +64,13 @@ describe('SalesService', () => {
       },
     ],
     warehouse: mockWarehouse,
-  };
+  } as unknown as Sale;
 
   beforeEach(async () => {
-    prisma = {
-      inventoryItem: {
-        findMany: jest.fn(),
-        update: jest.fn(),
-      },
-      sale: {
-        create: jest.fn(),
-        findMany: jest.fn(),
-        findUnique: jest.fn(),
-        update: jest.fn(),
-        count: jest.fn(),
-        groupBy: jest.fn(),
-      },
-      $transaction: jest.fn((cb: (tx: any) => any) => cb(prisma)),
-    };
+    prisma = mockDeep<PrismaService>();
+    prisma.$transaction.mockImplementation(((
+      cb: (tx: DeepMockProxy<PrismaService>) => unknown,
+    ) => cb(prisma)) as never);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -104,8 +106,15 @@ describe('SalesService', () => {
       const result = await service.create(baseDto(), 'user-1');
 
       expect(result).toEqual(mockSale);
+      // jest-mock-extended's DeepMockProxy methods are real jest.Mock functions
+      // at runtime, but their static type doesn't carry that through cleanly
+      // enough for this rule to recognize them as safe to reference unbound.
+      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(prisma.sale.create).toHaveBeenCalledWith(
         expect.objectContaining({
+          // jest's expect.objectContaining() return type is `any` in the
+          // installed @types/jest — a known, long-standing typing gap.
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
           data: expect.objectContaining({
             totalAmount: 100,
             items: {
@@ -116,6 +125,7 @@ describe('SalesService', () => {
           }),
         }),
       );
+      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(prisma.inventoryItem.update).toHaveBeenCalledWith({
         where: { id: 'item-1' },
         data: { quantity: { decrement: 2 } },
@@ -134,8 +144,12 @@ describe('SalesService', () => {
 
       await service.create(dto, 'user-1');
 
+      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(prisma.sale.create).toHaveBeenCalledWith(
         expect.objectContaining({
+          // jest's expect.objectContaining() return type is `any` in the
+          // installed @types/jest — a known, long-standing typing gap.
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
           data: expect.objectContaining({ totalAmount: 30.02 }),
         }),
       );
@@ -236,6 +250,7 @@ describe('SalesService', () => {
       const result = await service.cancel('sale-1', 'user-2', 'Returned');
 
       expect(result.status).toBe(SaleStatus.CANCELLED);
+      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(prisma.inventoryItem.update).toHaveBeenCalledWith({
         where: { id: 'item-1' },
         data: { quantity: { increment: 2 } },
@@ -272,10 +287,10 @@ describe('SalesService', () => {
         .mockResolvedValueOnce([
           { customerType: CustomerType.RETAIL, _count: { _all: 10 } },
           { customerType: CustomerType.WHOLESALE, _count: { _all: 5 } },
-        ])
+        ] as never)
         .mockResolvedValueOnce([
           { currency: 'USD', _sum: { totalAmount: 1234.567 } },
-        ]);
+        ] as never);
 
       const result = await service.getStats();
 

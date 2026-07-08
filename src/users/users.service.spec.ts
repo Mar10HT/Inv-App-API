@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { NotFoundException, ConflictException } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { Prisma, type User } from '@prisma/client';
+import { mockDeep, type DeepMockProxy } from 'jest-mock-extended';
 import { UsersService } from './users.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { EmailService } from '../email/email.service';
@@ -19,7 +20,7 @@ jest.mock('bcryptjs', () => ({
 
 describe('UsersService', () => {
   let service: UsersService;
-  let prisma: jest.Mocked<PrismaService>;
+  let prisma: DeepMockProxy<PrismaService>;
 
   const mockUser = {
     id: 'user-123',
@@ -30,7 +31,7 @@ describe('UsersService', () => {
     createdAt: new Date(),
     updatedAt: new Date(),
     deletedAt: null,
-  };
+  } as unknown as User;
 
   const mockUserWithoutPassword = {
     id: 'user-123',
@@ -39,19 +40,10 @@ describe('UsersService', () => {
     role: 'USER' as const,
     createdAt: new Date(),
     updatedAt: new Date(),
-  };
+  } as unknown as User;
 
   beforeEach(async () => {
-    const mockPrismaService = {
-      user: {
-        create: jest.fn(),
-        findMany: jest.fn(),
-        findUnique: jest.fn(),
-        findFirst: jest.fn(),
-        update: jest.fn(),
-        count: jest.fn(),
-      },
-    };
+    prisma = mockDeep<PrismaService>();
 
     const mockEmailService = {
       sendWelcomeEmail: jest.fn().mockResolvedValue(undefined),
@@ -60,7 +52,7 @@ describe('UsersService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         UsersService,
-        { provide: PrismaService, useValue: mockPrismaService },
+        { provide: PrismaService, useValue: prisma },
         { provide: EmailService, useValue: mockEmailService },
         {
           provide: AuditService,
@@ -73,7 +65,6 @@ describe('UsersService', () => {
     }).compile();
 
     service = module.get<UsersService>(UsersService);
-    prisma = module.get(PrismaService);
   });
 
   afterEach(() => {
@@ -83,7 +74,7 @@ describe('UsersService', () => {
   describe('create', () => {
     it('should create a new user successfully', async () => {
       (bcrypt.hash as jest.Mock).mockResolvedValue('hashedPassword');
-      (prisma.user.create as jest.Mock).mockResolvedValue(mockUser);
+      prisma.user.create.mockResolvedValue(mockUser);
 
       const result = await service.create({
         email: 'test@example.com',
@@ -94,12 +85,16 @@ describe('UsersService', () => {
 
       expect(result).not.toHaveProperty('password');
       expect(bcrypt.hash).toHaveBeenCalledWith('password123', 10);
+      // jest-mock-extended's DeepMockProxy methods are real jest.Mock functions
+      // at runtime, but their static type doesn't carry that through cleanly
+      // enough for this rule to recognize them as safe to reference unbound.
+      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(prisma.user.create).toHaveBeenCalled();
     });
 
     it('should throw ConflictException if email already exists', async () => {
       (bcrypt.hash as jest.Mock).mockResolvedValue('hashedPassword');
-      (prisma.user.create as jest.Mock).mockRejectedValue(prismaError('P2002'));
+      prisma.user.create.mockRejectedValue(prismaError('P2002'));
 
       await expect(
         service.create({
@@ -114,8 +109,8 @@ describe('UsersService', () => {
   describe('findAll', () => {
     it('should return paginated users', async () => {
       const users = [mockUserWithoutPassword];
-      (prisma.user.findMany as jest.Mock).mockResolvedValue(users);
-      (prisma.user.count as jest.Mock).mockResolvedValue(1);
+      prisma.user.findMany.mockResolvedValue(users);
+      prisma.user.count.mockResolvedValue(1);
 
       const result = await service.findAll({ page: 1, limit: 10 });
 
@@ -125,13 +120,17 @@ describe('UsersService', () => {
     });
 
     it('should exclude soft-deleted users', async () => {
-      (prisma.user.findMany as jest.Mock).mockResolvedValue([]);
-      (prisma.user.count as jest.Mock).mockResolvedValue(0);
+      prisma.user.findMany.mockResolvedValue([]);
+      prisma.user.count.mockResolvedValue(0);
 
       await service.findAll();
 
+      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(prisma.user.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
+          // jest's expect.objectContaining() return type is `any` in the
+          // installed @types/jest — a known, long-standing typing gap.
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
           where: expect.objectContaining({
             deletedAt: null,
           }),
@@ -140,8 +139,8 @@ describe('UsersService', () => {
     });
 
     it('should use default pagination when not provided', async () => {
-      (prisma.user.findMany as jest.Mock).mockResolvedValue([]);
-      (prisma.user.count as jest.Mock).mockResolvedValue(0);
+      prisma.user.findMany.mockResolvedValue([]);
+      prisma.user.count.mockResolvedValue(0);
 
       const result = await service.findAll();
 
@@ -152,9 +151,7 @@ describe('UsersService', () => {
 
   describe('findOne', () => {
     it('should return a user by ID', async () => {
-      (prisma.user.findUnique as jest.Mock).mockResolvedValue(
-        mockUserWithoutPassword,
-      );
+      prisma.user.findUnique.mockResolvedValue(mockUserWithoutPassword);
 
       const result = await service.findOne('user-123');
 
@@ -162,7 +159,7 @@ describe('UsersService', () => {
     });
 
     it('should throw NotFoundException if user does not exist', async () => {
-      (prisma.user.findUnique as jest.Mock).mockResolvedValue(null);
+      prisma.user.findUnique.mockResolvedValue(null);
 
       await expect(service.findOne('nonexistent')).rejects.toThrow(
         NotFoundException,
@@ -172,8 +169,11 @@ describe('UsersService', () => {
 
   describe('update', () => {
     it('should update a user', async () => {
-      const updatedUser = { ...mockUserWithoutPassword, name: 'Updated Name' };
-      (prisma.user.update as jest.Mock).mockResolvedValue(updatedUser);
+      const updatedUser = {
+        ...mockUserWithoutPassword,
+        name: 'Updated Name',
+      } as unknown as User;
+      prisma.user.update.mockResolvedValue(updatedUser);
 
       const result = await service.update('user-123', { name: 'Updated Name' });
 
@@ -181,7 +181,7 @@ describe('UsersService', () => {
     });
 
     it('should throw ConflictException if email already exists', async () => {
-      (prisma.user.update as jest.Mock).mockRejectedValue(prismaError('P2002'));
+      prisma.user.update.mockRejectedValue(prismaError('P2002'));
 
       await expect(
         service.update('user-123', { email: 'existing@example.com' }),
@@ -189,7 +189,7 @@ describe('UsersService', () => {
     });
 
     it('should throw NotFoundException if user does not exist', async () => {
-      (prisma.user.update as jest.Mock).mockRejectedValue(prismaError('P2025'));
+      prisma.user.update.mockRejectedValue(prismaError('P2025'));
 
       await expect(
         service.update('nonexistent', { name: 'Test' }),
@@ -199,21 +199,23 @@ describe('UsersService', () => {
 
   describe('remove', () => {
     it('should soft delete a user', async () => {
-      (prisma.user.update as jest.Mock).mockResolvedValue({
+      prisma.user.update.mockResolvedValue({
         ...mockUser,
         deletedAt: new Date(),
-      });
+      } as unknown as User);
 
       await service.remove('user-123');
 
+      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(prisma.user.update).toHaveBeenCalledWith({
         where: { id: 'user-123' },
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         data: { deletedAt: expect.any(Date) },
       });
     });
 
     it('should throw NotFoundException if user does not exist', async () => {
-      (prisma.user.update as jest.Mock).mockRejectedValue(prismaError('P2025'));
+      prisma.user.update.mockRejectedValue(prismaError('P2025'));
 
       await expect(service.remove('nonexistent')).rejects.toThrow(
         NotFoundException,
@@ -223,24 +225,29 @@ describe('UsersService', () => {
 
   describe('restore', () => {
     it('should restore a soft-deleted user', async () => {
-      const deletedUser = { ...mockUser, deletedAt: new Date() };
-      (prisma.user.findUnique as jest.Mock).mockResolvedValue(deletedUser);
-      (prisma.user.update as jest.Mock).mockResolvedValue({
+      const deletedUser = {
+        ...mockUser,
+        deletedAt: new Date(),
+      } as unknown as User;
+      prisma.user.findUnique.mockResolvedValue(deletedUser);
+      prisma.user.update.mockResolvedValue({
         ...mockUserWithoutPassword,
         deletedAt: null,
-      });
+      } as unknown as User);
 
-      const result = await service.restore('user-123');
+      await service.restore('user-123');
 
+      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(prisma.user.update).toHaveBeenCalledWith({
         where: { id: 'user-123' },
         data: { deletedAt: null },
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         select: expect.any(Object),
       });
     });
 
     it('should throw NotFoundException if user does not exist', async () => {
-      (prisma.user.findUnique as jest.Mock).mockResolvedValue(null);
+      prisma.user.findUnique.mockResolvedValue(null);
 
       await expect(service.restore('nonexistent')).rejects.toThrow(
         NotFoundException,
@@ -248,7 +255,7 @@ describe('UsersService', () => {
     });
 
     it('should throw ConflictException if user is not deleted', async () => {
-      (prisma.user.findUnique as jest.Mock).mockResolvedValue(mockUser);
+      prisma.user.findUnique.mockResolvedValue(mockUser);
 
       await expect(service.restore('user-123')).rejects.toThrow(
         ConflictException,
@@ -258,11 +265,12 @@ describe('UsersService', () => {
 
   describe('findByEmail', () => {
     it('should return a user by email', async () => {
-      (prisma.user.findFirst as jest.Mock).mockResolvedValue(mockUser);
+      prisma.user.findFirst.mockResolvedValue(mockUser);
 
       const result = await service.findByEmail('test@example.com');
 
       expect(result).toEqual(mockUser);
+      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(prisma.user.findFirst).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { email: 'test@example.com', deletedAt: null },
@@ -271,7 +279,7 @@ describe('UsersService', () => {
     });
 
     it('should return null if user does not exist', async () => {
-      (prisma.user.findFirst as jest.Mock).mockResolvedValue(null);
+      prisma.user.findFirst.mockResolvedValue(null);
 
       const result = await service.findByEmail('nonexistent@example.com');
 
@@ -285,12 +293,13 @@ describe('UsersService', () => {
         id: 'user-123',
         email: 'test@example.com',
         password: 'hashedPassword',
-      };
-      (prisma.user.findUnique as jest.Mock).mockResolvedValue(userWithPassword);
+      } as unknown as User;
+      prisma.user.findUnique.mockResolvedValue(userWithPassword);
 
       const result = await service.findOneWithPassword('user-123');
 
       expect(result).toEqual(userWithPassword);
+      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(prisma.user.findUnique).toHaveBeenCalledWith({
         where: { id: 'user-123' },
         select: {
@@ -304,16 +313,14 @@ describe('UsersService', () => {
 
   describe('updatePassword', () => {
     it('should update user password', async () => {
-      (prisma.user.update as jest.Mock).mockResolvedValue({
+      prisma.user.update.mockResolvedValue({
         id: 'user-123',
         email: 'test@example.com',
-      });
+      } as unknown as User);
 
-      const result = await service.updatePassword(
-        'user-123',
-        'newHashedPassword',
-      );
+      await service.updatePassword('user-123', 'newHashedPassword');
 
+      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(prisma.user.update).toHaveBeenCalledWith({
         where: { id: 'user-123' },
         data: { password: 'newHashedPassword' },

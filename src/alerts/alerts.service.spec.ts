@@ -4,13 +4,23 @@ import { AlertsService } from './alerts.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { EventsService } from '../events/events.service';
 import { PushNotificationsService } from '../push-notifications/push-notifications.service';
-import { AlertType, InventoryStatus } from '@prisma/client';
+import {
+  AlertType,
+  InventoryStatus,
+  type StockAlert,
+  type InventoryItem,
+  type Warehouse,
+} from '@prisma/client';
+import { mockDeep, type DeepMockProxy } from 'jest-mock-extended';
 
 describe('AlertsService', () => {
   let service: AlertsService;
-  let prisma: jest.Mocked<PrismaService>;
+  let prisma: DeepMockProxy<PrismaService>;
 
-  const mockWarehouse = { id: 'wh-1', name: 'Main Warehouse' };
+  const mockWarehouse = {
+    id: 'wh-1',
+    name: 'Main Warehouse',
+  } as unknown as Warehouse;
 
   const mockItem = {
     id: 'item-1',
@@ -21,7 +31,7 @@ describe('AlertsService', () => {
     warehouseId: 'wh-1',
     warehouse: mockWarehouse,
     deletedAt: null,
-  };
+  } as unknown as InventoryItem;
 
   const mockAlert = {
     id: 'alert-1',
@@ -34,25 +44,14 @@ describe('AlertsService', () => {
     resolvedAt: null,
     createdAt: new Date(),
     item: { ...mockItem, warehouse: mockWarehouse, supplier: null },
-  };
+  } as unknown as StockAlert;
 
   beforeEach(async () => {
-    const mockPrismaService = {
-      inventoryItem: {
-        findMany: jest.fn(),
-      },
-      stockAlert: {
-        findFirst: jest.fn(),
-        findUnique: jest.fn(),
-        findMany: jest.fn(),
-        create: jest.fn(),
-        update: jest.fn(),
-        // updateMany must return { count: N } — the service reads resolvedAlerts.count
-        updateMany: jest.fn().mockResolvedValue({ count: 0 }),
-        // count must return a number — the service performs arithmetic on the result
-        count: jest.fn().mockResolvedValue(0),
-      },
-    };
+    prisma = mockDeep<PrismaService>();
+    // updateMany must return { count: N } — the service reads resolvedAlerts.count
+    prisma.stockAlert.updateMany.mockResolvedValue({ count: 0 });
+    // count must return a number — the service performs arithmetic on the result
+    prisma.stockAlert.count.mockResolvedValue(0);
 
     const mockEventsService = {
       emitInventoryChange: jest.fn(),
@@ -66,7 +65,7 @@ describe('AlertsService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AlertsService,
-        { provide: PrismaService, useValue: mockPrismaService },
+        { provide: PrismaService, useValue: prisma },
         { provide: EventsService, useValue: mockEventsService },
         {
           provide: PushNotificationsService,
@@ -76,7 +75,6 @@ describe('AlertsService', () => {
     }).compile();
 
     service = module.get<AlertsService>(AlertsService);
-    prisma = module.get(PrismaService);
   });
 
   afterEach(() => {
@@ -85,8 +83,8 @@ describe('AlertsService', () => {
 
   describe('findAll', () => {
     it('returns paginated alerts', async () => {
-      (prisma.stockAlert.findMany as jest.Mock).mockResolvedValue([mockAlert]);
-      (prisma.stockAlert.count as jest.Mock).mockResolvedValue(1);
+      prisma.stockAlert.findMany.mockResolvedValue([mockAlert]);
+      prisma.stockAlert.count.mockResolvedValue(1);
 
       const result = await service.findAll({ page: 1, limit: 10 });
 
@@ -97,11 +95,15 @@ describe('AlertsService', () => {
     });
 
     it('uses default pagination when none provided', async () => {
-      (prisma.stockAlert.findMany as jest.Mock).mockResolvedValue([]);
-      (prisma.stockAlert.count as jest.Mock).mockResolvedValue(0);
+      prisma.stockAlert.findMany.mockResolvedValue([]);
+      prisma.stockAlert.count.mockResolvedValue(0);
 
       const result = await service.findAll();
 
+      // jest-mock-extended's DeepMockProxy methods are real jest.Mock functions
+      // at runtime, but their static type doesn't carry that through cleanly
+      // enough for this rule to recognize them as safe to reference unbound.
+      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(prisma.stockAlert.findMany).toHaveBeenCalledWith(
         expect.objectContaining({ skip: 0, take: 10 }),
       );
@@ -112,11 +114,12 @@ describe('AlertsService', () => {
 
   describe('findActive', () => {
     it('returns only unresolved alerts', async () => {
-      (prisma.stockAlert.findMany as jest.Mock).mockResolvedValue([mockAlert]);
-      (prisma.stockAlert.count as jest.Mock).mockResolvedValue(1);
+      prisma.stockAlert.findMany.mockResolvedValue([mockAlert]);
+      prisma.stockAlert.count.mockResolvedValue(1);
 
       const result = await service.findActive();
 
+      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(prisma.stockAlert.findMany).toHaveBeenCalledWith(
         expect.objectContaining({ where: { resolvedAt: null } }),
       );
@@ -126,11 +129,12 @@ describe('AlertsService', () => {
 
   describe('findByType', () => {
     it('filters alerts by type', async () => {
-      (prisma.stockAlert.findMany as jest.Mock).mockResolvedValue([mockAlert]);
-      (prisma.stockAlert.count as jest.Mock).mockResolvedValue(1);
+      prisma.stockAlert.findMany.mockResolvedValue([mockAlert]);
+      prisma.stockAlert.count.mockResolvedValue(1);
 
       await service.findByType(AlertType.LOW_STOCK);
 
+      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(prisma.stockAlert.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { type: AlertType.LOW_STOCK, resolvedAt: null },
@@ -141,18 +145,19 @@ describe('AlertsService', () => {
 
   describe('findOne', () => {
     it('returns alert by id', async () => {
-      (prisma.stockAlert.findUnique as jest.Mock).mockResolvedValue(mockAlert);
+      prisma.stockAlert.findUnique.mockResolvedValue(mockAlert);
 
       const result = await service.findOne('alert-1');
 
       expect(result).toEqual(mockAlert);
+      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(prisma.stockAlert.findUnique).toHaveBeenCalledWith(
         expect.objectContaining({ where: { id: 'alert-1' } }),
       );
     });
 
     it('throws NotFoundException when alert not found', async () => {
-      (prisma.stockAlert.findUnique as jest.Mock).mockResolvedValue(null);
+      prisma.stockAlert.findUnique.mockResolvedValue(null);
 
       await expect(service.findOne('not-found')).rejects.toThrow(
         NotFoundException,
@@ -166,23 +171,27 @@ describe('AlertsService', () => {
         ...mockAlert,
         notified: true,
         notifiedAt: new Date(),
-      };
-      (prisma.stockAlert.findUnique as jest.Mock).mockResolvedValue(mockAlert);
-      (prisma.stockAlert.update as jest.Mock).mockResolvedValue(notifiedAlert);
+      } as unknown as StockAlert;
+      prisma.stockAlert.findUnique.mockResolvedValue(mockAlert);
+      prisma.stockAlert.update.mockResolvedValue(notifiedAlert);
 
       const result = await service.markAsNotified('alert-1');
 
       expect(result.notified).toBe(true);
+      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(prisma.stockAlert.update).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { id: 'alert-1' },
+          // jest's expect.objectContaining() return type is `any` in the
+          // installed @types/jest — a known, long-standing typing gap.
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
           data: expect.objectContaining({ notified: true }),
         }),
       );
     });
 
     it('throws NotFoundException when alert not found', async () => {
-      (prisma.stockAlert.findUnique as jest.Mock).mockResolvedValue(null);
+      prisma.stockAlert.findUnique.mockResolvedValue(null);
 
       await expect(service.markAsNotified('not-found')).rejects.toThrow(
         NotFoundException,
@@ -192,23 +201,28 @@ describe('AlertsService', () => {
 
   describe('resolve', () => {
     it('resolves an alert by setting resolvedAt', async () => {
-      const resolvedAlert = { ...mockAlert, resolvedAt: new Date() };
-      (prisma.stockAlert.findUnique as jest.Mock).mockResolvedValue(mockAlert);
-      (prisma.stockAlert.update as jest.Mock).mockResolvedValue(resolvedAlert);
+      const resolvedAlert = {
+        ...mockAlert,
+        resolvedAt: new Date(),
+      } as unknown as StockAlert;
+      prisma.stockAlert.findUnique.mockResolvedValue(mockAlert);
+      prisma.stockAlert.update.mockResolvedValue(resolvedAlert);
 
       const result = await service.resolve('alert-1');
 
       expect(result.resolvedAt).not.toBeNull();
+      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(prisma.stockAlert.update).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { id: 'alert-1' },
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
           data: expect.objectContaining({ resolvedAt: expect.any(Date) }),
         }),
       );
     });
 
     it('throws NotFoundException when alert not found', async () => {
-      (prisma.stockAlert.findUnique as jest.Mock).mockResolvedValue(null);
+      prisma.stockAlert.findUnique.mockResolvedValue(null);
 
       await expect(service.resolve('not-found')).rejects.toThrow(
         NotFoundException,
@@ -218,7 +232,7 @@ describe('AlertsService', () => {
 
   describe('getStats', () => {
     it('returns alert stats by type', async () => {
-      (prisma.stockAlert.count as jest.Mock)
+      prisma.stockAlert.count
         .mockResolvedValueOnce(20) // total
         .mockResolvedValueOnce(8) // active
         .mockResolvedValueOnce(3) // lowStock
@@ -241,20 +255,22 @@ describe('AlertsService', () => {
 
   describe('checkLowStock', () => {
     it('creates alert for low stock item without existing alert', async () => {
-      (prisma.inventoryItem.findMany as jest.Mock)
+      prisma.inventoryItem.findMany
         .mockResolvedValueOnce([mockItem]) // low stock items
         .mockResolvedValueOnce([]); // expiring items
 
       // findMany for existing stock alerts (empty = no existing alert)
-      (prisma.stockAlert.findMany as jest.Mock)
+      prisma.stockAlert.findMany
         .mockResolvedValueOnce([]) // existing stock alerts
         .mockResolvedValueOnce([]); // existing expiry alerts
-      (prisma.stockAlert.create as jest.Mock).mockResolvedValue(mockAlert);
+      prisma.stockAlert.create.mockResolvedValue(mockAlert);
 
       await service.checkLowStock();
 
+      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(prisma.stockAlert.create).toHaveBeenCalledWith(
         expect.objectContaining({
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
           data: expect.objectContaining({
             itemId: 'item-1',
             type: AlertType.LOW_STOCK,
@@ -268,24 +284,26 @@ describe('AlertsService', () => {
         ...mockItem,
         quantity: 0,
         status: InventoryStatus.OUT_OF_STOCK,
-      };
+      } as unknown as InventoryItem;
 
-      (prisma.inventoryItem.findMany as jest.Mock)
+      prisma.inventoryItem.findMany
         .mockResolvedValueOnce([outOfStockItem])
         .mockResolvedValueOnce([]);
 
-      (prisma.stockAlert.findMany as jest.Mock)
+      prisma.stockAlert.findMany
         .mockResolvedValueOnce([])
         .mockResolvedValueOnce([]);
-      (prisma.stockAlert.create as jest.Mock).mockResolvedValue({
+      prisma.stockAlert.create.mockResolvedValue({
         ...mockAlert,
         type: AlertType.OUT_OF_STOCK,
-      });
+      } as unknown as StockAlert);
 
       await service.checkLowStock();
 
+      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(prisma.stockAlert.create).toHaveBeenCalledWith(
         expect.objectContaining({
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
           data: expect.objectContaining({ type: AlertType.OUT_OF_STOCK }),
         }),
       );
@@ -296,29 +314,31 @@ describe('AlertsService', () => {
         ...mockItem,
         quantity: 0,
         status: InventoryStatus.OUT_OF_STOCK,
-      };
+      } as unknown as InventoryItem;
       const existingAlert = {
         id: 'alert-1',
         itemId: 'item-1',
         type: AlertType.LOW_STOCK,
-      };
+      } as unknown as StockAlert;
 
-      (prisma.inventoryItem.findMany as jest.Mock)
+      prisma.inventoryItem.findMany
         .mockResolvedValueOnce([outOfStockItem])
         .mockResolvedValueOnce([]);
 
-      (prisma.stockAlert.findMany as jest.Mock)
+      prisma.stockAlert.findMany
         .mockResolvedValueOnce([existingAlert])
         .mockResolvedValueOnce([]);
-      (prisma.stockAlert.update as jest.Mock).mockResolvedValue({
+      prisma.stockAlert.update.mockResolvedValue({
         ...existingAlert,
         type: AlertType.OUT_OF_STOCK,
-      });
+      } as unknown as StockAlert);
 
       await service.checkLowStock();
 
+      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(prisma.stockAlert.update).toHaveBeenCalledWith(
         expect.objectContaining({
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
           data: expect.objectContaining({
             type: AlertType.OUT_OF_STOCK,
             currentQty: 0,
@@ -332,18 +352,19 @@ describe('AlertsService', () => {
         id: 'alert-1',
         itemId: 'item-1',
         type: AlertType.LOW_STOCK,
-      };
+      } as unknown as StockAlert;
 
-      (prisma.inventoryItem.findMany as jest.Mock)
+      prisma.inventoryItem.findMany
         .mockResolvedValueOnce([mockItem])
         .mockResolvedValueOnce([]);
 
-      (prisma.stockAlert.findMany as jest.Mock)
+      prisma.stockAlert.findMany
         .mockResolvedValueOnce([existingAlert])
         .mockResolvedValueOnce([]);
 
       await service.checkLowStock();
 
+      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(prisma.stockAlert.create).not.toHaveBeenCalled();
     });
   });

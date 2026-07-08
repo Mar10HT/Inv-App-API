@@ -1,6 +1,11 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { NotFoundException } from '@nestjs/common';
-import { ReportFrequency, ReportType } from '@prisma/client';
+import {
+  ReportFrequency,
+  ReportType,
+  type ScheduledReport,
+} from '@prisma/client';
+import { mockDeep, type DeepMockProxy } from 'jest-mock-extended';
 import { ScheduledReportsService } from './scheduled-reports.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ReportsService } from '../reports/reports.service';
@@ -8,10 +13,13 @@ import { EmailService } from '../email/email.service';
 
 describe('ScheduledReportsService', () => {
   let service: ScheduledReportsService;
-  let prisma: any;
-  let reportsService: any;
-  let emailService: any;
+  let prisma: DeepMockProxy<PrismaService>;
+  let reportsService: jest.Mocked<ReportsService>;
+  let emailService: jest.Mocked<EmailService>;
 
+  // Fixture deliberately only populates the fields the tests actually read;
+  // cast once here (rather than at each mockResolvedValue call site) now that
+  // `prisma` is a fully-typed DeepMockProxy<PrismaService>.
   const mockReport = {
     id: 'report-1',
     userId: 'user-1',
@@ -24,17 +32,10 @@ describe('ScheduledReportsService', () => {
     nextSendAt: new Date('2026-07-08T06:00:00.000Z'),
     lastSentAt: null,
     deletedAt: null,
-  };
+  } as unknown as ScheduledReport;
 
   beforeEach(async () => {
-    prisma = {
-      scheduledReport: {
-        create: jest.fn(),
-        findMany: jest.fn(),
-        findFirst: jest.fn(),
-        update: jest.fn(),
-      },
-    };
+    prisma = mockDeep<PrismaService>();
 
     reportsService = {
       generateInventoryExcel: jest.fn().mockResolvedValue(Buffer.from('inv')),
@@ -52,11 +53,11 @@ describe('ScheduledReportsService', () => {
       generateDischargesReport: jest
         .fn()
         .mockResolvedValue(Buffer.from('discharges')),
-    };
+    } as unknown as jest.Mocked<ReportsService>;
 
     emailService = {
       sendEmailWithAttachment: jest.fn().mockResolvedValue(true),
-    };
+    } as unknown as jest.Mocked<EmailService>;
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -82,10 +83,17 @@ describe('ScheduledReportsService', () => {
     it('creates a scheduled report with a computed nextSendAt', async () => {
       prisma.scheduledReport.create.mockResolvedValue(mockReport);
 
-      const result = await service.create(baseDto() as any, 'user-1');
+      const result = await service.create(baseDto(), 'user-1');
 
       expect(result).toEqual(mockReport);
+      // jest-mock-extended's DeepMockProxy methods are real jest.Mock functions
+      // at runtime, but their static type doesn't carry that through cleanly
+      // enough for this rule to recognize them as safe to reference unbound.
+      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(prisma.scheduledReport.create).toHaveBeenCalledWith({
+        // jest's expect.objectContaining() return type is `any` in the
+        // installed @types/jest — a known, long-standing typing gap.
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         data: expect.objectContaining({
           userId: 'user-1',
           reportType: ReportType.INVENTORY,
@@ -93,6 +101,7 @@ describe('ScheduledReportsService', () => {
           recipientEmails: 'a@test.com',
           warehouseId: null,
           locale: 'es',
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
           nextSendAt: expect.any(Date),
         }),
       });
@@ -101,7 +110,7 @@ describe('ScheduledReportsService', () => {
     it('defaults warehouseId to null and locale to "es" when omitted', async () => {
       prisma.scheduledReport.create.mockResolvedValue(mockReport);
 
-      await service.create(baseDto() as any, 'user-1');
+      await service.create(baseDto(), 'user-1');
 
       const data = prisma.scheduledReport.create.mock.calls[0][0].data;
       expect(data.warehouseId).toBeNull();
@@ -112,7 +121,7 @@ describe('ScheduledReportsService', () => {
       prisma.scheduledReport.create.mockResolvedValue(mockReport);
 
       await service.create(
-        { ...baseDto(), warehouseId: 'wh-1', locale: 'en' } as any,
+        { ...baseDto(), warehouseId: 'wh-1', locale: 'en' },
         'user-1',
       );
 
@@ -127,17 +136,17 @@ describe('ScheduledReportsService', () => {
       [ReportFrequency.MONTHLY, null],
     ])(
       'computes nextSendAt at 06:00 UTC for %s frequency',
-      async (frequency, dayOffset) => {
+      async (frequency) => {
         prisma.scheduledReport.create.mockResolvedValue(mockReport);
         jest
           .useFakeTimers()
           .setSystemTime(new Date('2026-07-07T12:00:00.000Z'));
 
         try {
-          await service.create({ ...baseDto(), frequency } as any, 'user-1');
+          await service.create({ ...baseDto(), frequency }, 'user-1');
 
           const data = prisma.scheduledReport.create.mock.calls[0][0].data;
-          const nextSendAt: Date = data.nextSendAt;
+          const nextSendAt = data.nextSendAt as Date;
           expect(nextSendAt.getUTCHours()).toBe(6);
           expect(nextSendAt.getUTCMinutes()).toBe(0);
 
@@ -162,6 +171,10 @@ describe('ScheduledReportsService', () => {
       const result = await service.findAllForUser('user-1');
 
       expect(result).toEqual([mockReport]);
+      // jest-mock-extended's DeepMockProxy methods are real jest.Mock functions
+      // at runtime, but their static type doesn't carry that through cleanly
+      // enough for this rule to recognize them as safe to reference unbound.
+      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(prisma.scheduledReport.findMany).toHaveBeenCalledWith({
         where: { userId: 'user-1', deletedAt: null },
         include: { warehouse: { select: { name: true } } },
@@ -177,6 +190,10 @@ describe('ScheduledReportsService', () => {
       const result = await service.findOne('report-1', 'user-1');
 
       expect(result).toEqual(mockReport);
+      // jest-mock-extended's DeepMockProxy methods are real jest.Mock functions
+      // at runtime, but their static type doesn't carry that through cleanly
+      // enough for this rule to recognize them as safe to reference unbound.
+      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(prisma.scheduledReport.findFirst).toHaveBeenCalledWith({
         where: { id: 'report-1', userId: 'user-1', deletedAt: null },
       });
@@ -201,11 +218,15 @@ describe('ScheduledReportsService', () => {
 
       const result = await service.update(
         'report-1',
-        { recipientEmails: 'new@test.com' } as any,
+        { recipientEmails: 'new@test.com' },
         'user-1',
       );
 
       expect(result.recipientEmails).toBe('new@test.com');
+      // jest-mock-extended's DeepMockProxy methods are real jest.Mock functions
+      // at runtime, but their static type doesn't carry that through cleanly
+      // enough for this rule to recognize them as safe to reference unbound.
+      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(prisma.scheduledReport.update).toHaveBeenCalledWith({
         where: { id: 'report-1' },
         data: { recipientEmails: 'new@test.com' },
@@ -221,7 +242,7 @@ describe('ScheduledReportsService', () => {
 
       await service.update(
         'report-1',
-        { frequency: ReportFrequency.WEEKLY } as any,
+        { frequency: ReportFrequency.WEEKLY },
         'user-1',
       );
 
@@ -234,12 +255,12 @@ describe('ScheduledReportsService', () => {
       prisma.scheduledReport.findFirst.mockResolvedValue(null);
 
       await expect(
-        service.update(
-          'report-1',
-          { recipientEmails: 'x@test.com' } as any,
-          'user-1',
-        ),
+        service.update('report-1', { recipientEmails: 'x@test.com' }, 'user-1'),
       ).rejects.toThrow(NotFoundException);
+      // jest-mock-extended's DeepMockProxy methods are real jest.Mock functions
+      // at runtime, but their static type doesn't carry that through cleanly
+      // enough for this rule to recognize them as safe to reference unbound.
+      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(prisma.scheduledReport.update).not.toHaveBeenCalled();
     });
   });
@@ -254,8 +275,15 @@ describe('ScheduledReportsService', () => {
 
       await service.softDelete('report-1', 'user-1');
 
+      // jest-mock-extended's DeepMockProxy methods are real jest.Mock functions
+      // at runtime, but their static type doesn't carry that through cleanly
+      // enough for this rule to recognize them as safe to reference unbound.
+      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(prisma.scheduledReport.update).toHaveBeenCalledWith({
         where: { id: 'report-1' },
+        // jest's expect.any() return type is `any` in the installed
+        // @types/jest — a known, long-standing typing gap.
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         data: { deletedAt: expect.any(Date) },
       });
     });
@@ -266,6 +294,10 @@ describe('ScheduledReportsService', () => {
       await expect(service.softDelete('report-1', 'user-1')).rejects.toThrow(
         NotFoundException,
       );
+      // jest-mock-extended's DeepMockProxy methods are real jest.Mock functions
+      // at runtime, but their static type doesn't carry that through cleanly
+      // enough for this rule to recognize them as safe to reference unbound.
+      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(prisma.scheduledReport.update).not.toHaveBeenCalled();
     });
   });
@@ -280,24 +312,35 @@ describe('ScheduledReportsService', () => {
 
       await service.sendNow('report-1', 'user-1');
 
+      // jest-mock-extended's DeepMockProxy methods are real jest.Mock functions
+      // at runtime, but their static type doesn't carry that through cleanly
+      // enough for this rule to recognize them as safe to reference unbound.
+      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(reportsService.generateInventoryExcel).toHaveBeenCalledWith(
         undefined,
         null,
         'es',
       );
+      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(emailService.sendEmailWithAttachment).toHaveBeenCalledTimes(2);
+      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(emailService.sendEmailWithAttachment).toHaveBeenCalledWith(
         expect.objectContaining({
           to: 'a@test.com',
           attachments: [
             expect.objectContaining({
+              // jest's expect.stringContaining() return type is `any` in the
+              // installed @types/jest — a known, long-standing typing gap.
+              // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
               filename: expect.stringContaining('inventario_'),
             }),
           ],
         }),
       );
+      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(prisma.scheduledReport.update).toHaveBeenCalledWith({
         where: { id: 'report-1' },
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         data: { lastSentAt: expect.any(Date) },
       });
     });
@@ -313,6 +356,10 @@ describe('ScheduledReportsService', () => {
 
       await service.sendNow('report-1', 'user-1');
 
+      // jest-mock-extended's DeepMockProxy methods are real jest.Mock functions
+      // at runtime, but their static type doesn't carry that through cleanly
+      // enough for this rule to recognize them as safe to reference unbound.
+      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(reportsService.generateLowStockReport).toHaveBeenCalledWith(
         ['wh-1'],
         'es',
@@ -349,6 +396,10 @@ describe('ScheduledReportsService', () => {
       await expect(service.sendNow('report-1', 'user-1')).rejects.toThrow(
         'Unknown report type: BOGUS',
       );
+      // jest-mock-extended's DeepMockProxy methods are real jest.Mock functions
+      // at runtime, but their static type doesn't carry that through cleanly
+      // enough for this rule to recognize them as safe to reference unbound.
+      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(prisma.scheduledReport.update).not.toHaveBeenCalled();
     });
 
@@ -358,6 +409,7 @@ describe('ScheduledReportsService', () => {
       await expect(service.sendNow('report-1', 'user-1')).rejects.toThrow(
         NotFoundException,
       );
+      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(emailService.sendEmailWithAttachment).not.toHaveBeenCalled();
     });
   });
@@ -370,18 +422,29 @@ describe('ScheduledReportsService', () => {
 
       await service.runDailyCheck();
 
+      // jest-mock-extended's DeepMockProxy methods are real jest.Mock functions
+      // at runtime, but their static type doesn't carry that through cleanly
+      // enough for this rule to recognize them as safe to reference unbound.
+      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(prisma.scheduledReport.findMany).toHaveBeenCalledWith({
         where: {
           isActive: true,
           deletedAt: null,
+          // jest's expect.any() return type is `any` in the installed
+          // @types/jest — a known, long-standing typing gap.
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
           nextSendAt: { lte: expect.any(Date) },
         },
       });
+      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(emailService.sendEmailWithAttachment).toHaveBeenCalledTimes(2);
+      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(prisma.scheduledReport.update).toHaveBeenCalledWith({
         where: { id: 'report-1' },
         data: {
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
           lastSentAt: expect.any(Date),
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
           nextSendAt: expect.any(Date),
         },
       });
@@ -401,11 +464,15 @@ describe('ScheduledReportsService', () => {
 
       await service.runDailyCheck();
 
+      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(prisma.scheduledReport.update).toHaveBeenCalledTimes(1);
+      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(prisma.scheduledReport.update).toHaveBeenCalledWith({
         where: { id: 'report-ok' },
         data: {
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
           lastSentAt: expect.any(Date),
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
           nextSendAt: expect.any(Date),
         },
       });
@@ -416,7 +483,9 @@ describe('ScheduledReportsService', () => {
 
       await service.runDailyCheck();
 
+      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(emailService.sendEmailWithAttachment).not.toHaveBeenCalled();
+      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(prisma.scheduledReport.update).not.toHaveBeenCalled();
     });
   });

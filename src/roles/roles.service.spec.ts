@@ -4,6 +4,8 @@ import {
   ConflictException,
   BadRequestException,
 } from '@nestjs/common';
+import { type Role, type Permission, type User } from '@prisma/client';
+import { mockDeep, type DeepMockProxy } from 'jest-mock-extended';
 import { RolesService } from './roles.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { PermissionsService } from '../permissions/permissions.service';
@@ -11,9 +13,12 @@ import { AuditService } from '../audit/audit.service';
 
 describe('RolesService', () => {
   let service: RolesService;
-  let prisma: any;
-  let permissionsService: any;
+  let prisma: DeepMockProxy<PrismaService>;
+  let permissionsService: jest.Mocked<PermissionsService>;
 
+  // Fixtures deliberately only populate the fields each test actually reads;
+  // cast once here (rather than at each mockResolvedValue call site) now that
+  // `prisma` is a fully-typed DeepMockProxy<PrismaService>.
   const mockRoleListItem = {
     id: 'role-1',
     name: 'manager',
@@ -23,7 +28,7 @@ describe('RolesService', () => {
     createdAt: new Date('2024-01-01'),
     updatedAt: new Date('2024-01-02'),
     _count: { permissions: 2, users: 3 },
-  };
+  } as unknown as Role;
 
   const mockRoleFindOne = {
     id: 'role-1',
@@ -45,7 +50,7 @@ describe('RolesService', () => {
         },
       },
     ],
-  };
+  } as unknown as Role;
 
   const mockRoleForUpdate = {
     id: 'role-1',
@@ -54,7 +59,7 @@ describe('RolesService', () => {
     description: 'Manages things',
     isSystem: false,
     permissions: [{ permissionId: 'perm-1' }],
-  };
+  } as unknown as Role;
 
   const mockRoleForRemove = {
     id: 'role-1',
@@ -63,34 +68,18 @@ describe('RolesService', () => {
     description: 'Manages things',
     isSystem: false,
     _count: { users: 0 },
-  };
+  } as unknown as Role;
 
   beforeEach(async () => {
-    prisma = {
-      role: {
-        findMany: jest.fn(),
-        findUnique: jest.fn(),
-        create: jest.fn(),
-        update: jest.fn(),
-        delete: jest.fn(),
-      },
-      permission: {
-        findMany: jest.fn(),
-      },
-      rolePermission: {
-        deleteMany: jest.fn(),
-        createMany: jest.fn(),
-      },
-      user: {
-        findMany: jest.fn().mockResolvedValue([]),
-        updateMany: jest.fn(),
-      },
-      $transaction: jest.fn((cb: (tx: any) => any) => cb(prisma)),
-    };
+    prisma = mockDeep<PrismaService>();
+    prisma.user.findMany.mockResolvedValue([]);
+    prisma.$transaction.mockImplementation(((
+      cb: (tx: DeepMockProxy<PrismaService>) => unknown,
+    ) => cb(prisma)) as never);
 
     permissionsService = {
       invalidateCacheForUsers: jest.fn(),
-    };
+    } as unknown as jest.Mocked<PermissionsService>;
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -131,6 +120,10 @@ describe('RolesService', () => {
           updatedAt: mockRoleListItem.updatedAt,
         },
       ]);
+      // jest-mock-extended's DeepMockProxy methods are real jest.Mock functions
+      // at runtime, but their static type doesn't carry that through cleanly
+      // enough for this rule to recognize them as safe to reference unbound.
+      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(prisma.role.findMany).toHaveBeenCalledWith(
         expect.objectContaining({ orderBy: { name: 'asc' } }),
       );
@@ -185,16 +178,25 @@ describe('RolesService', () => {
       prisma.role.findUnique
         .mockResolvedValueOnce(null) // duplicate-name check
         .mockResolvedValueOnce(mockRoleFindOne); // findOne() at the end
-      prisma.permission.findMany.mockResolvedValue([{ id: 'perm-1' }]);
-      prisma.role.create.mockResolvedValue({ id: 'role-1', name: 'manager' });
+      prisma.permission.findMany.mockResolvedValue([
+        { id: 'perm-1' },
+      ] as unknown as Permission[]);
+      prisma.role.create.mockResolvedValue({
+        id: 'role-1',
+        name: 'manager',
+      } as unknown as Role);
 
-      const result = await service.create(baseDto() as any, 'actor-1');
+      const result = await service.create(baseDto(), 'actor-1');
 
       expect(result).toEqual(
         expect.objectContaining({ id: 'role-1', name: 'manager' }),
       );
+      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(prisma.role.create).toHaveBeenCalledWith(
         expect.objectContaining({
+          // jest's expect.objectContaining() return type is `any` in the
+          // installed @types/jest — a known, long-standing typing gap.
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
           data: expect.objectContaining({
             name: 'manager',
             displayName: 'Manager',
@@ -209,16 +211,22 @@ describe('RolesService', () => {
       prisma.role.findUnique
         .mockResolvedValueOnce(null)
         .mockResolvedValueOnce(mockRoleFindOne);
-      prisma.role.create.mockResolvedValue({ id: 'role-1', name: 'manager' });
+      prisma.role.create.mockResolvedValue({
+        id: 'role-1',
+        name: 'manager',
+      } as unknown as Role);
 
       await service.create(
-        { name: 'manager', displayName: 'Manager' } as any,
+        { name: 'manager', displayName: 'Manager' },
         'actor-1',
       );
 
+      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(prisma.permission.findMany).not.toHaveBeenCalled();
+      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(prisma.role.create).toHaveBeenCalledWith(
         expect.objectContaining({
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
           data: expect.not.objectContaining({ permissions: expect.anything() }),
         }),
       );
@@ -228,11 +236,12 @@ describe('RolesService', () => {
       prisma.role.findUnique.mockResolvedValueOnce({
         id: 'existing',
         name: 'manager',
-      });
+      } as unknown as Role);
 
-      await expect(service.create(baseDto() as any, 'actor-1')).rejects.toThrow(
+      await expect(service.create(baseDto(), 'actor-1')).rejects.toThrow(
         ConflictException,
       );
+      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(prisma.role.create).not.toHaveBeenCalled();
     });
 
@@ -240,29 +249,34 @@ describe('RolesService', () => {
       prisma.role.findUnique.mockResolvedValueOnce(null);
       prisma.permission.findMany.mockResolvedValue([]); // none found
 
-      await expect(service.create(baseDto() as any, 'actor-1')).rejects.toThrow(
+      await expect(service.create(baseDto(), 'actor-1')).rejects.toThrow(
         BadRequestException,
       );
+      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(prisma.role.create).not.toHaveBeenCalled();
     });
 
     it('translates a race-condition P2002 error into ConflictException', async () => {
       prisma.role.findUnique.mockResolvedValueOnce(null);
-      prisma.permission.findMany.mockResolvedValue([{ id: 'perm-1' }]);
+      prisma.permission.findMany.mockResolvedValue([
+        { id: 'perm-1' },
+      ] as unknown as Permission[]);
       prisma.role.create.mockRejectedValue({ code: 'P2002' });
 
-      await expect(service.create(baseDto() as any, 'actor-1')).rejects.toThrow(
+      await expect(service.create(baseDto(), 'actor-1')).rejects.toThrow(
         ConflictException,
       );
     });
 
     it('rethrows unrelated errors from role.create', async () => {
       prisma.role.findUnique.mockResolvedValueOnce(null);
-      prisma.permission.findMany.mockResolvedValue([{ id: 'perm-1' }]);
+      prisma.permission.findMany.mockResolvedValue([
+        { id: 'perm-1' },
+      ] as unknown as Permission[]);
       const unexpected = new Error('db down');
       prisma.role.create.mockRejectedValue(unexpected);
 
-      await expect(service.create(baseDto() as any, 'actor-1')).rejects.toThrow(
+      await expect(service.create(baseDto(), 'actor-1')).rejects.toThrow(
         'db down',
       );
     });
@@ -279,24 +293,30 @@ describe('RolesService', () => {
       prisma.role.findUnique
         .mockResolvedValueOnce(mockRoleForUpdate) // initial lookup
         .mockResolvedValueOnce(mockRoleFindOne); // findOne() at the end
-      prisma.permission.findMany.mockResolvedValue([{ id: 'perm-2' }]);
+      prisma.permission.findMany.mockResolvedValue([
+        { id: 'perm-2' },
+      ] as unknown as Permission[]);
       prisma.user.findMany.mockResolvedValue([
         { id: 'user-1' },
         { id: 'user-2' },
-      ]);
+      ] as unknown as User[]);
 
-      const result = await service.update('role-1', dto() as any, 'actor-1');
+      const result = await service.update('role-1', dto(), 'actor-1');
 
+      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(prisma.rolePermission.deleteMany).toHaveBeenCalledWith({
         where: { roleId: 'role-1' },
       });
+      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(prisma.rolePermission.createMany).toHaveBeenCalledWith({
         data: [{ roleId: 'role-1', permissionId: 'perm-2' }],
       });
+      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(prisma.user.updateMany).toHaveBeenCalledWith({
         where: { roleId: 'role-1' },
         data: { permissionsVersion: { increment: 1 } },
       });
+      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(permissionsService.invalidateCacheForUsers).toHaveBeenCalledWith([
         'user-1',
         'user-2',
@@ -311,14 +331,13 @@ describe('RolesService', () => {
         .mockResolvedValueOnce(mockRoleForUpdate)
         .mockResolvedValueOnce(mockRoleFindOne);
 
-      await service.update(
-        'role-1',
-        { displayName: 'Only name' } as any,
-        'actor-1',
-      );
+      await service.update('role-1', { displayName: 'Only name' }, 'actor-1');
 
+      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(prisma.rolePermission.deleteMany).not.toHaveBeenCalled();
+      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(prisma.user.updateMany).not.toHaveBeenCalled();
+      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(permissionsService.invalidateCacheForUsers).not.toHaveBeenCalled();
     });
 
@@ -328,21 +347,24 @@ describe('RolesService', () => {
         .mockResolvedValueOnce(mockRoleFindOne);
       prisma.user.findMany.mockResolvedValue([]);
 
-      await service.update('role-1', { permissionIds: [] } as any, 'actor-1');
+      await service.update('role-1', { permissionIds: [] }, 'actor-1');
 
+      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(prisma.rolePermission.deleteMany).toHaveBeenCalledWith({
         where: { roleId: 'role-1' },
       });
+      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(prisma.rolePermission.createMany).not.toHaveBeenCalled();
+      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(permissionsService.invalidateCacheForUsers).not.toHaveBeenCalled();
     });
 
     it('throws NotFoundException when the role does not exist', async () => {
       prisma.role.findUnique.mockResolvedValueOnce(null);
 
-      await expect(
-        service.update('missing', dto() as any, 'actor-1'),
-      ).rejects.toThrow(NotFoundException);
+      await expect(service.update('missing', dto(), 'actor-1')).rejects.toThrow(
+        NotFoundException,
+      );
     });
 
     it('throws BadRequestException when modifying permissions on a system role', async () => {
@@ -351,18 +373,18 @@ describe('RolesService', () => {
         isSystem: true,
       });
 
-      await expect(
-        service.update('role-1', dto() as any, 'actor-1'),
-      ).rejects.toThrow(BadRequestException);
+      await expect(service.update('role-1', dto(), 'actor-1')).rejects.toThrow(
+        BadRequestException,
+      );
     });
 
     it('throws BadRequestException when a permissionId is invalid', async () => {
       prisma.role.findUnique.mockResolvedValueOnce(mockRoleForUpdate);
       prisma.permission.findMany.mockResolvedValue([]);
 
-      await expect(
-        service.update('role-1', dto() as any, 'actor-1'),
-      ).rejects.toThrow(BadRequestException);
+      await expect(service.update('role-1', dto(), 'actor-1')).rejects.toThrow(
+        BadRequestException,
+      );
     });
   });
 
@@ -373,6 +395,7 @@ describe('RolesService', () => {
 
       const result = await service.remove('role-1', 'actor-1');
 
+      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(prisma.role.delete).toHaveBeenCalledWith({
         where: { id: 'role-1' },
       });
@@ -407,6 +430,7 @@ describe('RolesService', () => {
       await expect(service.remove('role-1', 'actor-1')).rejects.toThrow(
         BadRequestException,
       );
+      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(prisma.role.delete).not.toHaveBeenCalled();
     });
   });
@@ -435,7 +459,7 @@ describe('RolesService', () => {
           action: 'view',
           description: 'View users',
         },
-      ]);
+      ] as unknown as Permission[]);
 
       const result = await service.getAllPermissions();
 

@@ -1,5 +1,7 @@
 import { HttpException, HttpStatus } from '@nestjs/common';
+import type { ArgumentsHost, LoggerService } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import type { Request, Response } from 'express';
 import { GlobalExceptionFilter } from './http-exception.filter';
 
 const prismaError = (code: string, message: string) =>
@@ -10,14 +12,14 @@ const prismaError = (code: string, message: string) =>
 
 describe('GlobalExceptionFilter', () => {
   let filter: GlobalExceptionFilter;
-  let mockLogger: { error: jest.Mock; log: jest.Mock };
+  let mockLogger: { error: jest.Mock; log: jest.Mock; warn: jest.Mock };
   let mockResponse: { status: jest.Mock; json: jest.Mock };
   let mockRequest: { method: string; url: string; ip: string };
-  let mockHost: any;
+  let mockHost: ArgumentsHost;
 
   beforeEach(() => {
-    mockLogger = { error: jest.fn(), log: jest.fn() };
-    filter = new GlobalExceptionFilter(mockLogger as any);
+    mockLogger = { error: jest.fn(), log: jest.fn(), warn: jest.fn() };
+    filter = new GlobalExceptionFilter(mockLogger as unknown as LoggerService);
 
     mockResponse = {
       status: jest.fn().mockReturnThis(),
@@ -27,10 +29,10 @@ describe('GlobalExceptionFilter', () => {
 
     mockHost = {
       switchToHttp: () => ({
-        getResponse: () => mockResponse,
-        getRequest: () => mockRequest,
+        getResponse: () => mockResponse as unknown as Response,
+        getRequest: () => mockRequest as unknown as Request,
       }),
-    };
+    } as unknown as ArgumentsHost;
   });
 
   it('handles HttpException with object response', () => {
@@ -102,7 +104,7 @@ describe('GlobalExceptionFilter', () => {
   it('handles ForbiddenError (CSRF) as 403', () => {
     const exception = Object.create({
       constructor: { name: 'ForbiddenError' },
-    });
+    }) as Error;
     Object.defineProperty(exception, 'constructor', {
       value: { name: 'ForbiddenError' },
     });
@@ -133,7 +135,8 @@ describe('GlobalExceptionFilter', () => {
 
     filter.catch(exception, mockHost);
 
-    const jsonCall = mockResponse.json.mock.calls[0][0];
+    const call = mockResponse.json.mock.calls[0] as unknown[];
+    const jsonCall = call[0] as { message: unknown };
     expect(Array.isArray(jsonCall.message)).toBe(true);
   });
 
@@ -142,7 +145,8 @@ describe('GlobalExceptionFilter', () => {
 
     filter.catch(exception, mockHost);
 
-    const jsonCall = mockResponse.json.mock.calls[0][0];
+    const call = mockResponse.json.mock.calls[0] as unknown[];
+    const jsonCall = call[0] as { timestamp: unknown; path: unknown };
     expect(jsonCall.timestamp).toBeDefined();
     expect(jsonCall.path).toBe('/test');
   });

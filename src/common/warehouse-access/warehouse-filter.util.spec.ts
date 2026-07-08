@@ -51,10 +51,14 @@ describe('warehouseFilterMultiField', () => {
   });
 
   it('handles multiple warehouse IDs across multiple fields', () => {
+    // warehouseFilterMultiField's return type is `Record<string, any>` (it
+    // builds a dynamic Prisma where-clause); cast to the concrete shape this
+    // test actually inspects so property access below is fully typed.
     const result = warehouseFilterMultiField(
       ['wh-1', 'wh-2'],
       ['sourceWarehouseId', 'destinationWarehouseId'],
-    );
+    ) as { OR: Array<Record<string, { in: string[] }>> };
+
     expect(result.OR[0].sourceWarehouseId.in).toEqual(['wh-1', 'wh-2']);
     expect(result.OR[1].destinationWarehouseId.in).toEqual(['wh-1', 'wh-2']);
   });

@@ -4,7 +4,14 @@ import {
   BadRequestException,
   ForbiddenException,
 } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import {
+  Prisma,
+  type Loan,
+  type LoanItem,
+  type InventoryItem,
+  type Warehouse,
+} from '@prisma/client';
+import { mockDeep, type DeepMockProxy } from 'jest-mock-extended';
 import { LoansService } from './loans.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { QrService } from '../qr/qr.service';
@@ -19,11 +26,26 @@ const prismaError = (code: string) =>
 
 describe('LoansService', () => {
   let service: LoansService;
-  let prisma: any;
+  let prisma: DeepMockProxy<PrismaService>;
 
-  const mockWarehouse = { id: 'w-src', name: 'Source', location: 'A' };
-  const mockDestWarehouse = { id: 'w-dst', name: 'Dest', location: 'B' };
-  const mockItem = { id: 'item-1', name: 'Laptop', warehouseId: 'w-src' };
+  // Fixtures deliberately only populate the fields each test actually reads;
+  // cast once here (rather than at each mockResolvedValue call site) now that
+  // `prisma` is a fully-typed DeepMockProxy<PrismaService>.
+  const mockWarehouse = {
+    id: 'w-src',
+    name: 'Source',
+    location: 'A',
+  } as unknown as Warehouse;
+  const mockDestWarehouse = {
+    id: 'w-dst',
+    name: 'Dest',
+    location: 'B',
+  } as unknown as Warehouse;
+  const mockItem = {
+    id: 'item-1',
+    name: 'Laptop',
+    warehouseId: 'w-src',
+  } as unknown as InventoryItem;
 
   const futureDate = () =>
     new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
@@ -50,25 +72,15 @@ describe('LoansService', () => {
     sourceWarehouse: mockWarehouse,
     destinationWarehouse: mockDestWarehouse,
     createdBy: { id: 'user-1', email: 'u@test.com', name: 'User' },
-  };
+  } as unknown as Loan;
 
   beforeEach(async () => {
-    prisma = {
-      loan: {
-        create: jest.fn(),
-        findMany: jest.fn(),
-        findUnique: jest.fn(),
-        findFirst: jest.fn(),
-        update: jest.fn(),
-        updateMany: jest.fn(),
-        delete: jest.fn(),
-        count: jest.fn(),
-      },
-      loanItem: { findMany: jest.fn().mockResolvedValue([]) },
-      inventoryItem: { findMany: jest.fn().mockResolvedValue([mockItem]) },
-      warehouse: { findUnique: jest.fn() },
-      $transaction: jest.fn((cb: (tx: any) => any) => cb(prisma)),
-    };
+    prisma = mockDeep<PrismaService>();
+    prisma.loanItem.findMany.mockResolvedValue([]);
+    prisma.inventoryItem.findMany.mockResolvedValue([mockItem]);
+    prisma.$transaction.mockImplementation(((
+      cb: (tx: DeepMockProxy<PrismaService>) => unknown,
+    ) => cb(prisma)) as never);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -115,8 +127,15 @@ describe('LoansService', () => {
       const result = await service.create(baseDto(), 'user-1');
 
       expect(result).toEqual(mockLoan);
+      // jest-mock-extended's DeepMockProxy methods are real jest.Mock functions
+      // at runtime, but their static type doesn't carry that through cleanly
+      // enough for this rule to recognize them as safe to reference unbound.
+      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(prisma.loan.create).toHaveBeenCalledWith(
         expect.objectContaining({
+          // jest's expect.objectContaining() return type is `any` in the
+          // installed @types/jest — a known, long-standing typing gap.
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
           data: expect.objectContaining({
             items: {
               create: [
@@ -166,7 +185,7 @@ describe('LoansService', () => {
         .mockResolvedValueOnce(mockWarehouse)
         .mockResolvedValueOnce(mockDestWarehouse);
       prisma.inventoryItem.findMany.mockResolvedValueOnce([
-        { id: 'item-1', warehouseId: 'other' },
+        { id: 'item-1', warehouseId: 'other' } as unknown as InventoryItem,
       ]);
 
       await expect(service.create(baseDto(), 'user-1')).rejects.toThrow(
@@ -179,7 +198,7 @@ describe('LoansService', () => {
         .mockResolvedValueOnce(mockWarehouse)
         .mockResolvedValueOnce(mockDestWarehouse);
       prisma.loanItem.findMany.mockResolvedValueOnce([
-        { inventoryItemId: 'item-1' },
+        { inventoryItemId: 'item-1' } as unknown as LoanItem,
       ]);
 
       await expect(service.create(baseDto(), 'user-1')).rejects.toThrow(
@@ -214,6 +233,7 @@ describe('LoansService', () => {
     it('deletes a loan', async () => {
       prisma.loan.delete.mockResolvedValue(mockLoan);
       await service.remove('loan-1');
+      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(prisma.loan.delete).toHaveBeenCalledWith({
         where: { id: 'loan-1' },
       });

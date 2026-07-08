@@ -139,6 +139,10 @@ describe('AuthService', () => {
         },
       });
       expect(result.refresh_token).toBeDefined();
+      // jest.Mocked<T>'s methods are real jest.Mock functions at runtime, but
+      // their static type doesn't carry that through cleanly enough for this
+      // rule to recognize them as safe to reference unbound.
+      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(usersService.findByEmail).toHaveBeenCalledWith('test@example.com');
       expect(bcrypt.compare).toHaveBeenCalledWith(
         'password123',
@@ -169,7 +173,10 @@ describe('AuthService', () => {
 
   describe('register', () => {
     it('should create a new user and return access token without password', async () => {
-      // UsersService.create strips the password before returning — mock matches that contract
+      // UsersService.create strips the password before returning — mock matches that contract.
+      // `_pwd` is intentionally discarded via destructuring; there's no other syntax to
+      // omit a single property from a rest spread.
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { password: _pwd, ...userWithoutPassword } = mockUser;
       const newUser = { ...userWithoutPassword, id: 'new-user-123' };
       usersService.findByEmail.mockResolvedValue(null);
@@ -188,6 +195,7 @@ describe('AuthService', () => {
       });
       expect(result.refresh_token).toBeDefined();
       expect(result.user).not.toHaveProperty('password');
+      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(usersService.create).toHaveBeenCalled();
     });
 
@@ -206,12 +214,16 @@ describe('AuthService', () => {
 
   describe('validateUser', () => {
     it('should return user data for valid user id', async () => {
+      // `_pwd` is intentionally discarded via destructuring; there's no other syntax to
+      // omit a single property from a rest spread.
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { password: _pwd, ...userWithoutPassword } = mockUser;
       usersService.findOne.mockResolvedValue(userWithoutPassword);
 
       const result = await service.validateUser('user-123');
 
       expect(result).toEqual(userWithoutPassword);
+      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(usersService.findOne).toHaveBeenCalledWith('user-123');
     });
   });
@@ -235,6 +247,7 @@ describe('AuthService', () => {
       });
 
       expect(result).toEqual({ message: 'Password changed successfully' });
+      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(usersService.updatePassword).toHaveBeenCalledWith(
         'user-123',
         'newHashedPassword',

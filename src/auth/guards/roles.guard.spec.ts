@@ -129,9 +129,13 @@ describe('RolesGuard', () => {
         fail('Expected ForbiddenException to be thrown');
       } catch (error) {
         expect(error).toBeInstanceOf(ForbiddenException);
-        expect(error.message).toContain('SYSTEM_ADMIN');
-        expect(error.message).toContain('WAREHOUSE_MANAGER');
-        expect(error.message).toContain('VIEWER');
+        // Narrow via instanceof so `.message` is accessed on a typed Error,
+        // not on the implicitly-`any` catch binding.
+        if (error instanceof ForbiddenException) {
+          expect(error.message).toContain('SYSTEM_ADMIN');
+          expect(error.message).toContain('WAREHOUSE_MANAGER');
+          expect(error.message).toContain('VIEWER');
+        }
       }
     });
   });

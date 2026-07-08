@@ -25,14 +25,8 @@ jobs:
       - name: Validate Prisma schema
         run: bunx prisma validate --schema=./prisma/schema.prisma
 
-      # Non-blocking for now: enabling lint surfaced a pre-existing backlog of
-      # ~430 findings across the codebase (mostly @typescript-eslint strict
-      # rules that were never actually enforced before, since a broken ajv
-      # override crashed ESLint on every invocation). Flip to blocking once
-      # that backlog is cleaned up.
       - name: Lint
         run: bun run lint
-        continue-on-error: true
 
       - name: Unit tests
         run: bun run test
