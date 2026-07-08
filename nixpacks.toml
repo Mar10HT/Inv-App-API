@@ -1,12 +1,15 @@
 [phases.setup]
-nixPkgs = ["nodejs_22", "openssl", "bun"]
-aptPkgs = []
+nixPkgs = ["nodejs_22", "bun"]
+# Prisma's debian-openssl-3.0.x engine binary needs libssl.so.3 at runtime.
+# Installing it via apt puts it in the standard system library path (already
+# in ldconfig's default search path on Debian), which persists into the final
+# image — unlike the previous approach (nix's openssl package + a manual
+# find/ldconfig hack), which left the container unable to find it at runtime.
+aptPkgs = ["openssl"]
 
 [phases.install]
 dependsOn = ["setup"]
 cmds = [
-  "find / -name 'libssl.so.3' 2>/dev/null | head -5",
-  "OPENSSL_DIR=$(find / -name 'libssl.so.3' -exec dirname {} \\; 2>/dev/null | head -1) && echo \"OpenSSL dir: $OPENSSL_DIR\" && echo $OPENSSL_DIR > /etc/ld.so.conf.d/openssl3.conf && ldconfig",
   "bun install --frozen-lockfile",
   "bunx prisma generate --schema=./prisma/schema.prod.prisma",
   "bun run build"
