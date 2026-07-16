@@ -1,11 +1,16 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { NotFoundException, ConflictException } from '@nestjs/common';
+import {
+  NotFoundException,
+  ConflictException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { Prisma, type User } from '@prisma/client';
 import { mockDeep, type DeepMockProxy } from 'jest-mock-extended';
 import { UsersService } from './users.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { EmailService } from '../email/email.service';
 import { AuditService } from '../audit/audit.service';
+import { AuthenticatedUser } from '../auth/interfaces/auth-user.interface';
 
 const prismaError = (code: string) =>
   new Prisma.PrismaClientKnownRequestError('test error', {
@@ -21,6 +26,7 @@ jest.mock('bcryptjs', () => ({
 describe('UsersService', () => {
   let service: UsersService;
   let prisma: DeepMockProxy<PrismaService>;
+  let audit: { log: jest.Mock; logSafe: jest.Mock };
 
   const mockUser = {
     id: 'user-123',
@@ -47,6 +53,12 @@ describe('UsersService', () => {
 
     const mockEmailService = {
       sendWelcomeEmail: jest.fn().mockResolvedValue(undefined),
+      sendPasswordChangedEmail: jest.fn().mockResolvedValue(true),
+    };
+
+    const mockAuditService = {
+      log: jest.fn().mockResolvedValue(undefined),
+      logSafe: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -54,17 +66,12 @@ describe('UsersService', () => {
         UsersService,
         { provide: PrismaService, useValue: prisma },
         { provide: EmailService, useValue: mockEmailService },
-        {
-          provide: AuditService,
-          useValue: {
-            log: jest.fn().mockResolvedValue(undefined),
-            logSafe: jest.fn(),
-          },
-        },
+        { provide: AuditService, useValue: mockAuditService },
       ],
     }).compile();
 
     service = module.get<UsersService>(UsersService);
+    audit = module.get(AuditService);
   });
 
   afterEach(() => {
@@ -329,6 +336,182 @@ describe('UsersService', () => {
           email: true,
         },
       });
+    });
+  });
+
+  describe('adminSetPassword', () => {
+    const strongPassword = 'Str0ng!Passw0rd';
+
+    const actorAdmin: AuthenticatedUser = {
+      userId: 'admin-1',
+      email: 'admin@example.com',
+      role: 'SYSTEM_ADMIN',
+      warehouseIds: null,
+    };
+
+    const actorEditor: AuthenticatedUser = {
+      userId: 'editor-1',
+      email: 'editor@example.com',
+      role: 'WAREHOUSE_MANAGER',
+      warehouseIds: [],
+    };
+
+    const targetNormalUser = {
+      id: 'user-123',
+      email: 'Target@Example.com',
+      name: 'Target User',
+      role: 'USER' as const,
+      deletedAt: null,
+    };
+
+    it('hashes the password, updates it, revokes sessions, clears lockout and audits', async () => {
+      prisma.user.findUnique.mockResolvedValue(
+        targetNormalUser as unknown as User,
+      );
+      (bcrypt.hash as jest.Mock).mockResolvedValue('newHashedPassword');
+
+      const result = await service.adminSetPassword(
+        'user-123',
+        strongPassword,
+        actorEditor,
+      );
+
+      // Hashed with the same cost factor the login flow uses
+      expect(bcrypt.hash).toHaveBeenCalledWith(strongPassword, 10);
+
+      // All writes happen atomically
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+
+      // Password write
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(prisma.user.update).toHaveBeenCalledWith({
+        where: { id: 'user-123' },
+        data: { password: 'newHashedPassword' },
+      });
+
+      // Revoke active refresh tokens (force re-login)
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(prisma.refreshToken.updateMany).toHaveBeenCalledWith({
+        where: { userId: 'user-123', revoked: false },
+        data: { revoked: true },
+      });
+
+      // Invalidate pending reset tokens
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(prisma.passwordResetToken.updateMany).toHaveBeenCalledWith({
+        where: { userId: 'user-123', used: false },
+        data: { used: true },
+      });
+
+      // Clear failed-attempt lockout (email normalised to lowercase)
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(prisma.loginAttempt.deleteMany).toHaveBeenCalledWith({
+        where: { email: 'target@example.com' },
+      });
+
+      // Audit trail records who changed whose password, with context persisted in
+      // changes.after (AuditService does not persist the `metadata` field).
+      expect(audit.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'PASSWORD_CHANGE',
+          entity: 'user',
+          entityId: 'user-123',
+          userId: 'editor-1',
+          changes: {
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+            after: expect.objectContaining({
+              resetByAdmin: true,
+              actorEmail: 'editor@example.com',
+              targetEmail: 'Target@Example.com',
+            }),
+          },
+        }),
+      );
+
+      // Never leak the hash
+      expect(result).not.toHaveProperty('password');
+    });
+
+    it('blocks an admin from resetting their OWN password via this endpoint', async () => {
+      prisma.user.findUnique.mockResolvedValue({
+        id: actorEditor.userId,
+        email: actorEditor.email,
+        name: 'Editor',
+        role: 'WAREHOUSE_MANAGER',
+        deletedAt: null,
+      } as unknown as User);
+
+      await expect(
+        service.adminSetPassword(
+          actorEditor.userId,
+          strongPassword,
+          actorEditor,
+        ),
+      ).rejects.toThrow(ForbiddenException);
+
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('throws NotFoundException when the target user does not exist', async () => {
+      prisma.user.findUnique.mockResolvedValue(null);
+
+      await expect(
+        service.adminSetPassword('missing', strongPassword, actorAdmin),
+      ).rejects.toThrow(NotFoundException);
+
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('throws NotFoundException when the target user is soft-deleted', async () => {
+      prisma.user.findUnique.mockResolvedValue({
+        ...targetNormalUser,
+        deletedAt: new Date(),
+      } as unknown as User);
+
+      await expect(
+        service.adminSetPassword('user-123', strongPassword, actorAdmin),
+      ).rejects.toThrow(NotFoundException);
+
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('blocks a non-SYSTEM_ADMIN from resetting a SYSTEM_ADMIN password (privilege escalation)', async () => {
+      prisma.user.findUnique.mockResolvedValue({
+        id: 'admin-2',
+        email: 'other-admin@example.com',
+        name: 'Other Admin',
+        role: 'SYSTEM_ADMIN',
+        deletedAt: null,
+      } as unknown as User);
+
+      await expect(
+        service.adminSetPassword('admin-2', strongPassword, actorEditor),
+      ).rejects.toThrow(ForbiddenException);
+
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('allows a SYSTEM_ADMIN to reset another SYSTEM_ADMIN password', async () => {
+      prisma.user.findUnique.mockResolvedValue({
+        id: 'admin-2',
+        email: 'other-admin@example.com',
+        name: 'Other Admin',
+        role: 'SYSTEM_ADMIN',
+        deletedAt: null,
+      } as unknown as User);
+      (bcrypt.hash as jest.Mock).mockResolvedValue('newHashedPassword');
+
+      await expect(
+        service.adminSetPassword('admin-2', strongPassword, actorAdmin),
+      ).resolves.toBeDefined();
+
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(prisma.$transaction).toHaveBeenCalledTimes(1);
     });
   });
 });
