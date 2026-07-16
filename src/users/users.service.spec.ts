@@ -1,8 +1,10 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { NotFoundException, ConflictException } from '@nestjs/common';
+import { NotFoundException, ConflictException, ForbiddenException } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { EmailService } from '../email/email.service';
+import { AuditService } from '../audit/audit.service';
+import { AuthenticatedUser } from '../auth/interfaces/auth-user.interface';
 import { Prisma } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 
@@ -21,6 +23,7 @@ const prismaKnownError = (code: string) =>
 describe('UsersService', () => {
   let service: UsersService;
   let prisma: jest.Mocked<PrismaService>;
+  let audit: { log: jest.Mock };
 
   const mockUser = {
     id: 'user-123',
@@ -51,10 +54,29 @@ describe('UsersService', () => {
         update: jest.fn(),
         count: jest.fn(),
       },
+      refreshToken: {
+        updateMany: jest.fn(),
+      },
+      passwordResetToken: {
+        updateMany: jest.fn(),
+      },
+      loginAttempt: {
+        deleteMany: jest.fn(),
+      },
+      // Faithfully resolve the array form the service uses, so the individual
+      // operation mocks are genuinely awaited (not short-circuited).
+      $transaction: jest.fn().mockImplementation((ops: unknown) =>
+        Array.isArray(ops) ? Promise.all(ops) : Promise.resolve([]),
+      ),
     };
 
     const mockEmailService = {
       sendWelcomeEmail: jest.fn().mockResolvedValue(undefined),
+      sendPasswordChangedEmail: jest.fn().mockResolvedValue(true),
+    };
+
+    const mockAuditService = {
+      log: jest.fn().mockResolvedValue(undefined),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -62,11 +84,13 @@ describe('UsersService', () => {
         UsersService,
         { provide: PrismaService, useValue: mockPrismaService },
         { provide: EmailService, useValue: mockEmailService },
+        { provide: AuditService, useValue: mockAuditService },
       ],
     }).compile();
 
     service = module.get<UsersService>(UsersService);
     prisma = module.get(PrismaService);
+    audit = module.get(AuditService);
   });
 
   afterEach(() => {
@@ -302,6 +326,161 @@ describe('UsersService', () => {
           email: true,
         },
       });
+    });
+  });
+
+  describe('adminSetPassword', () => {
+    const strongPassword = 'Str0ng!Passw0rd';
+
+    const actorAdmin: AuthenticatedUser = {
+      userId: 'admin-1',
+      email: 'admin@example.com',
+      role: 'SYSTEM_ADMIN',
+      warehouseIds: null,
+    };
+
+    const actorEditor: AuthenticatedUser = {
+      userId: 'editor-1',
+      email: 'editor@example.com',
+      role: 'WAREHOUSE_MANAGER',
+      warehouseIds: [],
+    };
+
+    const targetNormalUser = {
+      id: 'user-123',
+      email: 'Target@Example.com',
+      name: 'Target User',
+      role: 'USER' as const,
+      deletedAt: null,
+    };
+
+    it('hashes the password, updates it, revokes sessions, clears lockout and audits', async () => {
+      (prisma.user.findUnique as jest.Mock).mockResolvedValue(targetNormalUser);
+      (bcrypt.hash as jest.Mock).mockResolvedValue('newHashedPassword');
+
+      const result = await service.adminSetPassword('user-123', strongPassword, actorEditor);
+
+      // Hashed with the same cost factor the login flow uses
+      expect(bcrypt.hash).toHaveBeenCalledWith(strongPassword, 10);
+
+      // All writes happen atomically
+      expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+
+      // Password write
+      expect(prisma.user.update).toHaveBeenCalledWith({
+        where: { id: 'user-123' },
+        data: { password: 'newHashedPassword' },
+      });
+
+      // Revoke active refresh tokens (force re-login)
+      expect(prisma.refreshToken.updateMany).toHaveBeenCalledWith({
+        where: { userId: 'user-123', revoked: false },
+        data: { revoked: true },
+      });
+
+      // Invalidate pending reset tokens
+      expect(prisma.passwordResetToken.updateMany).toHaveBeenCalledWith({
+        where: { userId: 'user-123', used: false },
+        data: { used: true },
+      });
+
+      // Clear failed-attempt lockout (email normalised to lowercase)
+      expect(prisma.loginAttempt.deleteMany).toHaveBeenCalledWith({
+        where: { email: 'target@example.com' },
+      });
+
+      // Audit trail records who changed whose password, with context persisted in
+      // changes.after (AuditService does not persist the `metadata` field).
+      expect(audit.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'PASSWORD_CHANGE',
+          entity: 'user',
+          entityId: 'user-123',
+          userId: 'editor-1',
+          changes: {
+            after: expect.objectContaining({
+              resetByAdmin: true,
+              actorEmail: 'editor@example.com',
+              targetEmail: 'Target@Example.com',
+            }),
+          },
+        }),
+      );
+
+      // Never leak the hash
+      expect(result).not.toHaveProperty('password');
+    });
+
+    it('blocks an admin from resetting their OWN password via this endpoint', async () => {
+      (prisma.user.findUnique as jest.Mock).mockResolvedValue({
+        id: actorEditor.userId,
+        email: actorEditor.email,
+        name: 'Editor',
+        role: 'WAREHOUSE_MANAGER',
+        deletedAt: null,
+      });
+
+      await expect(
+        service.adminSetPassword(actorEditor.userId, strongPassword, actorEditor),
+      ).rejects.toThrow(ForbiddenException);
+
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('throws NotFoundException when the target user does not exist', async () => {
+      (prisma.user.findUnique as jest.Mock).mockResolvedValue(null);
+
+      await expect(
+        service.adminSetPassword('missing', strongPassword, actorAdmin),
+      ).rejects.toThrow(NotFoundException);
+
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('throws NotFoundException when the target user is soft-deleted', async () => {
+      (prisma.user.findUnique as jest.Mock).mockResolvedValue({
+        ...targetNormalUser,
+        deletedAt: new Date(),
+      });
+
+      await expect(
+        service.adminSetPassword('user-123', strongPassword, actorAdmin),
+      ).rejects.toThrow(NotFoundException);
+
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('blocks a non-SYSTEM_ADMIN from resetting a SYSTEM_ADMIN password (privilege escalation)', async () => {
+      (prisma.user.findUnique as jest.Mock).mockResolvedValue({
+        id: 'admin-2',
+        email: 'other-admin@example.com',
+        name: 'Other Admin',
+        role: 'SYSTEM_ADMIN',
+        deletedAt: null,
+      });
+
+      await expect(
+        service.adminSetPassword('admin-2', strongPassword, actorEditor),
+      ).rejects.toThrow(ForbiddenException);
+
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('allows a SYSTEM_ADMIN to reset another SYSTEM_ADMIN password', async () => {
+      (prisma.user.findUnique as jest.Mock).mockResolvedValue({
+        id: 'admin-2',
+        email: 'other-admin@example.com',
+        name: 'Other Admin',
+        role: 'SYSTEM_ADMIN',
+        deletedAt: null,
+      });
+      (bcrypt.hash as jest.Mock).mockResolvedValue('newHashedPassword');
+
+      await expect(
+        service.adminSetPassword('admin-2', strongPassword, actorAdmin),
+      ).resolves.toBeDefined();
+
+      expect(prisma.$transaction).toHaveBeenCalledTimes(1);
     });
   });
 });

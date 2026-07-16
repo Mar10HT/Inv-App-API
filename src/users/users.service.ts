@@ -1,7 +1,15 @@
-import { Injectable, NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ConflictException,
+  BadRequestException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { EmailService } from '../email/email.service';
+import { AuditService } from '../audit/audit.service';
+import { AuthenticatedUser } from '../auth/interfaces/auth-user.interface';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { PaginationDto, PaginatedResult, parsePagination, buildPaginationMeta, parseSortOrder } from '../common/dto';
@@ -12,6 +20,7 @@ export class UsersService {
   constructor(
     private prisma: PrismaService,
     private emailService: EmailService,
+    private auditService: AuditService,
   ) {}
 
   private readonly userSelect = {
@@ -258,6 +267,90 @@ export class UsersService {
         email: true,
       },
     });
+  }
+
+  /**
+   * Admin flow: directly set another user's password without the reset-token/email dance.
+   * Guarded upstream by @Permissions('users:edit'); adds an in-service safeguard so a
+   * non-SYSTEM_ADMIN cannot reset a SYSTEM_ADMIN's password (privilege escalation).
+   *
+   * Side effects (atomic): sets the new hash, revokes the target's active sessions,
+   * invalidates any pending reset tokens, and clears the failed-attempt lockout so the
+   * user can log in immediately. Emits a PASSWORD_CHANGE audit entry recording the actor.
+   */
+  async adminSetPassword(
+    targetUserId: string,
+    newPassword: string,
+    actor: AuthenticatedUser,
+  ): Promise<{ message: string }> {
+    const target = await this.prisma.user.findUnique({
+      where: { id: targetUserId },
+      select: { id: true, email: true, name: true, role: true, deletedAt: true },
+    });
+
+    if (!target || target.deletedAt) {
+      throw new NotFoundException(`User with ID ${targetUserId} not found`);
+    }
+
+    // Prevent privilege escalation: only a SYSTEM_ADMIN may reset a SYSTEM_ADMIN.
+    if (target.role === 'SYSTEM_ADMIN' && actor.role !== 'SYSTEM_ADMIN') {
+      throw new ForbiddenException(
+        'Only a SYSTEM_ADMIN can reset another SYSTEM_ADMIN password',
+      );
+    }
+
+    // Self password changes must go through the normal change-password flow, which
+    // verifies the current password. This admin path is for resetting OTHER users.
+    if (targetUserId === actor.userId) {
+      throw new ForbiddenException(
+        'Use the change-password flow to change your own password',
+      );
+    }
+
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+    // Atomic: rotate password, kill sessions, void pending resets, clear lockout.
+    await this.prisma.$transaction([
+      this.prisma.user.update({
+        where: { id: targetUserId },
+        data: { password: hashedPassword },
+      }),
+      this.prisma.refreshToken.updateMany({
+        where: { userId: targetUserId, revoked: false },
+        data: { revoked: true },
+      }),
+      this.prisma.passwordResetToken.updateMany({
+        where: { userId: targetUserId, used: false },
+        data: { used: true },
+      }),
+      this.prisma.loginAttempt.deleteMany({
+        where: { email: target.email.toLowerCase() },
+      }),
+    ]);
+
+    // Audit who reset whose password (never store the password itself).
+    // NOTE: AuditService persists `changes` but not `metadata`, so the context that
+    // must survive for post-incident review goes into changes.after.
+    await this.auditService.log({
+      action: 'PASSWORD_CHANGE',
+      entity: 'user',
+      entityId: targetUserId,
+      userId: actor.userId,
+      changes: {
+        after: {
+          resetByAdmin: true,
+          actorEmail: actor.email,
+          targetEmail: target.email,
+        },
+      },
+    });
+
+    // Notify the affected user (fire-and-forget).
+    this.emailService
+      .sendPasswordChangedEmail(target.email, target.name || undefined)
+      .catch(() => {});
+
+    return { message: 'Password updated successfully' };
   }
 
   async updatePushToken(userId: string, token: string | null): Promise<void> {

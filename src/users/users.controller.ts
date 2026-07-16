@@ -19,6 +19,7 @@ import { UpdateUserDto } from './dto/update-user.dto';
 import { AssignWarehousesDto } from './dto/assign-warehouses.dto';
 import { UpdatePreferencesDto } from './dto/update-preferences.dto';
 import { UpdatePushTokenDto } from './dto/update-push-token.dto';
+import { AdminSetPasswordDto } from './dto/admin-set-password.dto';
 import { PaginationDto } from '../common/dto';
 import { JwtAuthGuard, PermissionsGuard } from '../auth/guards';
 import { Permissions, CurrentUser } from '../auth/decorators';
@@ -84,6 +85,20 @@ export class UsersController {
     @Body(ValidationPipe) updateUserDto: UpdateUserDto,
   ) {
     return this.usersService.update(id, updateUserDto);
+  }
+
+  // Admin sets another user's password directly (bypasses the reset-link/email flow).
+  // Guarded by users:edit; SYSTEM_ADMIN bypasses. The service prevents a non-SYSTEM_ADMIN
+  // from targeting a SYSTEM_ADMIN account.
+  @Patch(':id/password')
+  @Permissions('users:edit')
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
+  adminSetPassword(
+    @Param('id') id: string,
+    @Body(ValidationPipe) dto: AdminSetPasswordDto,
+    @CurrentUser() actor: AuthenticatedUser,
+  ) {
+    return this.usersService.adminSetPassword(id, dto.newPassword, actor);
   }
 
   @Delete(':id')
