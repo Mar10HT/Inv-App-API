@@ -5,7 +5,23 @@ import {
   CallHandler,
 } from '@nestjs/common';
 import { Observable } from 'rxjs';
+import { Request } from 'express';
 import { WarehouseAccessService } from './warehouse-access.service';
+
+/**
+ * Shape of `request.user` as populated by JwtStrategy (see src/auth/strategies/jwt.strategy.ts),
+ * before this interceptor resolves and attaches `warehouseIds`.
+ */
+interface RequestUser {
+  userId: string;
+  email: string;
+  role: string;
+  warehouseIds?: string[] | null;
+}
+
+interface WarehouseAccessRequest extends Request {
+  user?: RequestUser;
+}
 
 /**
  * Global interceptor that resolves warehouseIds for the authenticated user
@@ -24,7 +40,7 @@ export class WarehouseAccessInterceptor implements NestInterceptor {
     context: ExecutionContext,
     next: CallHandler,
   ): Promise<Observable<any>> {
-    const request = context.switchToHttp().getRequest();
+    const request = context.switchToHttp().getRequest<WarehouseAccessRequest>();
     const user = request.user;
 
     // Only process authenticated requests (user is set by JWT strategy)

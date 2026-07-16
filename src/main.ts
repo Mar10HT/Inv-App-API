@@ -5,6 +5,7 @@ import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
 import compression from 'compression';
 import cors from 'cors';
+import type { Express, Request, Response, NextFunction } from 'express';
 import { AppModule } from './app.module';
 import { CsrfService } from './csrf/csrf.service';
 import { GlobalExceptionFilter } from './common/filters';
@@ -13,10 +14,14 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { PrismaService } from './prisma/prisma.service';
 import { UserRole } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
+import { initSentry } from './common/sentry';
 
 const logger = new Logger('Bootstrap');
 
 async function bootstrap() {
+  // Must run before the Nest app is created so Sentry's instrumentation can hook in early.
+  initSentry();
+
   const app = await NestFactory.create(AppModule, {
     bufferLogs: true, // Buffer logs until Winston is ready
   });
@@ -28,7 +33,9 @@ async function bootstrap() {
   app.useLogger(app.get(WINSTON_MODULE_NEST_PROVIDER));
 
   // Trust proxy (Railway, Vercel, etc. use reverse proxies)
-  const expressApp = app.getHttpAdapter().getInstance();
+  // `getInstance()` is typed `any` on the generic `HttpServer` interface (it's
+  // the underlying Express instance here since we use the default HTTP adapter).
+  const expressApp = app.getHttpAdapter().getInstance() as Express;
   expressApp.set('trust proxy', 1);
 
   // Security middleware - Helmet
@@ -53,23 +60,35 @@ async function bootstrap() {
   app.use(cookieParser());
 
   // CORS middleware — must run BEFORE CSRF so all responses (including errors) have CORS headers
-  const corsOrigins = process.env.CORS_ORIGIN?.split(',').map(o => o.trim()) || ['http://localhost:4200'];
+  const corsOrigins = process.env.CORS_ORIGIN?.split(',').map((o) =>
+    o.trim(),
+  ) || ['http://localhost:4200'];
 
-  app.use(cors({
-    origin: (origin, callback) => {
-      // Allow requests with no origin (like mobile apps or curl)
-      if (!origin) return callback(null, true);
+  app.use(
+    cors({
+      origin: (origin, callback) => {
+        // Allow requests with no origin (like mobile apps or curl)
+        if (!origin) return callback(null, true);
 
-      if (corsOrigins.some(allowed => origin === allowed || origin.endsWith(allowed.replace('https://', '.')))) {
-        return callback(null, true);
-      }
+        if (
+          corsOrigins.some(
+            (allowed) =>
+              origin === allowed ||
+              origin.endsWith(allowed.replace('https://', '.')),
+          )
+        ) {
+          return callback(null, true);
+        }
 
-      logger.warn(`CORS blocked origin: ${origin}, allowed: ${corsOrigins.join(', ')}`);
-      return callback(null, false);
-    },
-    credentials: true,
-    exposedHeaders: ['set-cookie'],
-  }));
+        logger.warn(
+          `CORS blocked origin: ${origin}, allowed: ${corsOrigins.join(', ')}`,
+        );
+        return callback(null, false);
+      },
+      credentials: true,
+      exposedHeaders: ['set-cookie'],
+    }),
+  );
 
   // CSRF protection middleware (after CORS)
   // Requests using Bearer token (mobile apps, API clients) are inherently CSRF-immune
@@ -86,8 +105,8 @@ async function bootstrap() {
     '/api/auth/register',
     '/api/auth/forgot-password',
   ];
-  app.use((req, res, next) => {
-    const authHeader = req.headers.authorization as string | undefined;
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    const authHeader = req.headers.authorization;
     if (authHeader?.startsWith('Bearer ')) {
       return next();
     }
@@ -110,10 +129,14 @@ async function bootstrap() {
   );
 
   // Global exception filter for centralized error handling
-  app.useGlobalFilters(new GlobalExceptionFilter(app.get(WINSTON_MODULE_NEST_PROVIDER)));
+  app.useGlobalFilters(
+    new GlobalExceptionFilter(app.get(WINSTON_MODULE_NEST_PROVIDER)),
+  );
 
   // Global logging interceptor
-  app.useGlobalInterceptors(new LoggingInterceptor(app.get(WINSTON_MODULE_NEST_PROVIDER)));
+  app.useGlobalInterceptors(
+    new LoggingInterceptor(app.get(WINSTON_MODULE_NEST_PROVIDER)),
+  );
 
   // Global prefix for all routes
   app.setGlobalPrefix('api');
@@ -146,8 +169,12 @@ async function bootstrap() {
     const prisma = app.get(PrismaService);
     const userCount = await prisma.user.count();
     if (userCount === 0) {
-      const adminEmail = process.env.ADMIN_EMAIL || (process.env.NODE_ENV !== 'production' ? 'admin@example.com' : null);
-      const adminPassword = process.env.ADMIN_PASSWORD || (process.env.NODE_ENV !== 'production' ? 'password123' : null);
+      const adminEmail =
+        process.env.ADMIN_EMAIL ||
+        (process.env.NODE_ENV !== 'production' ? 'admin@example.com' : null);
+      const adminPassword =
+        process.env.ADMIN_PASSWORD ||
+        (process.env.NODE_ENV !== 'production' ? 'password123' : null);
 
       if (adminEmail && adminPassword) {
         const hashedPassword = await bcrypt.hash(adminPassword, 10);
@@ -161,11 +188,14 @@ async function bootstrap() {
         });
         logger.log(`Initial admin created (${adminEmail})`);
       } else {
-        logger.warn('No users exist. Set ADMIN_EMAIL and ADMIN_PASSWORD env vars to create initial admin.');
+        logger.warn(
+          'No users exist. Set ADMIN_EMAIL and ADMIN_PASSWORD env vars to create initial admin.',
+        );
       }
     }
   } catch (e) {
-    logger.error(`Auto-seed failed: ${e.message}`);
+    const message = e instanceof Error ? e.message : String(e);
+    logger.error(`Auto-seed failed: ${message}`);
   }
 
   const port = process.env.PORT ?? 3000;
@@ -177,4 +207,5 @@ async function bootstrap() {
     logger.log(`API Documentation at http://localhost:${port}/api/docs`);
   }
 }
-bootstrap();
+// Fire-and-forget: this is the process entry point, there is nothing to await it from.
+void bootstrap();

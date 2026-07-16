@@ -8,6 +8,24 @@ export interface QrCodeData {
   code: string;
 }
 
+const QR_CODE_TYPES = new Set<QrCodeData['type']>([
+  'LOAN_SEND',
+  'LOAN_RETURN',
+  'TRANSFER',
+]);
+
+/** Runtime guard verifying scanned/parsed JSON actually matches the expected QR payload shape. */
+function isQrCodeData(value: unknown): value is QrCodeData {
+  if (typeof value !== 'object' || value === null) return false;
+  const candidate = value as Record<string, unknown>;
+  return (
+    typeof candidate.type === 'string' &&
+    QR_CODE_TYPES.has(candidate.type as QrCodeData['type']) &&
+    typeof candidate.id === 'string' &&
+    typeof candidate.code === 'string'
+  );
+}
+
 @Injectable()
 export class QrService {
   /**
@@ -60,9 +78,9 @@ export class QrService {
    */
   parseQrData(scannedData: string): QrCodeData | null {
     try {
-      const data = JSON.parse(scannedData);
-      if (data.type && data.id && data.code) {
-        return data as QrCodeData;
+      const data: unknown = JSON.parse(scannedData);
+      if (isQrCodeData(data)) {
+        return data;
       }
       return null;
     } catch {

@@ -1,4 +1,7 @@
-import { warehouseFilter, warehouseFilterMultiField } from './warehouse-filter.util';
+import {
+  warehouseFilter,
+  warehouseFilterMultiField,
+} from './warehouse-filter.util';
 
 describe('warehouseFilter', () => {
   it('returns empty object when warehouseIds is null (unrestricted)', () => {
@@ -26,11 +29,19 @@ describe('warehouseFilter', () => {
 
 describe('warehouseFilterMultiField', () => {
   it('returns empty object when warehouseIds is null', () => {
-    expect(warehouseFilterMultiField(null, ['sourceWarehouseId', 'destinationWarehouseId'])).toEqual({});
+    expect(
+      warehouseFilterMultiField(null, [
+        'sourceWarehouseId',
+        'destinationWarehouseId',
+      ]),
+    ).toEqual({});
   });
 
   it('returns OR clause covering all provided fields', () => {
-    const result = warehouseFilterMultiField(['wh-1'], ['sourceWarehouseId', 'destinationWarehouseId']);
+    const result = warehouseFilterMultiField(
+      ['wh-1'],
+      ['sourceWarehouseId', 'destinationWarehouseId'],
+    );
     expect(result).toEqual({
       OR: [
         { sourceWarehouseId: { in: ['wh-1'] } },
@@ -40,7 +51,14 @@ describe('warehouseFilterMultiField', () => {
   });
 
   it('handles multiple warehouse IDs across multiple fields', () => {
-    const result = warehouseFilterMultiField(['wh-1', 'wh-2'], ['sourceWarehouseId', 'destinationWarehouseId']);
+    // warehouseFilterMultiField's return type is `Record<string, any>` (it
+    // builds a dynamic Prisma where-clause); cast to the concrete shape this
+    // test actually inspects so property access below is fully typed.
+    const result = warehouseFilterMultiField(
+      ['wh-1', 'wh-2'],
+      ['sourceWarehouseId', 'destinationWarehouseId'],
+    ) as { OR: Array<Record<string, { in: string[] }>> };
+
     expect(result.OR[0].sourceWarehouseId.in).toEqual(['wh-1', 'wh-2']);
     expect(result.OR[1].destinationWarehouseId.in).toEqual(['wh-1', 'wh-2']);
   });

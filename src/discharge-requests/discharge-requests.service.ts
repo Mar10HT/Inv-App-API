@@ -1,10 +1,19 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { QrService } from '../qr/qr.service';
 import { CreateDischargeRequestDto } from './dto/create-discharge-request.dto';
 import { FilterDischargeRequestDto } from './dto/filter-discharge-request.dto';
-import { DischargeRequestStatus, Prisma } from '@prisma/client';
+import {
+  DischargeRequestStatus,
+  OutflowReason,
+  OutflowStatus,
+  Prisma,
+} from '@prisma/client';
 import { warehouseFilter } from '../common/warehouse-access/warehouse-filter.util';
 
 @Injectable()
@@ -20,7 +29,9 @@ export class DischargeRequestsService {
     resolvedBy: { select: { id: true, name: true, email: true } },
     items: {
       include: {
-        inventoryItem: { select: { id: true, name: true, serviceTag: true, quantity: true } },
+        inventoryItem: {
+          select: { id: true, name: true, serviceTag: true, quantity: true },
+        },
       },
     },
   };
@@ -76,7 +87,9 @@ export class DischargeRequestsService {
 
     // Create N discharge requests in a transaction (one per warehouse)
     const createdRequests = await this.prisma.$transaction(async (tx) => {
-      const requests: Awaited<ReturnType<typeof this.prisma.dischargeRequest.create>>[] = [];
+      const requests: Prisma.DischargeRequestGetPayload<{
+        include: typeof this.includeFull;
+      }>[] = [];
 
       for (const [warehouseId, items] of groupedByWarehouse) {
         const request = await tx.dischargeRequest.create({
@@ -152,7 +165,10 @@ export class DischargeRequestsService {
   /**
    * Find all discharge requests with filters and pagination
    */
-  async findAll(filters: FilterDischargeRequestDto, warehouseIds?: string[] | null) {
+  async findAll(
+    filters: FilterDischargeRequestDto,
+    warehouseIds?: string[] | null,
+  ) {
     const page = filters.page || 1;
     const limit = filters.limit || 10;
     const skip = (page - 1) * limit;
@@ -214,12 +230,21 @@ export class DischargeRequestsService {
     }
 
     // Validate and decrement inventory in a single transaction to prevent race conditions
+    let createdOutflowId: string | null = null;
     const updated = await this.prisma.$transaction(async (tx) => {
       // Validate all items exist, are not soft-deleted, and have sufficient quantity
       const inventoryItems = await Promise.all(
         request.items.map((item) =>
           tx.inventoryItem.findFirst({
             where: { id: item.inventoryItemId, deletedAt: null },
+            select: {
+              id: true,
+              name: true,
+              serviceTag: true,
+              quantity: true,
+              price: true,
+              currency: true,
+            },
           }),
         ),
       );
@@ -249,6 +274,34 @@ export class DischargeRequestsService {
         ),
       );
 
+      // Approved discharges are recorded as outflows (CONSUMED) so they show up
+      // in the Salidas module alongside manually-created write-offs. The stock
+      // was already decremented above, so we don't go through OutflowsService.
+      const outflow = await tx.outflow.create({
+        data: {
+          name: `Discharge: ${request.requesterName}`,
+          warehouseId: request.warehouseId,
+          reason: OutflowReason.CONSUMED,
+          status: OutflowStatus.ACTIVE,
+          notes: request.justification ?? null,
+          createdById: resolvedById,
+          items: {
+            create: request.items.map((item, i) => {
+              const snapshot = inventoryItems[i];
+              return {
+                inventoryItemId: item.inventoryItemId,
+                quantity: item.quantity,
+                itemName: snapshot?.name ?? null,
+                serviceTag: snapshot?.serviceTag ?? null,
+                unitPrice: snapshot?.price ?? null,
+                currency: snapshot?.currency ?? null,
+              };
+            }),
+          },
+        },
+      });
+      createdOutflowId = outflow.id;
+
       return tx.dischargeRequest.update({
         where: { id },
         data: {
@@ -265,8 +318,30 @@ export class DischargeRequestsService {
       entity: 'DischargeRequest',
       entityId: id,
       userId: resolvedById,
-      changes: { status: 'COMPLETED', itemsDelivered: request.items.length },
+      changes: {
+        status: 'COMPLETED',
+        itemsDelivered: request.items.length,
+        outflowId: createdOutflowId,
+      },
     });
+
+    if (createdOutflowId) {
+      await this.auditService.log({
+        action: 'CREATE',
+        entity: 'Outflow',
+        entityId: createdOutflowId,
+        userId: resolvedById,
+        changes: {
+          after: {
+            warehouseId: request.warehouseId,
+            reason: 'CONSUMED',
+            status: 'ACTIVE',
+            itemCount: request.items.length,
+            sourceDischargeRequestId: id,
+          },
+        },
+      });
+    }
 
     return updated;
   }
@@ -326,9 +401,15 @@ export class DischargeRequestsService {
 
     const [total, pending, completed, rejected] = await Promise.all([
       this.prisma.dischargeRequest.count({ where: { ...wFilter } }),
-      this.prisma.dischargeRequest.count({ where: { status: DischargeRequestStatus.PENDING, ...wFilter } }),
-      this.prisma.dischargeRequest.count({ where: { status: DischargeRequestStatus.COMPLETED, ...wFilter } }),
-      this.prisma.dischargeRequest.count({ where: { status: DischargeRequestStatus.REJECTED, ...wFilter } }),
+      this.prisma.dischargeRequest.count({
+        where: { status: DischargeRequestStatus.PENDING, ...wFilter },
+      }),
+      this.prisma.dischargeRequest.count({
+        where: { status: DischargeRequestStatus.COMPLETED, ...wFilter },
+      }),
+      this.prisma.dischargeRequest.count({
+        where: { status: DischargeRequestStatus.REJECTED, ...wFilter },
+      }),
     ]);
 
     return {
@@ -338,10 +419,15 @@ export class DischargeRequestsService {
   }
 
   /**
-   * Generate QR code for the public request form URL
+   * Generate QR code for the public request form URL.
+   * FRONTEND_URL (or legacy APP_URL) must be set in production, otherwise the QR
+   * will point to localhost and be useless when scanned outside the dev machine.
    */
   async getRequestFormQr() {
-    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:4200';
+    const frontendUrl =
+      process.env.FRONTEND_URL ||
+      process.env.APP_URL ||
+      'http://localhost:4200';
     const requestFormUrl = `${frontendUrl}/request`;
     const qrDataUrl = await this.qrService.generateUrlQrDataUrl(requestFormUrl);
     return { url: requestFormUrl, qrDataUrl };

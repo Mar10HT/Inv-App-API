@@ -5,9 +5,16 @@ import { PrismaModule } from '../prisma/prisma.module';
 import { EventsModule } from '../events/events.module';
 import { PermissionsModule } from '../permissions/permissions.module';
 import { AuditModule } from '../audit/audit.module';
+import { PdfReceiptsModule } from '../pdf-receipts/pdf-receipts.module';
 
 @Module({
-  imports: [PrismaModule, EventsModule, PermissionsModule, AuditModule],
+  imports: [
+    PrismaModule,
+    EventsModule,
+    PermissionsModule,
+    AuditModule,
+    PdfReceiptsModule,
+  ],
   controllers: [LoansController],
   providers: [LoansService],
   exports: [LoansService],

@@ -8,8 +8,18 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { QrService } from '../qr/qr.service';
 import { CreateLoanDto } from './dto/create-loan.dto';
-import { UpdateLoanDto, ReturnLoanDto, LoanStatus } from './dto/update-loan.dto';
-import { PaginationDto, PaginatedResult, parsePagination, buildPaginationMeta, parseSortOrder } from '../common/dto';
+import {
+  UpdateLoanDto,
+  ReturnLoanDto,
+  LoanStatus,
+} from './dto/update-loan.dto';
+import {
+  PaginationDto,
+  PaginatedResult,
+  parsePagination,
+  buildPaginationMeta,
+  parseSortOrder,
+} from '../common/dto';
 import { EventsService } from '../events/events.service';
 import { AuditService } from '../audit/audit.service';
 import { warehouseFilterMultiField } from '../common/warehouse-access/warehouse-filter.util';
@@ -25,11 +35,15 @@ export class LoansService {
 
   // Light include for list queries (faster)
   private readonly loanIncludeLight = {
-    inventoryItem: {
-      select: {
-        id: true,
-        name: true,
-        serviceTag: true,
+    items: {
+      include: {
+        inventoryItem: {
+          select: {
+            id: true,
+            name: true,
+            serviceTag: true,
+          },
+        },
       },
     },
     sourceWarehouse: {
@@ -54,12 +68,16 @@ export class LoansService {
 
   // Full include for detail queries
   private readonly loanInclude = {
-    inventoryItem: {
-      select: {
-        id: true,
-        name: true,
-        serviceTag: true,
-        quantity: true,
+    items: {
+      include: {
+        inventoryItem: {
+          select: {
+            id: true,
+            name: true,
+            serviceTag: true,
+            quantity: true,
+          },
+        },
       },
     },
     sourceWarehouse: {
@@ -101,64 +119,109 @@ export class LoansService {
 
   async create(createLoanDto: CreateLoanDto, userId: string) {
     // Validate warehouses are different
-    if (createLoanDto.sourceWarehouseId === createLoanDto.destinationWarehouseId) {
+    if (
+      createLoanDto.sourceWarehouseId === createLoanDto.destinationWarehouseId
+    ) {
       throw new BadRequestException(
         'Source and destination warehouses must be different',
       );
     }
 
-    // Validate item exists and belongs to source warehouse
-    const item = await this.prisma.inventoryItem.findUnique({
-      where: { id: createLoanDto.inventoryItemId },
-    });
-
-    if (!item) {
-      throw new NotFoundException('Inventory item not found');
+    if (!createLoanDto.items?.length) {
+      throw new BadRequestException('At least one item is required');
     }
 
-    if (item.warehouseId !== createLoanDto.sourceWarehouseId) {
-      throw new BadRequestException(
-        'Item does not belong to the source warehouse',
-      );
-    }
-
-    // Check if item is already on loan (any active status)
-    const existingLoan = await this.prisma.loan.findFirst({
-      where: {
-        inventoryItemId: createLoanDto.inventoryItemId,
-        status: { in: ['PENDING', 'SENT', 'RECEIVED', 'RETURN_PENDING', 'OVERDUE'] },
-      },
-    });
-
-    if (existingLoan) {
-      throw new BadRequestException('Item is already on loan');
+    // Reject duplicate item ids in the same payload
+    const ids = createLoanDto.items.map((i) => i.inventoryItemId);
+    if (new Set(ids).size !== ids.length) {
+      throw new BadRequestException('Duplicate inventory item in loan payload');
     }
 
     // Validate warehouses exist
-    const sourceWarehouse = await this.prisma.warehouse.findUnique({
-      where: { id: createLoanDto.sourceWarehouseId },
-    });
-    const destinationWarehouse = await this.prisma.warehouse.findUnique({
-      where: { id: createLoanDto.destinationWarehouseId },
-    });
-
+    const [sourceWarehouse, destinationWarehouse] = await Promise.all([
+      this.prisma.warehouse.findUnique({
+        where: { id: createLoanDto.sourceWarehouseId },
+      }),
+      this.prisma.warehouse.findUnique({
+        where: { id: createLoanDto.destinationWarehouseId },
+      }),
+    ]);
     if (!sourceWarehouse || !destinationWarehouse) {
       throw new NotFoundException('Invalid warehouse');
     }
 
-    // Create the loan with PENDING status
+    // Bulk-validate items exist, belong to source warehouse, and aren't already on loan
+    const items = await this.prisma.inventoryItem.findMany({
+      where: { id: { in: ids } },
+      select: { id: true, warehouseId: true },
+    });
+    if (items.length !== ids.length) {
+      throw new NotFoundException('One or more inventory items not found');
+    }
+    const wrongWarehouse = items.find(
+      (i) => i.warehouseId !== createLoanDto.sourceWarehouseId,
+    );
+    if (wrongWarehouse) {
+      throw new BadRequestException(
+        `Item ${wrongWarehouse.id} does not belong to the source warehouse`,
+      );
+    }
+
+    const activeLoanItems = await this.prisma.loanItem.findMany({
+      where: {
+        inventoryItemId: { in: ids },
+        loan: {
+          status: {
+            in: ['PENDING', 'SENT', 'RECEIVED', 'RETURN_PENDING', 'OVERDUE'],
+          },
+        },
+      },
+      select: { inventoryItemId: true },
+    });
+    if (activeLoanItems.length > 0) {
+      const conflict = activeLoanItems.map((i) => i.inventoryItemId).join(', ');
+      throw new BadRequestException(`Item(s) already on loan: ${conflict}`);
+    }
+
+    // Create the loan and its items in one transaction
     const loan = await this.prisma.loan.create({
       data: {
-        inventoryItemId: createLoanDto.inventoryItemId,
-        quantity: createLoanDto.quantity,
+        name: createLoanDto.name?.trim() || null,
         sourceWarehouseId: createLoanDto.sourceWarehouseId,
         destinationWarehouseId: createLoanDto.destinationWarehouseId,
         dueDate: new Date(createLoanDto.dueDate),
         createdById: userId,
         notes: createLoanDto.notes,
         status: 'PENDING',
+        items: {
+          create: createLoanDto.items.map((i) => ({
+            inventoryItemId: i.inventoryItemId,
+            quantity: i.quantity,
+            notes: i.notes,
+          })),
+        },
       },
       include: this.loanInclude,
+    });
+
+    this.auditService.logSafe({
+      action: 'CREATE',
+      entity: 'Loan',
+      entityId: loan.id,
+      userId,
+      changes: {
+        after: {
+          name: loan.name,
+          sourceWarehouseId: loan.sourceWarehouseId,
+          destinationWarehouseId: loan.destinationWarehouseId,
+          dueDate: loan.dueDate,
+          status: loan.status,
+          items: createLoanDto.items.map((i) => ({
+            inventoryItemId: i.inventoryItemId,
+            quantity: i.quantity,
+          })),
+        },
+      },
     });
 
     this.eventsService.emitLoanChange('created', loan.id);
@@ -169,7 +232,11 @@ export class LoansService {
   /**
    * Mark loan as sent and generate QR code for receipt confirmation
    */
-  async sendLoan(id: string, userWarehouseIds?: string[] | null) {
+  async sendLoan(
+    id: string,
+    userId: string,
+    userWarehouseIds?: string[] | null,
+  ) {
     const loan = await this.findOne(id);
 
     if (userWarehouseIds != null) {
@@ -177,7 +244,9 @@ export class LoansService {
         userWarehouseIds.includes(loan.sourceWarehouse.id) ||
         userWarehouseIds.includes(loan.destinationWarehouse.id);
       if (!hasAccess) {
-        throw new ForbiddenException('You do not have access to the involved warehouses');
+        throw new ForbiddenException(
+          'You do not have access to the involved warehouses',
+        );
       }
     }
 
@@ -199,6 +268,18 @@ export class LoansService {
       include: this.loanInclude,
     });
 
+    this.auditService.logSafe({
+      action: 'UPDATE',
+      entity: 'Loan',
+      entityId: id,
+      userId,
+      changes: {
+        before: { status: 'PENDING' },
+        after: { status: 'SENT' },
+        fields: ['status'],
+      },
+    });
+
     // Generate QR code image
     const qrData = {
       type: 'LOAN_SEND' as const,
@@ -216,7 +297,11 @@ export class LoansService {
   /**
    * Confirm receipt of loan by scanning QR code
    */
-  async confirmReceipt(qrCode: string, userId: string) {
+  async confirmReceipt(
+    qrCode: string,
+    userId: string,
+    userWarehouseIds?: string[] | null,
+  ) {
     const loan = await this.prisma.loan.findFirst({
       where: { sendQrCode: qrCode },
       include: this.loanInclude,
@@ -224,6 +309,17 @@ export class LoansService {
 
     if (!loan) {
       throw new NotFoundException('Invalid QR code or loan not found');
+    }
+
+    if (userWarehouseIds != null) {
+      const hasAccess =
+        userWarehouseIds.includes(loan.sourceWarehouse.id) ||
+        userWarehouseIds.includes(loan.destinationWarehouse.id);
+      if (!hasAccess) {
+        throw new ForbiddenException(
+          'You do not have access to the involved warehouses',
+        );
+      }
     }
 
     // Status check + write in one transaction to prevent double-confirmation under concurrency
@@ -236,7 +332,11 @@ export class LoansService {
       }
       return tx.loan.update({
         where: { id: loan.id },
-        data: { status: 'RECEIVED', receivedAt: new Date(), receivedById: userId },
+        data: {
+          status: 'RECEIVED',
+          receivedAt: new Date(),
+          receivedById: userId,
+        },
         include: this.loanInclude,
       });
     });
@@ -255,7 +355,11 @@ export class LoansService {
   /**
    * Initiate return and generate QR code for return confirmation
    */
-  async initiateReturn(id: string, userWarehouseIds?: string[] | null) {
+  async initiateReturn(
+    id: string,
+    userId: string,
+    userWarehouseIds?: string[] | null,
+  ) {
     const loan = await this.findOne(id);
 
     if (userWarehouseIds != null) {
@@ -263,7 +367,9 @@ export class LoansService {
         userWarehouseIds.includes(loan.sourceWarehouse.id) ||
         userWarehouseIds.includes(loan.destinationWarehouse.id);
       if (!hasAccess) {
-        throw new ForbiddenException('You do not have access to the involved warehouses');
+        throw new ForbiddenException(
+          'You do not have access to the involved warehouses',
+        );
       }
     }
 
@@ -275,6 +381,8 @@ export class LoansService {
       );
     }
 
+    const previousStatus = loan.status;
+
     // Generate unique QR code for return confirmation
     const returnQrCode = this.qrService.generateCode();
 
@@ -285,6 +393,18 @@ export class LoansService {
         returnQrCode,
       },
       include: this.loanInclude,
+    });
+
+    this.auditService.logSafe({
+      action: 'UPDATE',
+      entity: 'Loan',
+      entityId: id,
+      userId,
+      changes: {
+        before: { status: previousStatus },
+        after: { status: 'RETURN_PENDING' },
+        fields: ['status'],
+      },
     });
 
     // Generate QR code image
@@ -304,7 +424,11 @@ export class LoansService {
   /**
    * Confirm return of loan by scanning QR code
    */
-  async confirmReturn(qrCode: string, userId: string) {
+  async confirmReturn(
+    qrCode: string,
+    userId: string,
+    userWarehouseIds?: string[] | null,
+  ) {
     const loan = await this.prisma.loan.findFirst({
       where: { returnQrCode: qrCode },
       include: this.loanInclude,
@@ -312,6 +436,17 @@ export class LoansService {
 
     if (!loan) {
       throw new NotFoundException('Invalid QR code or loan not found');
+    }
+
+    if (userWarehouseIds != null) {
+      const hasAccess =
+        userWarehouseIds.includes(loan.sourceWarehouse.id) ||
+        userWarehouseIds.includes(loan.destinationWarehouse.id);
+      if (!hasAccess) {
+        throw new ForbiddenException(
+          'You do not have access to the involved warehouses',
+        );
+      }
     }
 
     // Status check + write in one transaction to prevent double-confirmation under concurrency
@@ -348,16 +483,20 @@ export class LoansService {
   /**
    * Get QR code image for a loan (send or return)
    */
-  async getQrCode(id: string, type: 'send' | 'return') {
+  async getQrCode(id: string, type: string) {
     if (type !== 'send' && type !== 'return') {
-      throw new BadRequestException(`Invalid QR code type: ${type}. Must be 'send' or 'return'.`);
+      throw new BadRequestException(
+        `Invalid QR code type: ${type}. Must be 'send' or 'return'.`,
+      );
     }
 
     const loan = await this.findOne(id);
 
     if (type === 'send') {
       if (!loan.sendQrCode) {
-        throw new BadRequestException('Send QR code not generated. Send the loan first.');
+        throw new BadRequestException(
+          'Send QR code not generated. Send the loan first.',
+        );
       }
       const qrData = {
         type: 'LOAN_SEND' as const,
@@ -367,7 +506,9 @@ export class LoansService {
       return this.qrService.generateQrDataUrl(qrData);
     } else {
       if (!loan.returnQrCode) {
-        throw new BadRequestException('Return QR code not generated. Initiate return first.');
+        throw new BadRequestException(
+          'Return QR code not generated. Initiate return first.',
+        );
       }
       const qrData = {
         type: 'LOAN_RETURN' as const,
@@ -381,7 +522,11 @@ export class LoansService {
   /**
    * Scan and process QR code (auto-detect type)
    */
-  async processQrCode(scannedData: string, userId: string) {
+  async processQrCode(
+    scannedData: string,
+    userId: string,
+    userWarehouseIds?: string[] | null,
+  ) {
     const qrData = this.qrService.parseQrData(scannedData);
 
     if (!qrData) {
@@ -389,9 +534,9 @@ export class LoansService {
     }
 
     if (qrData.type === 'LOAN_SEND') {
-      return this.confirmReceipt(qrData.code, userId);
+      return this.confirmReceipt(qrData.code, userId, userWarehouseIds);
     } else if (qrData.type === 'LOAN_RETURN') {
-      return this.confirmReturn(qrData.code, userId);
+      return this.confirmReturn(qrData.code, userId, userWarehouseIds);
     } else {
       throw new BadRequestException('Unknown QR code type');
     }
@@ -405,7 +550,11 @@ export class LoansService {
    * Performs warehouse access check before the transaction, then re-validates
    * status inside the transaction to prevent double-confirmation under concurrency.
    */
-  async manualConfirmReceipt(id: string, userId: string, userWarehouseIds: string[] | null) {
+  async manualConfirmReceipt(
+    id: string,
+    userId: string,
+    userWarehouseIds: string[] | null,
+  ) {
     const loan = await this.findOne(id);
 
     if (userWarehouseIds != null) {
@@ -413,7 +562,9 @@ export class LoansService {
         userWarehouseIds.includes(loan.sourceWarehouse.id) ||
         userWarehouseIds.includes(loan.destinationWarehouse.id);
       if (!hasAccess) {
-        throw new ForbiddenException('You do not have access to the involved warehouses');
+        throw new ForbiddenException(
+          'You do not have access to the involved warehouses',
+        );
       }
     }
 
@@ -422,7 +573,10 @@ export class LoansService {
     // Status check + write in one transaction to prevent double-confirmation under concurrency
     const updated = await this.prisma.$transaction(async (tx) => {
       const current = await tx.loan.findUnique({ where: { id } });
-      if (!current || (current.status !== 'SENT' && current.status !== 'OVERDUE')) {
+      if (
+        !current ||
+        (current.status !== 'SENT' && current.status !== 'OVERDUE')
+      ) {
         throw new BadRequestException(
           `Cannot confirm receipt. Loan is in ${current?.status ?? 'unknown'} status. Only SENT or OVERDUE loans can be confirmed.`,
         );
@@ -436,7 +590,11 @@ export class LoansService {
       previousStatus = current.status;
       return tx.loan.update({
         where: { id },
-        data: { status: 'RECEIVED', receivedAt: new Date(), receivedById: userId },
+        data: {
+          status: 'RECEIVED',
+          receivedAt: new Date(),
+          receivedById: userId,
+        },
         include: this.loanInclude,
       });
     });
@@ -458,7 +616,11 @@ export class LoansService {
    * Performs warehouse access check before the transaction, then re-validates
    * status inside the transaction to prevent double-confirmation under concurrency.
    */
-  async manualConfirmReturn(id: string, userId: string, userWarehouseIds: string[] | null) {
+  async manualConfirmReturn(
+    id: string,
+    userId: string,
+    userWarehouseIds: string[] | null,
+  ) {
     const loan = await this.findOne(id);
 
     if (userWarehouseIds != null) {
@@ -466,7 +628,9 @@ export class LoansService {
         userWarehouseIds.includes(loan.sourceWarehouse.id) ||
         userWarehouseIds.includes(loan.destinationWarehouse.id);
       if (!hasAccess) {
-        throw new ForbiddenException('You do not have access to the involved warehouses');
+        throw new ForbiddenException(
+          'You do not have access to the involved warehouses',
+        );
       }
     }
 
@@ -475,7 +639,10 @@ export class LoansService {
     // Status check + write in one transaction to prevent double-confirmation under concurrency
     const updated = await this.prisma.$transaction(async (tx) => {
       const current = await tx.loan.findUnique({ where: { id } });
-      if (!current || (current.status !== 'RETURN_PENDING' && current.status !== 'OVERDUE')) {
+      if (
+        !current ||
+        (current.status !== 'RETURN_PENDING' && current.status !== 'OVERDUE')
+      ) {
         throw new BadRequestException(
           `Cannot confirm return. Loan is in ${current?.status ?? 'unknown'} status. Only RETURN_PENDING or OVERDUE loans can be confirmed.`,
         );
@@ -510,11 +677,18 @@ export class LoansService {
     return updated;
   }
 
-  async findAll(pagination?: PaginationDto, warehouseIds?: string[] | null, status?: string): Promise<PaginatedResult<unknown>> {
+  async findAll(
+    pagination?: PaginationDto,
+    warehouseIds?: string[] | null,
+    status?: string,
+  ): Promise<PaginatedResult<unknown>> {
     const { page, limit, skip } = parsePagination(pagination);
 
     const where = {
-      ...warehouseFilterMultiField(warehouseIds, ['sourceWarehouseId', 'destinationWarehouseId']),
+      ...warehouseFilterMultiField(warehouseIds, [
+        'sourceWarehouseId',
+        'destinationWarehouseId',
+      ]),
       ...(status ? { status: status as LoanStatus } : {}),
     };
 
@@ -533,11 +707,22 @@ export class LoansService {
   }
 
   async findActive(warehouseIds?: string[] | null) {
-    const wFilter = warehouseFilterMultiField(warehouseIds, ['sourceWarehouseId', 'destinationWarehouseId']);
+    const wFilter = warehouseFilterMultiField(warehouseIds, [
+      'sourceWarehouseId',
+      'destinationWarehouseId',
+    ]);
 
     return this.prisma.loan.findMany({
       where: {
-        status: { in: ['PENDING', 'SENT', 'RECEIVED', 'RETURN_PENDING', 'OVERDUE'] as LoanStatus[] },
+        status: {
+          in: [
+            'PENDING',
+            'SENT',
+            'RECEIVED',
+            'RETURN_PENDING',
+            'OVERDUE',
+          ] as LoanStatus[],
+        },
         ...wFilter,
       },
       orderBy: { loanDate: 'desc' },
@@ -567,16 +752,25 @@ export class LoansService {
     return loan;
   }
 
-  async findByItem(inventoryItemId: string, userWarehouseIds?: string[] | null) {
-    const wFilter = warehouseFilterMultiField(userWarehouseIds, ['sourceWarehouseId', 'destinationWarehouseId']);
+  async findByItem(
+    inventoryItemId: string,
+    userWarehouseIds?: string[] | null,
+  ) {
+    const wFilter = warehouseFilterMultiField(userWarehouseIds, [
+      'sourceWarehouseId',
+      'destinationWarehouseId',
+    ]);
     return this.prisma.loan.findMany({
-      where: { inventoryItemId, ...wFilter },
+      where: { items: { some: { inventoryItemId } }, ...wFilter },
       orderBy: { loanDate: 'desc' },
       include: this.loanIncludeLight,
     });
   }
 
-  async findByWarehouse(warehouseId: string, userWarehouseIds?: string[] | null) {
+  async findByWarehouse(
+    warehouseId: string,
+    userWarehouseIds?: string[] | null,
+  ) {
     if (userWarehouseIds != null && !userWarehouseIds.includes(warehouseId)) {
       throw new ForbiddenException('You do not have access to this warehouse');
     }
@@ -592,7 +786,11 @@ export class LoansService {
     });
   }
 
-  async update(id: string, updateLoanDto: UpdateLoanDto, userWarehouseIds?: string[] | null) {
+  async update(
+    id: string,
+    updateLoanDto: UpdateLoanDto,
+    userWarehouseIds?: string[] | null,
+  ) {
     const loan = await this.findOne(id);
     if (userWarehouseIds != null) {
       const hasAccess =
@@ -605,6 +803,7 @@ export class LoansService {
     try {
       // Explicitly omit status to prevent state machine bypass via the generic update endpoint
       const { status: _omitted, ...safeFields } = updateLoanDto;
+      void _omitted;
       return await this.prisma.loan.update({
         where: { id },
         data: {
@@ -616,7 +815,10 @@ export class LoansService {
         include: this.loanInclude,
       });
     } catch (error: unknown) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2025'
+      ) {
         throw new NotFoundException('Loan not found');
       }
       throw error;
@@ -626,7 +828,11 @@ export class LoansService {
   /**
    * Legacy return method (without QR) - kept for backwards compatibility
    */
-  async returnLoan(id: string, returnLoanDto?: ReturnLoanDto, userWarehouseIds?: string[] | null) {
+  async returnLoan(
+    id: string,
+    returnLoanDto?: ReturnLoanDto,
+    userWarehouseIds?: string[] | null,
+  ) {
     const loan = await this.findOne(id);
     if (userWarehouseIds != null) {
       const hasAccess =
@@ -661,7 +867,7 @@ export class LoansService {
     });
   }
 
-  async cancel(id: string, userWarehouseIds?: string[] | null) {
+  async cancel(id: string, userId: string, userWarehouseIds?: string[] | null) {
     const loan = await this.findOne(id);
     if (userWarehouseIds != null) {
       const hasAccess =
@@ -672,18 +878,41 @@ export class LoansService {
       }
     }
 
+    let previousStatus: string = 'unknown';
+
     // Wrap status check and update in a single transaction to prevent TOCTOU races
-    return this.prisma.$transaction(async (tx) => {
+    const updated = await this.prisma.$transaction(async (tx) => {
       const current = await tx.loan.findUnique({ where: { id } });
-      if (!current || current.status === 'RETURNED' || current.status === 'CANCELLED') {
-        throw new BadRequestException(`Cannot cancel loan in ${current?.status ?? 'unknown'} status`);
+      if (
+        !current ||
+        current.status === 'RETURNED' ||
+        current.status === 'CANCELLED'
+      ) {
+        throw new BadRequestException(
+          `Cannot cancel loan in ${current?.status ?? 'unknown'} status`,
+        );
       }
+      previousStatus = current.status;
       return tx.loan.update({
         where: { id },
         data: { status: 'CANCELLED' },
         include: this.loanInclude,
       });
     });
+
+    this.auditService.logSafe({
+      action: 'UPDATE',
+      entity: 'Loan',
+      entityId: id,
+      userId,
+      changes: {
+        before: { status: previousStatus },
+        after: { status: 'CANCELLED' },
+        fields: ['status'],
+      },
+    });
+
+    return updated;
   }
 
   async remove(id: string) {
@@ -692,7 +921,10 @@ export class LoansService {
         where: { id },
       });
     } catch (error: unknown) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2025'
+      ) {
         throw new NotFoundException('Loan not found');
       }
       throw error;
@@ -702,27 +934,39 @@ export class LoansService {
   async getStats(warehouseIds?: string[] | null) {
     const now = new Date();
     const sevenDaysFromNow = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
-    const wFilter = warehouseFilterMultiField(warehouseIds, ['sourceWarehouseId', 'destinationWarehouseId']);
+    const wFilter = warehouseFilterMultiField(warehouseIds, [
+      'sourceWarehouseId',
+      'destinationWarehouseId',
+    ]);
 
-    const [totalPending, totalSent, totalReceived, totalReturnPending, totalReturned, totalOverdue, dueSoon] =
-      await Promise.all([
-        this.prisma.loan.count({ where: { status: 'PENDING', ...wFilter } }),
-        this.prisma.loan.count({ where: { status: 'SENT', ...wFilter } }),
-        this.prisma.loan.count({ where: { status: 'RECEIVED', ...wFilter } }),
-        this.prisma.loan.count({ where: { status: 'RETURN_PENDING', ...wFilter } }),
-        this.prisma.loan.count({ where: { status: 'RETURNED', ...wFilter } }),
-        this.prisma.loan.count({ where: { status: 'OVERDUE', ...wFilter } }),
-        this.prisma.loan.count({
-          where: {
-            status: { in: ['SENT', 'RECEIVED'] },
-            dueDate: {
-              lte: sevenDaysFromNow,
-              gt: now,
-            },
-            ...wFilter,
+    const [
+      totalPending,
+      totalSent,
+      totalReceived,
+      totalReturnPending,
+      totalReturned,
+      totalOverdue,
+      dueSoon,
+    ] = await Promise.all([
+      this.prisma.loan.count({ where: { status: 'PENDING', ...wFilter } }),
+      this.prisma.loan.count({ where: { status: 'SENT', ...wFilter } }),
+      this.prisma.loan.count({ where: { status: 'RECEIVED', ...wFilter } }),
+      this.prisma.loan.count({
+        where: { status: 'RETURN_PENDING', ...wFilter },
+      }),
+      this.prisma.loan.count({ where: { status: 'RETURNED', ...wFilter } }),
+      this.prisma.loan.count({ where: { status: 'OVERDUE', ...wFilter } }),
+      this.prisma.loan.count({
+        where: {
+          status: { in: ['SENT', 'RECEIVED'] },
+          dueDate: {
+            lte: sevenDaysFromNow,
+            gt: now,
           },
-        }),
-      ]);
+          ...wFilter,
+        },
+      }),
+    ]);
 
     return {
       totalPending,
@@ -733,15 +977,18 @@ export class LoansService {
       totalOverdue,
       dueSoon,
       // Legacy fields for backwards compatibility
-      totalActive: totalPending + totalSent + totalReceived + totalReturnPending,
+      totalActive:
+        totalPending + totalSent + totalReceived + totalReturnPending,
     };
   }
 
   async isItemOnLoan(inventoryItemId: string): Promise<boolean> {
     const activeLoan = await this.prisma.loan.findFirst({
       where: {
-        inventoryItemId,
-        status: { in: ['PENDING', 'SENT', 'RECEIVED', 'RETURN_PENDING', 'OVERDUE'] },
+        items: { some: { inventoryItemId } },
+        status: {
+          in: ['PENDING', 'SENT', 'RECEIVED', 'RETURN_PENDING', 'OVERDUE'],
+        },
       },
     });
     return !!activeLoan;
@@ -750,7 +997,10 @@ export class LoansService {
   // Check and update overdue loans - called on demand
   async checkOverdueLoans(userWarehouseIds?: string[] | null) {
     const now = new Date();
-    const wFilter = warehouseFilterMultiField(userWarehouseIds, ['sourceWarehouseId', 'destinationWarehouseId']);
+    const wFilter = warehouseFilterMultiField(userWarehouseIds, [
+      'sourceWarehouseId',
+      'destinationWarehouseId',
+    ]);
 
     await this.prisma.loan.updateMany({
       where: {

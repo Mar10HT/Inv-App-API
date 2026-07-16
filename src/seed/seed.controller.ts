@@ -1,4 +1,9 @@
-import { Controller, Post, ForbiddenException, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  ForbiddenException,
+  UseGuards,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { PermissionsSeedService } from './permissions-seed.service';
 import { JwtAuthGuard, PermissionsGuard } from '../auth/guards';
@@ -51,7 +56,7 @@ export class SeedController {
     } catch (error) {
       return {
         success: false,
-        error: error.message,
+        error: error instanceof Error ? error.message : String(error),
       };
     }
   }
@@ -69,7 +74,10 @@ export class SeedController {
       const result = await this.permissionsSeed.run();
       return { success: true, ...result };
     } catch (error) {
-      return { success: false, error: error.message };
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+      };
     }
   }
 }

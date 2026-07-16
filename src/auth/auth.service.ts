@@ -18,6 +18,7 @@ import * as bcrypt from 'bcryptjs';
 import { randomBytes } from 'crypto';
 import { UserRole } from '@prisma/client';
 import { WarehouseAccessService } from '../common/warehouse-access/warehouse-access.service';
+import { AuditService } from '../audit/audit.service';
 
 @Injectable()
 export class AuthService {
@@ -36,6 +37,7 @@ export class AuthService {
     private prisma: PrismaService,
     private emailService: EmailService,
     private warehouseAccessService: WarehouseAccessService,
+    private auditService: AuditService,
   ) {}
 
   // ============================================
@@ -99,7 +101,10 @@ export class AuthService {
   // Refresh Token Methods
   // ============================================
 
-  async createRefreshToken(userId: string, rememberMe = false): Promise<string> {
+  async createRefreshToken(
+    userId: string,
+    rememberMe = false,
+  ): Promise<string> {
     const token = randomBytes(64).toString('hex');
     const expiryDays = rememberMe
       ? this.REFRESH_TOKEN_EXPIRY_REMEMBER_DAYS
@@ -168,7 +173,11 @@ export class AuthService {
     };
     const accessToken = this.jwtService.sign(payload);
 
-    const warehouseIds = await this.warehouseAccessService.getAccessibleWarehouseIds(storedToken.user.id, storedToken.user.role) ?? [];
+    const warehouseIds =
+      (await this.warehouseAccessService.getAccessibleWarehouseIds(
+        storedToken.user.id,
+        storedToken.user.role,
+      )) ?? [];
 
     return {
       access_token: accessToken,
@@ -184,11 +193,22 @@ export class AuthService {
     };
   }
 
-  async revokeRefreshToken(token: string): Promise<void> {
-    await this.prisma.refreshToken.updateMany({
+  /**
+   * Revoke a refresh token. Returns the userId of the token's prior owner
+   * (or null if the token didn't exist) so callers can audit the LOGOUT
+   * attribution in one round-trip instead of fetching beforehand.
+   */
+  async revokeRefreshToken(token: string): Promise<{ userId: string } | null> {
+    const stored = await this.prisma.refreshToken.findUnique({
+      where: { token },
+      select: { userId: true },
+    });
+    if (!stored) return null;
+    await this.prisma.refreshToken.update({
       where: { token },
       data: { revoked: true },
     });
+    return { userId: stored.userId };
   }
 
   async revokeAllUserRefreshTokens(userId: string): Promise<void> {
@@ -241,7 +261,10 @@ export class AuthService {
     if (user) {
       this.emailService
         .sendPasswordResetEmail(user.email, token, user.name || undefined)
-        .catch((err) => this.logger.error('Failed to send password reset email', err?.message));
+        .catch((err: unknown) => {
+          const message = err instanceof Error ? err.message : String(err);
+          this.logger.error('Failed to send password reset email', message);
+        });
     }
 
     return token;
@@ -322,13 +345,24 @@ export class AuthService {
       });
     });
 
+    this.auditService.logSafe({
+      action: 'PASSWORD_CHANGE',
+      entity: 'User',
+      entityId: resetToken.userId,
+      userId: resetToken.userId,
+      changes: { after: { email: resetToken.user.email, source: 'reset' } },
+    });
+
     // Send confirmation email
     this.emailService
       .sendPasswordChangedEmail(
         resetToken.user.email,
         resetToken.user.name || undefined,
       )
-      .catch((err) => this.logger.error('Failed to send password changed email', err?.message));
+      .catch((err: unknown) => {
+        const message = err instanceof Error ? err.message : String(err);
+        this.logger.error('Failed to send password changed email', message);
+      });
   }
 
   // ============================================
@@ -359,6 +393,14 @@ export class AuthService {
     // Record successful login
     await this.recordLoginAttempt(loginDto.email, ip, true);
 
+    this.auditService.logSafe({
+      action: 'LOGIN',
+      entity: 'User',
+      entityId: user.id,
+      userId: user.id,
+      changes: { after: { email: user.email, ip } },
+    });
+
     const payload = { sub: user.id, email: user.email, role: user.role };
     const accessToken = this.jwtService.sign(payload);
 
@@ -368,7 +410,11 @@ export class AuthService {
       loginDto.rememberMe,
     );
 
-    const warehouseIds = await this.warehouseAccessService.getAccessibleWarehouseIds(user.id, user.role) ?? [];
+    const warehouseIds =
+      (await this.warehouseAccessService.getAccessibleWarehouseIds(
+        user.id,
+        user.role,
+      )) ?? [];
 
     return {
       access_token: accessToken,
@@ -379,7 +425,13 @@ export class AuthService {
         name: user.name,
         role: user.role,
         warehouseIds,
-        permissionsVersion: user.permissionsVersion,
+        // `findByEmail`'s Prisma select doesn't project `permissionsVersion` (unlike
+        // `refreshAccessToken`'s `include: { user: true }`), so the field isn't part
+        // of its static return type. Narrow the cast here instead of widening the
+        // select, to leave the query itself untouched.
+        permissionsVersion: (
+          user as typeof user & { permissionsVersion?: number }
+        ).permissionsVersion,
       },
     };
   }
@@ -481,10 +533,25 @@ export class AuthService {
     // Revoke all refresh tokens for security
     await this.revokeAllUserRefreshTokens(userId);
 
+    this.auditService.logSafe({
+      action: 'PASSWORD_CHANGE',
+      entity: 'User',
+      entityId: userId,
+      userId,
+      changes: { after: { email: user.email, source: 'self' } },
+    });
+
     // Send confirmation email
+    // `findOneWithPassword`'s Prisma select only projects id/email/password (the
+    // minimum needed to verify credentials), so `name` isn't part of its static
+    // return type. Narrow the cast here instead of widening the select.
+    const userName = (user as typeof user & { name?: string | null }).name;
     this.emailService
-      .sendPasswordChangedEmail(user.email, user.name || undefined)
-      .catch((err) => this.logger.error('Failed to send password changed email', err?.message));
+      .sendPasswordChangedEmail(user.email, userName || undefined)
+      .catch((err: unknown) => {
+        const message = err instanceof Error ? err.message : String(err);
+        this.logger.error('Failed to send password changed email', message);
+      });
 
     return { message: 'Password changed successfully' };
   }

@@ -1,47 +1,151 @@
-import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ConflictException,
+} from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
-import { PaginationDto, PaginatedResult, parsePagination, buildPaginationMeta } from '../dto';
+import { AuditService } from '../../audit/audit.service';
+import {
+  PaginationDto,
+  PaginatedResult,
+  parsePagination,
+  buildPaginationMeta,
+} from '../dto';
 
 export interface BaseRepositoryOptions {
   modelName: string;
   defaultOrderBy?: Record<string, 'asc' | 'desc'>;
   findAllInclude?: Record<string, unknown>;
   findOneInclude?: Record<string, unknown>;
+  /**
+   * Entity name written to the audit log. Defaults to PascalCase of
+   * `modelName` (e.g. 'category' -> 'Category'). Override when the audit
+   * label should differ from the Prisma model accessor.
+   */
+  auditEntityName?: string;
+}
+
+/**
+ * Minimal shape of a Prisma model delegate (e.g. `prisma.category`,
+ * `prisma.supplier`) that BaseRepository's CRUD methods rely on.
+ *
+ * Prisma's generated client types (`prisma.<model>`) can't be referenced
+ * generically by the string `modelName` at runtime, so this interface
+ * stands in for "whichever delegate `options.modelName` resolves to". Any
+ * real Prisma delegate structurally satisfies it, which is what lets
+ * `this.model` be fully typed instead of `any` without depending on a
+ * specific generated model type.
+ */
+interface PrismaModelDelegate<
+  TEntity extends { id: string },
+  TCreate,
+  TUpdate,
+> {
+  create(args: { data: TCreate }): Promise<TEntity>;
+  findMany(args: {
+    skip: number;
+    take: number;
+    orderBy: Record<string, string>;
+    include?: Record<string, unknown>;
+  }): Promise<TEntity[]>;
+  count(args?: { where?: Record<string, unknown> }): Promise<number>;
+  findUnique(args: {
+    where: { id: string };
+    include?: Record<string, unknown>;
+  }): Promise<TEntity | null>;
+  update(args: { where: { id: string }; data: TUpdate }): Promise<TEntity>;
+  delete(args: { where: { id: string } }): Promise<TEntity>;
 }
 
 @Injectable()
 export abstract class BaseRepository<
   TCreate = any,
   TUpdate = any,
-  TEntity = any,
+  TEntity extends { id: string } = any,
 > {
   protected abstract readonly options: BaseRepositoryOptions;
 
-  constructor(protected readonly prisma: PrismaService) {}
+  constructor(
+    protected readonly prisma: PrismaService,
+    protected readonly auditService: AuditService,
+  ) {}
 
-  protected get model(): any {
-    return (this.prisma as any)[this.options.modelName];
+  protected get model(): PrismaModelDelegate<TEntity, TCreate, TUpdate> {
+    const client = this.prisma as unknown as Record<
+      string,
+      PrismaModelDelegate<TEntity, TCreate, TUpdate>
+    >;
+    return client[this.options.modelName];
   }
 
-  async create(createDto: TCreate): Promise<TEntity> {
+  protected get auditEntity(): string {
+    if (this.options.auditEntityName) return this.options.auditEntityName;
+    const name = this.options.modelName;
+    return name.charAt(0).toUpperCase() + name.slice(1);
+  }
+
+  /**
+   * Fields that must never appear in an audit `changes` snapshot regardless
+   * of the entity. Stripped by `summarizeForAudit` before write.
+   * - Bookkeeping (id, *At) — noise, not interesting in a diff.
+   * - Credential-equivalent (password, *token*, *secret*, *apiKey*, *hash*)
+   *   — leaking these into the audit log defeats the point of storing
+   *   them hashed/encrypted in the first place.
+   */
+  private static readonly AUDIT_FIELD_DENYLIST =
+    /^(id|createdAt|updatedAt|deletedAt|password|.*token.*|.*secret.*|.*apiKey.*|.*hash.*)$/i;
+
+  /**
+   * Override to control which fields land in the audit `changes` snapshot.
+   * Default strips bookkeeping fields and anything matching
+   * `AUDIT_FIELD_DENYLIST`. Subclasses that need to keep a sensitive-named
+   * field can override and selectively re-include it.
+   */
+  protected summarizeForAudit(entity: object | null): Record<string, unknown> {
+    if (!entity || typeof entity !== 'object') return {};
+    const out: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(entity)) {
+      if (BaseRepository.AUDIT_FIELD_DENYLIST.test(key)) continue;
+      out[key] = value;
+    }
+    return out;
+  }
+
+  async create(createDto: TCreate, userId?: string): Promise<TEntity> {
+    let entity: TEntity;
     try {
-      return await this.model.create({
+      entity = await this.model.create({
         data: createDto,
       });
     } catch (error: unknown) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      ) {
         throw new ConflictException(
           `${this.options.modelName} with this value already exists`,
         );
       }
       throw error;
     }
+
+    this.auditService.logSafe({
+      action: 'CREATE',
+      entity: this.auditEntity,
+      entityId: entity.id,
+      userId,
+      changes: { after: this.summarizeForAudit(entity) },
+    });
+
+    return entity;
   }
 
   async findAll(pagination?: PaginationDto): Promise<PaginatedResult<TEntity>> {
     const { page, limit, skip } = parsePagination(pagination);
-    const orderBy = this.options.defaultOrderBy || { createdAt: 'desc' as const };
+    const orderBy = this.options.defaultOrderBy || {
+      createdAt: 'desc' as const,
+    };
 
     const findManyArgs: {
       skip: number;
@@ -63,7 +167,10 @@ export abstract class BaseRepository<
   }
 
   async findOne(id: string): Promise<TEntity> {
-    const findArgs: { where: { id: string }; include?: Record<string, unknown> } = { where: { id } };
+    const findArgs: {
+      where: { id: string };
+      include?: Record<string, unknown>;
+    } = { where: { id } };
 
     if (this.options.findOneInclude) {
       findArgs.include = this.options.findOneInclude;
@@ -80,35 +187,79 @@ export abstract class BaseRepository<
     return entity;
   }
 
-  async update(id: string, updateDto: TUpdate): Promise<TEntity> {
+  async update(
+    id: string,
+    updateDto: TUpdate,
+    userId?: string,
+  ): Promise<TEntity> {
+    // Load the prior state for the audit diff. If it doesn't exist the
+    // following update would 404 anyway, so this isn't an extra failure path.
+    const before = await this.model.findUnique({ where: { id } });
+
+    let entity: TEntity;
     try {
-      return await this.model.update({
+      entity = await this.model.update({
         where: { id },
         data: updateDto,
       });
     } catch (error: unknown) {
       if (error instanceof Prisma.PrismaClientKnownRequestError) {
-        if (error.code === 'P2002') throw new ConflictException(`${this.options.modelName} with this value already exists`);
-        if (error.code === 'P2025') throw new NotFoundException(`${this.options.modelName} with ID ${id} not found`);
+        if (error.code === 'P2002')
+          throw new ConflictException(
+            `${this.options.modelName} with this value already exists`,
+          );
+        if (error.code === 'P2025')
+          throw new NotFoundException(
+            `${this.options.modelName} with ID ${id} not found`,
+          );
       }
       throw error;
     }
+
+    this.auditService.logSafe({
+      action: 'UPDATE',
+      entity: this.auditEntity,
+      entityId: id,
+      userId,
+      changes: {
+        before: this.summarizeForAudit(before),
+        after: this.summarizeForAudit(entity),
+        fields: Object.keys(updateDto as Record<string, unknown>),
+      },
+    });
+
+    return entity;
   }
 
-  async remove(id: string): Promise<void> {
+  async remove(id: string, userId?: string): Promise<void> {
+    const before = await this.model.findUnique({ where: { id } });
+
     try {
       await this.model.delete({
         where: { id },
       });
     } catch (error: unknown) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
-        throw new NotFoundException(`${this.options.modelName} with ID ${id} not found`);
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2025'
+      ) {
+        throw new NotFoundException(
+          `${this.options.modelName} with ID ${id} not found`,
+        );
       }
       throw error;
     }
+
+    this.auditService.logSafe({
+      action: 'DELETE',
+      entity: this.auditEntity,
+      entityId: id,
+      userId,
+      changes: { before: this.summarizeForAudit(before) },
+    });
   }
 
-  async count(where?: Record<string, unknown>): Promise<number> {
+  count(where?: Record<string, unknown>): Promise<number> {
     return this.model.count({ where });
   }
 }

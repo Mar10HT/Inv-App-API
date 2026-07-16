@@ -1,6 +1,6 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
-import { ExtractJwt, Strategy } from 'passport-jwt';
+import { Strategy } from 'passport-jwt';
 import { ConfigService } from '@nestjs/config';
 import { Request } from 'express';
 import { UsersService } from '../../users/users.service';
@@ -14,8 +14,9 @@ export interface JwtPayload {
 // Custom extractor that tries cookie first, then Bearer token
 const extractJwtFromCookieOrBearer = (req: Request): string | null => {
   // Try to extract from HttpOnly cookie first
-  if (req.cookies && req.cookies.access_token) {
-    return req.cookies.access_token;
+  const cookies = req.cookies as Record<string, string> | undefined;
+  if (cookies?.access_token) {
+    return cookies.access_token;
   }
   // Fall back to Bearer token in Authorization header
   const authHeader = req.headers.authorization;
@@ -33,7 +34,9 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   ) {
     const secret = configService.get<string>('JWT_SECRET');
     if (!secret) {
-      throw new Error('JWT_SECRET environment variable is not set. Please configure it in your .env file.');
+      throw new Error(
+        'JWT_SECRET environment variable is not set. Please configure it in your .env file.',
+      );
     }
     super({
       jwtFromRequest: extractJwtFromCookieOrBearer,

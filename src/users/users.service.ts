@@ -12,7 +12,13 @@ import { AuditService } from '../audit/audit.service';
 import { AuthenticatedUser } from '../auth/interfaces/auth-user.interface';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
-import { PaginationDto, PaginatedResult, parsePagination, buildPaginationMeta, parseSortOrder } from '../common/dto';
+import {
+  PaginationDto,
+  PaginatedResult,
+  parsePagination,
+  buildPaginationMeta,
+  parseSortOrder,
+} from '../common/dto';
 import * as bcrypt from 'bcryptjs';
 
 @Injectable()
@@ -22,6 +28,21 @@ export class UsersService {
     private emailService: EmailService,
     private auditService: AuditService,
   ) {}
+
+  /**
+   * Snapshot of a user safe to embed in audit changes. Strips password,
+   * roleId, and any other field we don't want to materialize in the audit
+   * log. Used by create/update/remove instrumentation below.
+   */
+  private auditSnapshot(user: Record<string, unknown> | null) {
+    if (!user) return undefined;
+    return {
+      email: user['email'],
+      name: user['name'],
+      role: user['role'],
+      roleId: user['roleId'],
+    };
+  }
 
   private readonly userSelect = {
     id: true,
@@ -34,16 +55,29 @@ export class UsersService {
     // Exclude password
   };
 
-  async create(createUserDto: CreateUserDto) {
+  async create(createUserDto: CreateUserDto, actorUserId?: string) {
     try {
+      // Check for existing active user with same email (soft-delete safe)
+      const existingActive = await this.prisma.user.findFirst({
+        where: { email: createUserDto.email, deletedAt: null },
+        select: { id: true },
+      });
+      if (existingActive) {
+        throw new ConflictException('User with this email already exists');
+      }
+
       // Hash password before storing
       const hashedPassword = await bcrypt.hash(createUserDto.password, 10);
 
       const { roleId, ...rest } = createUserDto;
 
       if (roleId) {
-        const roleExists = await this.prisma.role.findUnique({ where: { id: roleId }, select: { id: true } });
-        if (!roleExists) throw new BadRequestException(`Role '${roleId}' not found`);
+        const roleExists = await this.prisma.role.findUnique({
+          where: { id: roleId },
+          select: { id: true },
+        });
+        if (!roleExists)
+          throw new BadRequestException(`Role '${roleId}' not found`);
       }
 
       const user = await this.prisma.user.create({
@@ -56,13 +90,27 @@ export class UsersService {
       });
 
       // Send welcome email (fire-and-forget)
-      this.emailService.sendWelcomeEmail(user.email, user.name || undefined).catch(() => {});
+      this.emailService
+        .sendWelcomeEmail(user.email, user.name || undefined)
+        .catch(() => {});
+
+      this.auditService.logSafe({
+        action: 'CREATE',
+        entity: 'User',
+        entityId: user.id,
+        userId: actorUserId,
+        changes: { after: this.auditSnapshot(user) },
+      });
 
       // Remove password from response
-      const { password, ...result } = user;
+      const { password: _password, ...result } = user;
+      void _password;
       return result;
     } catch (error: unknown) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      ) {
         throw new ConflictException('User with this email already exists');
       }
       throw error;
@@ -108,9 +156,11 @@ export class UsersService {
     return user;
   }
 
-  async update(id: string, updateUserDto: UpdateUserDto) {
+  async update(id: string, updateUserDto: UpdateUserDto, actorUserId?: string) {
     if (updateUserDto.role === 'SYSTEM_ADMIN') {
-      throw new BadRequestException('Cannot assign SYSTEM_ADMIN role through this endpoint');
+      throw new BadRequestException(
+        'Cannot assign SYSTEM_ADMIN role through this endpoint',
+      );
     }
 
     if (updateUserDto.roleId) {
@@ -118,11 +168,21 @@ export class UsersService {
         where: { id: updateUserDto.roleId },
         select: { id: true, name: true },
       });
-      if (!targetRole) throw new BadRequestException(`Role '${updateUserDto.roleId}' not found`);
+      if (!targetRole)
+        throw new BadRequestException(
+          `Role '${updateUserDto.roleId}' not found`,
+        );
       if (targetRole.name === 'SYSTEM_ADMIN') {
-        throw new BadRequestException('Cannot assign SYSTEM_ADMIN role through this endpoint');
+        throw new BadRequestException(
+          'Cannot assign SYSTEM_ADMIN role through this endpoint',
+        );
       }
     }
+
+    const before = await this.prisma.user.findUnique({
+      where: { id },
+      select: { email: true, name: true, role: true, roleId: true },
+    });
 
     try {
       const user = await this.prisma.user.update({
@@ -133,23 +193,43 @@ export class UsersService {
           email: true,
           name: true,
           role: true,
+          roleId: true,
           createdAt: true,
           updatedAt: true,
           // Exclude password
         },
       });
 
+      this.auditService.logSafe({
+        action: 'UPDATE',
+        entity: 'User',
+        entityId: id,
+        userId: actorUserId,
+        changes: {
+          before: this.auditSnapshot(before),
+          after: this.auditSnapshot(user),
+          fields: Object.keys(updateUserDto),
+        },
+      });
+
       return user;
     } catch (error: unknown) {
       if (error instanceof Prisma.PrismaClientKnownRequestError) {
-        if (error.code === 'P2002') throw new ConflictException('User with this email already exists');
-        if (error.code === 'P2025') throw new NotFoundException(`User with ID ${id} not found`);
+        if (error.code === 'P2002')
+          throw new ConflictException('User with this email already exists');
+        if (error.code === 'P2025')
+          throw new NotFoundException(`User with ID ${id} not found`);
       }
       throw error;
     }
   }
 
-  async remove(id: string) {
+  async remove(id: string, actorUserId?: string) {
+    const before = await this.prisma.user.findUnique({
+      where: { id },
+      select: { email: true, name: true, role: true, roleId: true },
+    });
+
     try {
       // Soft delete: set deletedAt timestamp instead of hard delete
       await this.prisma.user.update({
@@ -157,14 +237,25 @@ export class UsersService {
         data: { deletedAt: new Date() },
       });
     } catch (error: unknown) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2025'
+      ) {
         throw new NotFoundException(`User with ID ${id} not found`);
       }
       throw error;
     }
+
+    this.auditService.logSafe({
+      action: 'DELETE',
+      entity: 'User',
+      entityId: id,
+      userId: actorUserId,
+      changes: { before: this.auditSnapshot(before) },
+    });
   }
 
-  async restore(id: string) {
+  async restore(id: string, actorUserId?: string) {
     const user = await this.prisma.user.findUnique({
       where: { id },
     });
@@ -177,7 +268,7 @@ export class UsersService {
       throw new ConflictException('User is not deleted');
     }
 
-    return this.prisma.user.update({
+    const restored = await this.prisma.user.update({
       where: { id },
       data: { deletedAt: null },
       select: {
@@ -185,10 +276,21 @@ export class UsersService {
         email: true,
         name: true,
         role: true,
+        roleId: true,
         createdAt: true,
         updatedAt: true,
       },
     });
+
+    this.auditService.logSafe({
+      action: 'RESTORE',
+      entity: 'User',
+      entityId: id,
+      userId: actorUserId,
+      changes: { after: this.auditSnapshot(restored) },
+    });
+
+    return restored;
   }
 
   // Notification preferences
@@ -208,7 +310,10 @@ export class UsersService {
     return user;
   }
 
-  async updatePreferences(userId: string, prefs: { emailNotifications?: boolean; lowStockAlerts?: boolean }) {
+  async updatePreferences(
+    userId: string,
+    prefs: { emailNotifications?: boolean; lowStockAlerts?: boolean },
+  ) {
     try {
       return await this.prisma.user.update({
         where: { id: userId },
@@ -219,7 +324,10 @@ export class UsersService {
         },
       });
     } catch (error: unknown) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2025'
+      ) {
         throw new NotFoundException(`User with ID ${userId} not found`);
       }
       throw error;
@@ -230,8 +338,8 @@ export class UsersService {
   // INTENTIONALLY includes password so AuthService can run bcrypt.compare().
   // This is the only method that returns the hash — all other read paths use userSelect.
   async findByEmail(email: string) {
-    return this.prisma.user.findUnique({
-      where: { email },
+    return this.prisma.user.findFirst({
+      where: { email, deletedAt: null },
       select: {
         id: true,
         email: true,
@@ -285,7 +393,13 @@ export class UsersService {
   ): Promise<{ message: string }> {
     const target = await this.prisma.user.findUnique({
       where: { id: targetUserId },
-      select: { id: true, email: true, name: true, role: true, deletedAt: true },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        role: true,
+        deletedAt: true,
+      },
     });
 
     if (!target || target.deletedAt) {
@@ -370,7 +484,10 @@ export class UsersService {
         });
       });
     } catch (error: unknown) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2025'
+      ) {
         throw new NotFoundException(`User with ID ${userId} not found`);
       }
       throw error;

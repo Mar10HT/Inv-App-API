@@ -15,9 +15,17 @@ interface AuthenticatedSocket extends Socket {
   userRole?: string;
 }
 
+interface WsJwtPayload {
+  sub: string;
+  role: string;
+}
+
 @WebSocketGateway({
   cors: {
-    origin: (origin: string, callback: (err: Error | null, allow?: boolean) => void) => {
+    origin: (
+      origin: string,
+      callback: (err: Error | null, allow?: boolean) => void,
+    ) => {
       if (!origin) return callback(null, true);
       callback(null, true);
     },
@@ -52,7 +60,7 @@ export class EventsGateway
       }
 
       const secret = this.configService.get<string>('JWT_SECRET');
-      const payload = this.jwtService.verify(token, { secret });
+      const payload = this.jwtService.verify<WsJwtPayload>(token, { secret });
 
       client.userId = payload.sub;
       client.userRole = payload.role;
@@ -61,7 +69,9 @@ export class EventsGateway
       await client.join(`user:${payload.sub}`);
       await client.join(`role:${payload.role}`);
 
-      this.logger.log(`Client connected: ${client.id} (user: ${payload.sub}, role: ${payload.role})`);
+      this.logger.log(
+        `Client connected: ${client.id} (user: ${payload.sub}, role: ${payload.role})`,
+      );
     } catch {
       this.logger.warn(`Client ${client.id} disconnected: invalid token`);
       client.disconnect();
@@ -91,9 +101,12 @@ export class EventsGateway
       return authHeader.substring(7);
     }
 
-    // Try query param
-    const token = client.handshake.auth?.token;
-    if (token) {
+    // Try auth payload (socket.io client-side `auth` option). `handshake.auth`
+    // is typed as an index signature of `any` by socket.io, so narrow it
+    // explicitly before trusting it as a token string.
+    const authPayload = client.handshake.auth as Record<string, unknown>;
+    const token = authPayload.token;
+    if (typeof token === 'string' && token) {
       return token;
     }
 

@@ -13,7 +13,7 @@ This document provides an architectural overview of the Obsid API codebase. For 
 Obsid is a RESTful inventory management backend built with NestJS and Prisma. It handles:
 
 - **Multi-warehouse logistics** — transfers, loans, stock reconciliation
-- **Granular RBAC** — 46 permissions across 14 modules with in-memory caching
+- **Granular RBAC** — 55 permissions across 18 modules with in-memory caching
 - **Audit trail** — comprehensive activity logging
 - **Reporting** — Excel/PDF export with analytics
 - **Real-time alerts** — low stock, overdue loans, scheduled reports
@@ -31,6 +31,8 @@ src/
 ├── loans/                 # Lending workflow, QR + manual confirm
 ├── transfer-requests/     # Inter-warehouse transfers, approval flow
 ├── transactions/          # Stock movements (entry, exit, transfer)
+├── outflows/              # Permanent write-offs (damaged, lost, expired, etc.)
+├── sales/                 # Sales recording with stock decrement + PDF receipt
 ├── stock-take/            # Reconciliation, variance reporting
 ├── categories/            # Inventory categorization
 ├── suppliers/             # Supplier management
@@ -66,6 +68,8 @@ prisma/
 | **[Loans](./loans-transfers.md)** | Lending workflow, QR codes, manual confirmation | `loans.service`, `loans.controller` | `POST /loans`, manual confirm endpoints |
 | **[Transfers](./loans-transfers.md)** | Inter-warehouse transfers, approval flow, inventory sync | `transfer-requests.service`, controller | `POST /transfer-requests`, approval endpoints |
 | **[Transactions](./transactions.md)** | Stock movements with audit trail | `transactions.service`, controller | `POST /transactions` |
+| **Outflows** | Permanent write-offs (damaged/lost/expired/etc.) that decrement stock, with cancel + PDF receipt | `outflows.service`, `outflows.controller` | `POST /outflows`, `PATCH /outflows/:id/cancel` |
+| **Sales** | Sales recording that decrements stock, customer tiers, single-currency totals, cancel restores stock, PDF receipt | `sales.service`, `sales.controller` | `POST /sales`, `PATCH /sales/:id/cancel` |
 | **[Warehouses](./warehouses.md)** | Warehouse CRUD, manager assignment, access control | `warehouses.service`, controller | `GET/POST /warehouses` |
 | **[Reports](./reporting.md)** | Excel/PDF export, inventory analytics | `reports.service`, controller | `GET /reports/*/excel`, `/*/pdf` |
 | **[Alerts](./alerts-scheduled.md)** | Low stock, overdue loans, cron scheduling | `alerts.service`, `scheduled-reports.service` | Cron jobs + manual trigger |
@@ -186,7 +190,7 @@ PATCH /loans/:id/manual-confirm-return (No QR required)
 
 ### Authorization
 
-- **Granular RBAC:** 46 permissions (e.g., `loans:create`, `transfers:manage`, `inventory:delete`)
+- **Granular RBAC:** 55 permissions (e.g., `loans:create`, `transfers:manage`, `inventory:delete`)
 - **PermissionsGuard:** Validates `@Permissions()` decorator on each route
 - **Caching:** 60-second in-memory Map-based cache (no external dependency)
 - **Warehouse access control:** Users restricted to assigned warehouses; null = system-wide access

@@ -2,7 +2,10 @@ import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { FilterInventoryDto } from '../inventory/dto/filter-inventory.dto';
-import { warehouseFilter, warehouseFilterMultiField } from '../common/warehouse-access/warehouse-filter.util';
+import {
+  warehouseFilter,
+  warehouseFilterMultiField,
+} from '../common/warehouse-access/warehouse-filter.util';
 import type ExcelJSType from 'exceljs';
 
 type Locale = 'en' | 'es';
@@ -10,115 +13,142 @@ type Locale = 'en' | 'es';
 // Translation map for Excel/PDF headers
 const translations: Record<string, Record<Locale, string>> = {
   // Inventory headers
-  'sku':              { en: 'SKU',              es: 'SKU'               },
-  'name':             { en: 'Name',             es: 'Nombre'            },
-  'description':      { en: 'Description',      es: 'Descripcion'       },
-  'category':         { en: 'Category',         es: 'Categoria'         },
-  'quantity':         { en: 'Quantity',          es: 'Cantidad'          },
-  'minQuantity':      { en: 'Min Quantity',      es: 'Cantidad Minima'   },
-  'status':           { en: 'Status',            es: 'Estado'            },
-  'price':            { en: 'Price',             es: 'Precio'            },
-  'currency':         { en: 'Currency',          es: 'Moneda'            },
-  'warehouse':        { en: 'Warehouse',         es: 'Almacen'           },
-  'supplier':         { en: 'Supplier',          es: 'Proveedor'         },
-  'itemType':         { en: 'Type',              es: 'Tipo'              },
-  'serviceTag':       { en: 'Service Tag',       es: 'Service Tag'       },
-  'serialNumber':     { en: 'Serial Number',     es: 'Numero Serie'      },
+  sku: { en: 'SKU', es: 'SKU' },
+  name: { en: 'Name', es: 'Nombre' },
+  description: { en: 'Description', es: 'Descripcion' },
+  category: { en: 'Category', es: 'Categoria' },
+  quantity: { en: 'Quantity', es: 'Cantidad' },
+  minQuantity: { en: 'Min Quantity', es: 'Cantidad Minima' },
+  status: { en: 'Status', es: 'Estado' },
+  price: { en: 'Price', es: 'Precio' },
+  currency: { en: 'Currency', es: 'Moneda' },
+  warehouse: { en: 'Warehouse', es: 'Almacen' },
+  supplier: { en: 'Supplier', es: 'Proveedor' },
+  itemType: { en: 'Type', es: 'Tipo' },
+  serviceTag: { en: 'Service Tag', es: 'Service Tag' },
+  serialNumber: { en: 'Serial Number', es: 'Numero Serie' },
   // Low stock
-  'currentQuantity':  { en: 'Current Quantity',  es: 'Cantidad Actual'   },
-  'difference':       { en: 'Difference',        es: 'Diferencia'        },
+  currentQuantity: { en: 'Current Quantity', es: 'Cantidad Actual' },
+  difference: { en: 'Difference', es: 'Diferencia' },
   // Transactions
-  'id':               { en: 'ID',                es: 'ID'                },
-  'type':             { en: 'Type',              es: 'Tipo'              },
-  'date':             { en: 'Date',              es: 'Fecha'             },
-  'sourceWarehouse':  { en: 'Source Warehouse',  es: 'Almacen Origen'    },
-  'destWarehouse':    { en: 'Destination Warehouse', es: 'Almacen Destino' },
-  'items':            { en: 'Items',             es: 'Items'             },
-  'user':             { en: 'User',              es: 'Usuario'           },
-  'notes':            { en: 'Notes',             es: 'Notas'             },
+  id: { en: 'ID', es: 'ID' },
+  type: { en: 'Type', es: 'Tipo' },
+  date: { en: 'Date', es: 'Fecha' },
+  sourceWarehouse: { en: 'Source Warehouse', es: 'Almacen Origen' },
+  destWarehouse: { en: 'Destination Warehouse', es: 'Almacen Destino' },
+  items: { en: 'Items', es: 'Items' },
+  user: { en: 'User', es: 'Usuario' },
+  notes: { en: 'Notes', es: 'Notas' },
   // Loans
-  'item':             { en: 'Item',              es: 'Item'              },
-  'source':           { en: 'Source',            es: 'Origen'            },
-  'destination':      { en: 'Destination',       es: 'Destino'           },
-  'loanDate':         { en: 'Loan Date',         es: 'Fecha Prestamo'    },
-  'dueDate':          { en: 'Due Date',          es: 'Fecha Vencimiento' },
-  'returnDate':       { en: 'Return Date',       es: 'Fecha Devolucion'  },
-  'createdBy':        { en: 'Created By',        es: 'Creado Por'        },
+  item: { en: 'Item', es: 'Item' },
+  source: { en: 'Source', es: 'Origen' },
+  destination: { en: 'Destination', es: 'Destino' },
+  loanDate: { en: 'Loan Date', es: 'Fecha Prestamo' },
+  dueDate: { en: 'Due Date', es: 'Fecha Vencimiento' },
+  returnDate: { en: 'Return Date', es: 'Fecha Devolucion' },
+  createdBy: { en: 'Created By', es: 'Creado Por' },
   // Summary
-  'totalItems':       { en: 'Total Items:',      es: 'Total de Items:'   },
-  'totalValue':       { en: 'Total Value:',      es: 'Valor Total:'      },
-  'inventoryReport':  { en: 'Inventory Report',  es: 'Reporte de Inventario' },
-  'summary':          { en: 'Summary:',          es: 'Resumen:'          },
-  'inStock':          { en: 'In Stock',          es: 'En Stock'          },
-  'lowStock':         { en: 'Low Stock',         es: 'Stock Bajo'        },
-  'outOfStock':       { en: 'Out of Stock',      es: 'Sin Stock'         },
-  'itemDetail':       { en: 'Item Detail:',      es: 'Detalle de Items:' },
-  'autoGenerated':    { en: 'Automatically generated by Obsid', es: 'Generado automaticamente por Obsid' },
+  totalItems: { en: 'Total Items:', es: 'Total de Items:' },
+  totalValue: { en: 'Total Value:', es: 'Valor Total:' },
+  inventoryReport: { en: 'Inventory Report', es: 'Reporte de Inventario' },
+  summary: { en: 'Summary:', es: 'Resumen:' },
+  inStock: { en: 'In Stock', es: 'En Stock' },
+  lowStock: { en: 'Low Stock', es: 'Stock Bajo' },
+  outOfStock: { en: 'Out of Stock', es: 'Sin Stock' },
+  itemDetail: { en: 'Item Detail:', es: 'Detalle de Items:' },
+  autoGenerated: {
+    en: 'Automatically generated by Obsid',
+    es: 'Generado automaticamente por Obsid',
+  },
   // Worksheet names
-  'wsInventory':      { en: 'Inventory',         es: 'Inventario'        },
-  'wsLowStock':       { en: 'Low Stock',         es: 'Stock Bajo'        },
-  'wsTransactions':   { en: 'Transactions',      es: 'Transacciones'     },
-  'wsLoans':          { en: 'Loans',             es: 'Prestamos'         },
-  'wsTransfers':      { en: 'Transfer Requests', es: 'Transferencias'    },
-  'wsStockTakes':     { en: 'Stock Takes',       es: 'Conteos Fisicos'   },
-  'wsDischarges':     { en: 'Discharges',        es: 'Bajas'             },
-  'wsDetail':         { en: 'Detail',            es: 'Detalle'           },
+  wsInventory: { en: 'Inventory', es: 'Inventario' },
+  wsLowStock: { en: 'Low Stock', es: 'Stock Bajo' },
+  wsTransactions: { en: 'Transactions', es: 'Transacciones' },
+  wsLoans: { en: 'Loans', es: 'Prestamos' },
+  wsTransfers: { en: 'Transfer Requests', es: 'Transferencias' },
+  wsStockTakes: { en: 'Stock Takes', es: 'Conteos Fisicos' },
+  wsDischarges: { en: 'Discharges', es: 'Bajas' },
+  wsOutflows: { en: 'Outflows', es: 'Salidas' },
+  wsDetail: { en: 'Detail', es: 'Detalle' },
+  // Outflow headers
+  reason: { en: 'Reason', es: 'Motivo' },
+  name: { en: 'Name', es: 'Nombre' },
+  totalQty: { en: 'Total Qty', es: 'Cant. Total' },
+  cancelledBy: { en: 'Cancelled By', es: 'Cancelado Por' },
+  cancelledAt: { en: 'Cancelled At', es: 'Fecha Cancelacion' },
   // Transfer headers
-  'requestedBy':      { en: 'Requested By',      es: 'Solicitado Por'    },
-  'approvedBy':       { en: 'Approved By',       es: 'Aprobado Por'      },
-  'itemCount':        { en: 'Item Count',        es: 'Cant. Items'       },
+  requestedBy: { en: 'Requested By', es: 'Solicitado Por' },
+  approvedBy: { en: 'Approved By', es: 'Aprobado Por' },
+  itemCount: { en: 'Item Count', es: 'Cant. Items' },
   // Stock take headers
-  'startedBy':        { en: 'Started By',        es: 'Iniciado Por'      },
-  'completedBy':      { en: 'Completed By',      es: 'Completado Por'    },
-  'startedAt':        { en: 'Started At',        es: 'Inicio'            },
-  'completedAt':      { en: 'Completed At',      es: 'Completado'        },
-  'expectedQty':      { en: 'Expected Qty',      es: 'Cant. Esperada'    },
-  'countedQty':       { en: 'Counted Qty',       es: 'Cant. Contada'     },
-  'variance':         { en: 'Variance',          es: 'Diferencia'        },
+  startedBy: { en: 'Started By', es: 'Iniciado Por' },
+  completedBy: { en: 'Completed By', es: 'Completado Por' },
+  startedAt: { en: 'Started At', es: 'Inicio' },
+  completedAt: { en: 'Completed At', es: 'Completado' },
+  expectedQty: { en: 'Expected Qty', es: 'Cant. Esperada' },
+  countedQty: { en: 'Counted Qty', es: 'Cant. Contada' },
+  variance: { en: 'Variance', es: 'Diferencia' },
   // Discharge headers
-  'resolvedBy':       { en: 'Resolved By',       es: 'Resuelto Por'      },
-  'requestDate':      { en: 'Request Date',      es: 'Fecha Solicitud'   },
-  'resolvedDate':     { en: 'Resolved Date',     es: 'Fecha Resolucion'  },
+  resolvedBy: { en: 'Resolved By', es: 'Resuelto Por' },
+  requestDate: { en: 'Request Date', es: 'Fecha Solicitud' },
+  resolvedDate: { en: 'Resolved Date', es: 'Fecha Resolucion' },
 };
 
 // Brand colors (ARGB format for ExcelJS = FF + hex without #)
 const COLORS = {
   // Header backgrounds per report type
-  inventory:    'FF4D7C6F', // primary teal
-  lowStock:     'FFF59E0B', // warning amber
+  inventory: 'FF4D7C6F', // primary teal
+  lowStock: 'FFF59E0B', // warning amber
   transactions: 'FF60A5FA', // blue
-  loans:        'FF6B7BB5', // indigo
+  loans: 'FF6B7BB5', // indigo
 
   // Status cell backgrounds (light) and text (dark)
-  inStock:     { bg: 'FFD1FAE5', text: 'FF065F46' },
+  inStock: { bg: 'FFD1FAE5', text: 'FF065F46' },
   lowStockRow: { bg: 'FFFEF3C7', text: 'FF92400E' },
-  outOfStock:  { bg: 'FFFEE2E2', text: 'FF991B1B' },
-  overdue:     { bg: 'FFFEE2E2', text: 'FF991B1B' },
-  active:      { bg: 'FFE0E7FF', text: 'FF3730A3' },
-  returned:    { bg: 'FFD1FAE5', text: 'FF065F46' },
+  outOfStock: { bg: 'FFFEE2E2', text: 'FF991B1B' },
+  overdue: { bg: 'FFFEE2E2', text: 'FF991B1B' },
+  active: { bg: 'FFE0E7FF', text: 'FF3730A3' },
+  returned: { bg: 'FFD1FAE5', text: 'FF065F46' },
 
-  transfers:   'FF8B5CF6', // purple
-  stockTakes:  'FF0EA5E9', // sky blue
-  discharges:  'FFEF4444', // red
+  transfers: 'FF8B5CF6', // purple
+  stockTakes: 'FF0EA5E9', // sky blue
+  discharges: 'FFEF4444', // red
+  outflows: 'FFEA580C', // orange
 
   // Alternating row tint
-  altRow:      'FFF9FAFB',
+  altRow: 'FFF9FAFB',
 
-  white:       'FFFFFFFF',
-  headerText:  'FFFFFFFF',
+  white: 'FFFFFFFF',
+  headerText: 'FFFFFFFF',
 } as const;
 
 // Status label translation
 const STATUS_LABELS: Record<string, Record<Locale, string>> = {
-  IN_STOCK:     { en: 'In Stock',     es: 'En Stock'    },
-  LOW_STOCK:    { en: 'Low Stock',    es: 'Stock Bajo'  },
-  OUT_OF_STOCK: { en: 'Out of Stock', es: 'Sin Stock'   },
-  ACTIVE:       { en: 'Active',       es: 'Activo'      },
-  RETURNED:     { en: 'Returned',     es: 'Devuelto'    },
-  OVERDUE:      { en: 'Overdue',      es: 'Vencido'     },
-  TRANSFER:     { en: 'Transfer',     es: 'Transferencia' },
-  ADJUSTMENT:   { en: 'Adjustment',   es: 'Ajuste'      },
-  DISCHARGE:    { en: 'Discharge',    es: 'Baja'        },
+  IN_STOCK: { en: 'In Stock', es: 'En Stock' },
+  LOW_STOCK: { en: 'Low Stock', es: 'Stock Bajo' },
+  OUT_OF_STOCK: { en: 'Out of Stock', es: 'Sin Stock' },
+  ACTIVE: { en: 'Active', es: 'Activo' },
+  RETURNED: { en: 'Returned', es: 'Devuelto' },
+  OVERDUE: { en: 'Overdue', es: 'Vencido' },
+  TRANSFER: { en: 'Transfer', es: 'Transferencia' },
+  ADJUSTMENT: { en: 'Adjustment', es: 'Ajuste' },
+  DISCHARGE: { en: 'Discharge', es: 'Baja' },
+};
+
+// Outflow-specific labels — keep separate from STATUS_LABELS to avoid
+// clashing with other entity statuses (e.g. loan ACTIVE).
+const OUTFLOW_STATUS_LABELS: Record<string, Record<Locale, string>> = {
+  ACTIVE: { en: 'Recorded', es: 'Registrada' },
+  CANCELLED: { en: 'Cancelled', es: 'Cancelada' },
+};
+
+const OUTFLOW_REASON_LABELS: Record<string, Record<Locale, string>> = {
+  DAMAGED: { en: 'Damaged', es: 'Dañado' },
+  LOST: { en: 'Lost', es: 'Perdido' },
+  EXPIRED: { en: 'Expired', es: 'Vencido' },
+  CONSUMED: { en: 'Consumed', es: 'Consumo' },
+  SOLD: { en: 'Sold', es: 'Venta' },
+  OTHER: { en: 'Other', es: 'Otro' },
 };
 
 @Injectable()
@@ -140,8 +170,17 @@ export class ReportsService {
   ): void {
     const headerRow = worksheet.getRow(1);
     headerRow.height = 28;
-    headerRow.font = { bold: true, color: { argb: COLORS.headerText }, size: 11, name: 'Calibri' };
-    headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: headerArgb } };
+    headerRow.font = {
+      bold: true,
+      color: { argb: COLORS.headerText },
+      size: 11,
+      name: 'Calibri',
+    };
+    headerRow.fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: headerArgb },
+    };
     headerRow.alignment = { vertical: 'middle', horizontal: 'left' };
     headerRow.border = {
       bottom: { style: 'thin', color: { argb: headerArgb } },
@@ -149,10 +188,10 @@ export class ReportsService {
   }
 
   // Apply workbook metadata
-  private async applyWorkbookMeta(
+  private applyWorkbookMeta(
     workbook: ExcelJSType.Workbook,
     title: string,
-  ): Promise<void> {
+  ): void {
     workbook.creator = 'Obsid';
     workbook.lastModifiedBy = 'Obsid';
     workbook.created = new Date();
@@ -163,20 +202,32 @@ export class ReportsService {
   }
 
   // Style a single status cell
-  private styleStatusCell(cell: ExcelJSType.Cell, status: string, locale: Locale): void {
+  private styleStatusCell(
+    cell: ExcelJSType.Cell,
+    status: string,
+    locale: Locale,
+  ): void {
     let colors = COLORS.active;
-    if (status === 'IN_STOCK' || status === 'RETURNED')    colors = COLORS.inStock;
-    else if (status === 'LOW_STOCK')                        colors = COLORS.lowStockRow;
-    else if (status === 'OUT_OF_STOCK' || status === 'OVERDUE') colors = COLORS.outOfStock;
+    if (status === 'IN_STOCK' || status === 'RETURNED') colors = COLORS.inStock;
+    else if (status === 'LOW_STOCK') colors = COLORS.lowStockRow;
+    else if (status === 'OUT_OF_STOCK' || status === 'OVERDUE')
+      colors = COLORS.outOfStock;
 
     cell.value = this.tStatus(status, locale);
-    cell.fill  = { type: 'pattern', pattern: 'solid', fgColor: { argb: colors.bg } };
-    cell.font  = { bold: true, color: { argb: colors.text }, size: 10 };
+    cell.fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: colors.bg },
+    };
+    cell.font = { bold: true, color: { argb: colors.text }, size: 10 };
     cell.alignment = { horizontal: 'center', vertical: 'middle' };
   }
 
   // Apply alternating row fill (skip header row 1)
-  private applyAltRows(worksheet: ExcelJSType.Worksheet, dataRowCount: number): void {
+  private applyAltRows(
+    worksheet: ExcelJSType.Worksheet,
+    dataRowCount: number,
+  ): void {
     for (let i = 2; i <= dataRowCount + 1; i++) {
       if (i % 2 === 0) {
         worksheet.getRow(i).fill = {
@@ -195,14 +246,14 @@ export class ReportsService {
   ): Promise<Buffer> {
     const ExcelJS = await import('exceljs');
     const workbook = new ExcelJS.Workbook();
-    await this.applyWorkbookMeta(workbook, this.t('inventoryReport', locale));
+    this.applyWorkbookMeta(workbook, this.t('inventoryReport', locale));
     const worksheet = workbook.addWorksheet(this.t('wsInventory', locale));
 
     const where: Prisma.InventoryItemWhereInput = {
       deletedAt: null,
       ...warehouseFilter(warehouseIds),
       ...(filters?.category ? { category: filters.category } : {}),
-      ...(filters?.status   ? { status: filters.status }     : {}),
+      ...(filters?.status ? { status: filters.status } : {}),
     };
     if (filters?.warehouseId) where.warehouseId = filters.warehouseId;
 
@@ -213,20 +264,24 @@ export class ReportsService {
     });
 
     worksheet.columns = [
-      { header: this.t('sku', locale),          key: 'sku',          width: 16 },
-      { header: this.t('name', locale),         key: 'name',         width: 32 },
-      { header: this.t('description', locale),  key: 'description',  width: 40 },
-      { header: this.t('category', locale),     key: 'category',     width: 20 },
-      { header: this.t('quantity', locale),     key: 'quantity',     width: 12 },
-      { header: this.t('minQuantity', locale),  key: 'minQuantity',  width: 15 },
-      { header: this.t('status', locale),       key: 'status',       width: 16 },
-      { header: this.t('price', locale),        key: 'price',        width: 12 },
-      { header: this.t('currency', locale),     key: 'currency',     width: 10 },
-      { header: this.t('warehouse', locale),    key: 'warehouse',    width: 22 },
-      { header: this.t('supplier', locale),     key: 'supplier',     width: 22 },
-      { header: this.t('itemType', locale),     key: 'itemType',     width: 10 },
-      { header: this.t('serviceTag', locale),   key: 'serviceTag',   width: 20 },
-      { header: this.t('serialNumber', locale), key: 'serialNumber', width: 20 },
+      { header: this.t('sku', locale), key: 'sku', width: 16 },
+      { header: this.t('name', locale), key: 'name', width: 32 },
+      { header: this.t('description', locale), key: 'description', width: 40 },
+      { header: this.t('category', locale), key: 'category', width: 20 },
+      { header: this.t('quantity', locale), key: 'quantity', width: 12 },
+      { header: this.t('minQuantity', locale), key: 'minQuantity', width: 15 },
+      { header: this.t('status', locale), key: 'status', width: 16 },
+      { header: this.t('price', locale), key: 'price', width: 12 },
+      { header: this.t('currency', locale), key: 'currency', width: 10 },
+      { header: this.t('warehouse', locale), key: 'warehouse', width: 22 },
+      { header: this.t('supplier', locale), key: 'supplier', width: 22 },
+      { header: this.t('itemType', locale), key: 'itemType', width: 10 },
+      { header: this.t('serviceTag', locale), key: 'serviceTag', width: 20 },
+      {
+        header: this.t('serialNumber', locale),
+        key: 'serialNumber',
+        width: 20,
+      },
     ];
 
     this.applyHeader(worksheet, COLORS.inventory);
@@ -235,19 +290,19 @@ export class ReportsService {
 
     items.forEach((item, idx) => {
       const row = worksheet.addRow({
-        sku:          item.sku || '',
-        name:         item.name,
-        description:  item.description || '',
-        category:     item.category,
-        quantity:     item.quantity,
-        minQuantity:  item.minQuantity,
-        status:       item.status,
-        price:        item.price || 0,
-        currency:     item.currency,
-        warehouse:    item.warehouse?.name || '',
-        supplier:     item.supplier?.name || '',
-        itemType:     item.itemType,
-        serviceTag:   item.serviceTag || '',
+        sku: item.sku || '',
+        name: item.name,
+        description: item.description || '',
+        category: item.category,
+        quantity: item.quantity,
+        minQuantity: item.minQuantity,
+        status: item.status,
+        price: item.price || 0,
+        currency: item.currency,
+        warehouse: item.warehouse?.name || '',
+        supplier: item.supplier?.name || '',
+        itemType: item.itemType,
+        serviceTag: item.serviceTag || '',
         serialNumber: item.serialNumber || '',
       });
       row.height = 20;
@@ -255,7 +310,11 @@ export class ReportsService {
       this.styleStatusCell(row.getCell(7), item.status, locale);
       // Alternating rows
       if (idx % 2 === 0) {
-        row.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLORS.altRow } };
+        row.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: COLORS.altRow },
+        };
         // Re-apply status cell on top of altRow fill
         this.styleStatusCell(row.getCell(7), item.status, locale);
       }
@@ -263,11 +322,17 @@ export class ReportsService {
 
     // Summary
     worksheet.addRow({});
-    const totalRow = worksheet.addRow({ name: this.t('totalItems', locale), quantity: items.length });
+    const totalRow = worksheet.addRow({
+      name: this.t('totalItems', locale),
+      quantity: items.length,
+    });
     totalRow.font = { bold: true };
     const valueRow = worksheet.addRow({
-      name:  this.t('totalValue', locale),
-      price: items.reduce((sum, item) => sum + (item.price || 0) * item.quantity, 0),
+      name: this.t('totalValue', locale),
+      price: items.reduce(
+        (sum, item) => sum + (item.price || 0) * item.quantity,
+        0,
+      ),
     });
     valueRow.font = { bold: true };
 
@@ -285,8 +350,8 @@ export class ReportsService {
     const where: Prisma.InventoryItemWhereInput = {
       deletedAt: null,
       ...warehouseFilter(warehouseIds),
-      ...(filters?.category    ? { category:    filters.category }    : {}),
-      ...(filters?.status      ? { status:      filters.status }      : {}),
+      ...(filters?.category ? { category: filters.category } : {}),
+      ...(filters?.status ? { status: filters.status } : {}),
       ...(filters?.warehouseId ? { warehouseId: filters.warehouseId } : {}),
     };
 
@@ -300,20 +365,32 @@ export class ReportsService {
       const chunks: Buffer[] = [];
       const doc = new PDFDocument({ margin: 50 });
 
-      doc.on('data', (chunk) => chunks.push(chunk));
+      doc.on('data', (chunk: Buffer) => chunks.push(chunk));
       doc.on('end', () => resolve(Buffer.concat(chunks)));
       doc.on('error', reject);
 
       const dateLocale = locale === 'en' ? 'en-US' : 'es-HN';
-      doc.fontSize(20).text(this.t('inventoryReport', locale), { align: 'center' });
+      doc
+        .fontSize(20)
+        .text(this.t('inventoryReport', locale), { align: 'center' });
       doc.moveDown();
-      doc.fontSize(10).text(`${this.t('date', locale)}: ${new Date().toLocaleDateString(dateLocale)}`, { align: 'right' });
+      doc
+        .fontSize(10)
+        .text(
+          `${this.t('date', locale)}: ${new Date().toLocaleDateString(dateLocale)}`,
+          { align: 'right' },
+        );
       doc.moveDown(2);
 
-      const totalValue = items.reduce((sum, item) => sum + (item.price || 0) * item.quantity, 0);
-      const inStock    = items.filter(i => i.status === 'IN_STOCK').length;
-      const lowStock   = items.filter(i => i.status === 'LOW_STOCK').length;
-      const outOfStock = items.filter(i => i.status === 'OUT_OF_STOCK').length;
+      const totalValue = items.reduce(
+        (sum, item) => sum + (item.price || 0) * item.quantity,
+        0,
+      );
+      const inStock = items.filter((i) => i.status === 'IN_STOCK').length;
+      const lowStock = items.filter((i) => i.status === 'LOW_STOCK').length;
+      const outOfStock = items.filter(
+        (i) => i.status === 'OUT_OF_STOCK',
+      ).length;
 
       doc.fontSize(12).text(this.t('summary', locale), { underline: true });
       doc.fontSize(10);
@@ -343,12 +420,11 @@ export class ReportsService {
         if (doc.y > 700) doc.addPage();
       });
 
-      doc.fontSize(8).text(
-        this.t('autoGenerated', locale),
-        50,
-        doc.page.height - 50,
-        { align: 'center' },
-      );
+      doc
+        .fontSize(8)
+        .text(this.t('autoGenerated', locale), 50, doc.page.height - 50, {
+          align: 'center',
+        });
 
       doc.end();
     });
@@ -360,7 +436,7 @@ export class ReportsService {
   ): Promise<Buffer> {
     const ExcelJS = await import('exceljs');
     const workbook = new ExcelJS.Workbook();
-    await this.applyWorkbookMeta(workbook, this.t('wsLowStock', locale));
+    this.applyWorkbookMeta(workbook, this.t('wsLowStock', locale));
     const worksheet = workbook.addWorksheet(this.t('wsLowStock', locale));
 
     const items = await this.prisma.inventoryItem.findMany({
@@ -374,39 +450,48 @@ export class ReportsService {
     });
 
     worksheet.columns = [
-      { header: this.t('sku', locale),             key: 'sku',         width: 16 },
-      { header: this.t('name', locale),            key: 'name',        width: 32 },
-      { header: this.t('category', locale),        key: 'category',    width: 20 },
-      { header: this.t('currentQuantity', locale), key: 'quantity',    width: 16 },
-      { header: this.t('minQuantity', locale),     key: 'minQuantity', width: 15 },
-      { header: this.t('difference', locale),      key: 'difference',  width: 14 },
-      { header: this.t('status', locale),          key: 'status',      width: 16 },
-      { header: this.t('warehouse', locale),       key: 'warehouse',   width: 22 },
-      { header: this.t('supplier', locale),        key: 'supplier',    width: 22 },
+      { header: this.t('sku', locale), key: 'sku', width: 16 },
+      { header: this.t('name', locale), key: 'name', width: 32 },
+      { header: this.t('category', locale), key: 'category', width: 20 },
+      { header: this.t('currentQuantity', locale), key: 'quantity', width: 16 },
+      { header: this.t('minQuantity', locale), key: 'minQuantity', width: 15 },
+      { header: this.t('difference', locale), key: 'difference', width: 14 },
+      { header: this.t('status', locale), key: 'status', width: 16 },
+      { header: this.t('warehouse', locale), key: 'warehouse', width: 22 },
+      { header: this.t('supplier', locale), key: 'supplier', width: 22 },
     ];
 
     this.applyHeader(worksheet, COLORS.lowStock);
     // Override header text to dark since amber bg is light
-    worksheet.getRow(1).font = { bold: true, color: { argb: 'FF451A03' }, size: 11, name: 'Calibri' };
+    worksheet.getRow(1).font = {
+      bold: true,
+      color: { argb: 'FF451A03' },
+      size: 11,
+      name: 'Calibri',
+    };
     worksheet.views = [{ state: 'frozen', ySplit: 1 }];
     worksheet.autoFilter = { from: 'A1', to: 'I1' };
 
     items.forEach((item, idx) => {
       const row = worksheet.addRow({
-        sku:         item.sku || '',
-        name:        item.name,
-        category:    item.category,
-        quantity:    item.quantity,
+        sku: item.sku || '',
+        name: item.name,
+        category: item.category,
+        quantity: item.quantity,
         minQuantity: item.minQuantity,
-        difference:  item.quantity - item.minQuantity,
-        status:      item.status,
-        warehouse:   item.warehouse?.name || '',
-        supplier:    item.supplier?.name || '',
+        difference: item.quantity - item.minQuantity,
+        status: item.status,
+        warehouse: item.warehouse?.name || '',
+        supplier: item.supplier?.name || '',
       });
       row.height = 20;
       this.styleStatusCell(row.getCell(7), item.status, locale);
       if (idx % 2 === 0) {
-        row.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLORS.altRow } };
+        row.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: COLORS.altRow },
+        };
         this.styleStatusCell(row.getCell(7), item.status, locale);
       }
     });
@@ -423,39 +508,48 @@ export class ReportsService {
   ): Promise<Buffer> {
     const ExcelJS = await import('exceljs');
     const workbook = new ExcelJS.Workbook();
-    await this.applyWorkbookMeta(workbook, this.t('wsTransactions', locale));
+    this.applyWorkbookMeta(workbook, this.t('wsTransactions', locale));
     const worksheet = workbook.addWorksheet(this.t('wsTransactions', locale));
 
     const where: Prisma.TransactionWhereInput = {
-      ...warehouseFilterMultiField(warehouseIds, ['sourceWarehouseId', 'destinationWarehouseId']),
-      ...(startDate || endDate ? {
-        date: {
-          ...(startDate ? { gte: startDate } : {}),
-          ...(endDate   ? { lte: endDate }   : {}),
-        },
-      } : {}),
+      ...warehouseFilterMultiField(warehouseIds, [
+        'sourceWarehouseId',
+        'destinationWarehouseId',
+      ]),
+      ...(startDate || endDate
+        ? {
+            date: {
+              ...(startDate ? { gte: startDate } : {}),
+              ...(endDate ? { lte: endDate } : {}),
+            },
+          }
+        : {}),
     };
 
     const transactions = await this.prisma.transaction.findMany({
       where,
       include: {
-        sourceWarehouse:      true,
+        sourceWarehouse: true,
         destinationWarehouse: true,
-        user:  { select: { name: true, email: true } },
+        user: { select: { name: true, email: true } },
         items: { include: { inventoryItem: true } },
       },
       orderBy: { date: 'desc' },
     });
 
     worksheet.columns = [
-      { header: this.t('id', locale),             key: 'id',          width: 25 },
-      { header: this.t('type', locale),           key: 'type',        width: 14 },
-      { header: this.t('date', locale),           key: 'date',        width: 16 },
-      { header: this.t('sourceWarehouse', locale), key: 'source',     width: 22 },
-      { header: this.t('destWarehouse', locale),  key: 'destination', width: 22 },
-      { header: this.t('items', locale),          key: 'itemCount',   width: 10 },
-      { header: this.t('user', locale),           key: 'user',        width: 22 },
-      { header: this.t('notes', locale),          key: 'notes',       width: 32 },
+      { header: this.t('id', locale), key: 'id', width: 25 },
+      { header: this.t('type', locale), key: 'type', width: 14 },
+      { header: this.t('date', locale), key: 'date', width: 16 },
+      { header: this.t('sourceWarehouse', locale), key: 'source', width: 22 },
+      {
+        header: this.t('destWarehouse', locale),
+        key: 'destination',
+        width: 22,
+      },
+      { header: this.t('items', locale), key: 'itemCount', width: 10 },
+      { header: this.t('user', locale), key: 'user', width: 22 },
+      { header: this.t('notes', locale), key: 'notes', width: 32 },
     ];
 
     this.applyHeader(worksheet, COLORS.transactions);
@@ -466,18 +560,22 @@ export class ReportsService {
 
     transactions.forEach((tx, idx) => {
       const row = worksheet.addRow({
-        id:          tx.id,
-        type:        this.tStatus(tx.type, locale),
-        date:        tx.date.toLocaleDateString(dateLocale),
-        source:      tx.sourceWarehouse?.name || '-',
+        id: tx.id,
+        type: this.tStatus(tx.type, locale),
+        date: tx.date.toLocaleDateString(dateLocale),
+        source: tx.sourceWarehouse?.name || '-',
         destination: tx.destinationWarehouse?.name || '-',
-        itemCount:   tx.items.length,
-        user:        tx.user?.name || tx.user?.email || '',
-        notes:       tx.notes || '',
+        itemCount: tx.items.length,
+        user: tx.user?.name || tx.user?.email || '',
+        notes: tx.notes || '',
       });
       row.height = 20;
       if (idx % 2 === 0) {
-        row.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLORS.altRow } };
+        row.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: COLORS.altRow },
+        };
       }
     });
 
@@ -491,16 +589,19 @@ export class ReportsService {
   ): Promise<Buffer> {
     const ExcelJS = await import('exceljs');
     const workbook = new ExcelJS.Workbook();
-    await this.applyWorkbookMeta(workbook, this.t('wsLoans', locale));
+    this.applyWorkbookMeta(workbook, this.t('wsLoans', locale));
     const worksheet = workbook.addWorksheet(this.t('wsLoans', locale));
 
-    const where = warehouseFilterMultiField(warehouseIds, ['sourceWarehouseId', 'destinationWarehouseId']);
+    const where = warehouseFilterMultiField(warehouseIds, [
+      'sourceWarehouseId',
+      'destinationWarehouseId',
+    ]);
 
     const loans = await this.prisma.loan.findMany({
       where,
       include: {
-        inventoryItem:        true,
-        sourceWarehouse:      true,
+        items: { include: { inventoryItem: { select: { name: true } } } },
+        sourceWarehouse: true,
         destinationWarehouse: true,
         createdBy: { select: { name: true, email: true } },
       },
@@ -508,16 +609,16 @@ export class ReportsService {
     });
 
     worksheet.columns = [
-      { header: this.t('id', locale),          key: 'id',          width: 25 },
-      { header: this.t('item', locale),        key: 'item',        width: 32 },
-      { header: this.t('quantity', locale),    key: 'quantity',    width: 10 },
-      { header: this.t('source', locale),      key: 'source',      width: 22 },
+      { header: this.t('id', locale), key: 'id', width: 25 },
+      { header: this.t('item', locale), key: 'item', width: 32 },
+      { header: this.t('quantity', locale), key: 'quantity', width: 10 },
+      { header: this.t('source', locale), key: 'source', width: 22 },
       { header: this.t('destination', locale), key: 'destination', width: 22 },
-      { header: this.t('loanDate', locale),    key: 'loanDate',    width: 16 },
-      { header: this.t('dueDate', locale),     key: 'dueDate',     width: 16 },
-      { header: this.t('returnDate', locale),  key: 'returnDate',  width: 16 },
-      { header: this.t('status', locale),      key: 'status',      width: 14 },
-      { header: this.t('createdBy', locale),   key: 'createdBy',   width: 22 },
+      { header: this.t('loanDate', locale), key: 'loanDate', width: 16 },
+      { header: this.t('dueDate', locale), key: 'dueDate', width: 16 },
+      { header: this.t('returnDate', locale), key: 'returnDate', width: 16 },
+      { header: this.t('status', locale), key: 'status', width: 14 },
+      { header: this.t('createdBy', locale), key: 'createdBy', width: 22 },
     ];
 
     this.applyHeader(worksheet, COLORS.loans);
@@ -527,22 +628,30 @@ export class ReportsService {
     const dateLocale = locale === 'en' ? 'en-US' : 'es-HN';
 
     loans.forEach((loan, idx) => {
+      const itemSummary = loan.items
+        .map((li) => `${li.inventoryItem?.name ?? ''} x${li.quantity}`)
+        .join('; ');
+      const totalQty = loan.items.reduce((sum, li) => sum + li.quantity, 0);
       const row = worksheet.addRow({
-        id:          loan.id,
-        item:        loan.inventoryItem?.name || '',
-        quantity:    loan.quantity,
-        source:      loan.sourceWarehouse?.name || '',
+        id: loan.id,
+        item: itemSummary,
+        quantity: totalQty,
+        source: loan.sourceWarehouse?.name || '',
         destination: loan.destinationWarehouse?.name || '',
-        loanDate:    loan.loanDate.toLocaleDateString(dateLocale),
-        dueDate:     loan.dueDate.toLocaleDateString(dateLocale),
-        returnDate:  loan.returnDate?.toLocaleDateString(dateLocale) || '-',
-        status:      loan.status,
-        createdBy:   loan.createdBy?.name || loan.createdBy?.email || '',
+        loanDate: loan.loanDate.toLocaleDateString(dateLocale),
+        dueDate: loan.dueDate.toLocaleDateString(dateLocale),
+        returnDate: loan.returnDate?.toLocaleDateString(dateLocale) || '-',
+        status: loan.status,
+        createdBy: loan.createdBy?.name || loan.createdBy?.email || '',
       });
       row.height = 20;
       this.styleStatusCell(row.getCell(9), loan.status, locale);
       if (idx % 2 === 0) {
-        row.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLORS.altRow } };
+        row.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: COLORS.altRow },
+        };
         this.styleStatusCell(row.getCell(9), loan.status, locale);
       }
     });
@@ -557,35 +666,44 @@ export class ReportsService {
   ): Promise<Buffer> {
     const ExcelJS = await import('exceljs');
     const workbook = new ExcelJS.Workbook();
-    await this.applyWorkbookMeta(workbook, this.t('wsTransfers', locale));
+    this.applyWorkbookMeta(workbook, this.t('wsTransfers', locale));
     const worksheet = workbook.addWorksheet(this.t('wsTransfers', locale));
 
     const where: Prisma.TransferRequestWhereInput = warehouseIds?.length
-      ? { OR: [{ sourceWarehouseId: { in: warehouseIds } }, { destinationWarehouseId: { in: warehouseIds } }] }
+      ? {
+          OR: [
+            { sourceWarehouseId: { in: warehouseIds } },
+            { destinationWarehouseId: { in: warehouseIds } },
+          ],
+        }
       : {};
 
     const transfers = await this.prisma.transferRequest.findMany({
       where,
       include: {
-        sourceWarehouse:      true,
+        sourceWarehouse: true,
         destinationWarehouse: true,
         requestedBy: { select: { name: true, email: true } },
-        approvedBy:  { select: { name: true, email: true } },
+        approvedBy: { select: { name: true, email: true } },
         items: true,
       },
       orderBy: { createdAt: 'desc' },
     });
 
     worksheet.columns = [
-      { header: this.t('id', locale),             key: 'id',          width: 25 },
-      { header: this.t('status', locale),         key: 'status',      width: 14 },
-      { header: this.t('sourceWarehouse', locale), key: 'source',     width: 22 },
-      { header: this.t('destWarehouse', locale),  key: 'destination', width: 22 },
-      { header: this.t('itemCount', locale),      key: 'itemCount',   width: 12 },
-      { header: this.t('requestedBy', locale),    key: 'requestedBy', width: 22 },
-      { header: this.t('approvedBy', locale),     key: 'approvedBy',  width: 22 },
-      { header: this.t('notes', locale),          key: 'notes',       width: 32 },
-      { header: this.t('date', locale),           key: 'date',        width: 16 },
+      { header: this.t('id', locale), key: 'id', width: 25 },
+      { header: this.t('status', locale), key: 'status', width: 14 },
+      { header: this.t('sourceWarehouse', locale), key: 'source', width: 22 },
+      {
+        header: this.t('destWarehouse', locale),
+        key: 'destination',
+        width: 22,
+      },
+      { header: this.t('itemCount', locale), key: 'itemCount', width: 12 },
+      { header: this.t('requestedBy', locale), key: 'requestedBy', width: 22 },
+      { header: this.t('approvedBy', locale), key: 'approvedBy', width: 22 },
+      { header: this.t('notes', locale), key: 'notes', width: 32 },
+      { header: this.t('date', locale), key: 'date', width: 16 },
     ];
 
     this.applyHeader(worksheet, COLORS.transfers);
@@ -596,19 +714,23 @@ export class ReportsService {
 
     transfers.forEach((tr, idx) => {
       const row = worksheet.addRow({
-        id:          tr.id,
-        status:      this.tStatus(tr.status, locale),
-        source:      tr.sourceWarehouse?.name || '',
+        id: tr.id,
+        status: this.tStatus(tr.status, locale),
+        source: tr.sourceWarehouse?.name || '',
         destination: tr.destinationWarehouse?.name || '',
-        itemCount:   tr.items.length,
+        itemCount: tr.items.length,
         requestedBy: tr.requestedBy?.name || tr.requestedBy?.email || '',
-        approvedBy:  tr.approvedBy?.name  || tr.approvedBy?.email  || '-',
-        notes:       tr.notes || '',
-        date:        tr.createdAt.toLocaleDateString(dateLocale),
+        approvedBy: tr.approvedBy?.name || tr.approvedBy?.email || '-',
+        notes: tr.notes || '',
+        date: tr.createdAt.toLocaleDateString(dateLocale),
       });
       row.height = 20;
       if (idx % 2 === 0) {
-        row.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLORS.altRow } };
+        row.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: COLORS.altRow },
+        };
       }
     });
 
@@ -622,7 +744,7 @@ export class ReportsService {
   ): Promise<Buffer> {
     const ExcelJS = await import('exceljs');
     const workbook = new ExcelJS.Workbook();
-    await this.applyWorkbookMeta(workbook, this.t('wsStockTakes', locale));
+    this.applyWorkbookMeta(workbook, this.t('wsStockTakes', locale));
 
     const where: Prisma.StockTakeWhereInput = warehouseIds?.length
       ? { warehouseId: { in: warehouseIds } }
@@ -631,8 +753,8 @@ export class ReportsService {
     const stockTakes = await this.prisma.stockTake.findMany({
       where,
       include: {
-        warehouse:   true,
-        startedBy:   { select: { name: true, email: true } },
+        warehouse: true,
+        startedBy: { select: { name: true, email: true } },
         completedBy: { select: { name: true, email: true } },
         items: { include: { item: { select: { name: true, sku: true } } } },
       },
@@ -642,13 +764,13 @@ export class ReportsService {
     // Summary worksheet
     const summary = workbook.addWorksheet(this.t('wsStockTakes', locale));
     summary.columns = [
-      { header: this.t('id', locale),          key: 'id',          width: 25 },
-      { header: this.t('warehouse', locale),   key: 'warehouse',   width: 22 },
-      { header: this.t('status', locale),      key: 'status',      width: 14 },
-      { header: this.t('itemCount', locale),   key: 'itemCount',   width: 12 },
-      { header: this.t('variance', locale),    key: 'totalVariance', width: 14 },
-      { header: this.t('startedBy', locale),   key: 'startedBy',   width: 22 },
-      { header: this.t('startedAt', locale),   key: 'startedAt',   width: 18 },
+      { header: this.t('id', locale), key: 'id', width: 25 },
+      { header: this.t('warehouse', locale), key: 'warehouse', width: 22 },
+      { header: this.t('status', locale), key: 'status', width: 14 },
+      { header: this.t('itemCount', locale), key: 'itemCount', width: 12 },
+      { header: this.t('variance', locale), key: 'totalVariance', width: 14 },
+      { header: this.t('startedBy', locale), key: 'startedBy', width: 22 },
+      { header: this.t('startedAt', locale), key: 'startedAt', width: 18 },
       { header: this.t('completedBy', locale), key: 'completedBy', width: 22 },
       { header: this.t('completedAt', locale), key: 'completedAt', width: 18 },
     ];
@@ -658,34 +780,41 @@ export class ReportsService {
     const dateLocale = locale === 'en' ? 'en-US' : 'es-HN';
 
     stockTakes.forEach((st, idx) => {
-      const totalVariance = st.items.reduce((sum, i) => sum + (i.variance || 0), 0);
+      const totalVariance = st.items.reduce(
+        (sum, i) => sum + (i.variance || 0),
+        0,
+      );
       const row = summary.addRow({
-        id:           st.id,
-        warehouse:    st.warehouse?.name || '',
-        status:       this.tStatus(st.status, locale),
-        itemCount:    st.items.length,
+        id: st.id,
+        warehouse: st.warehouse?.name || '',
+        status: this.tStatus(st.status, locale),
+        itemCount: st.items.length,
         totalVariance,
-        startedBy:    st.startedBy?.name   || st.startedBy?.email   || '',
-        startedAt:    st.startedAt.toLocaleDateString(dateLocale),
-        completedBy:  st.completedBy?.name || st.completedBy?.email || '-',
-        completedAt:  st.completedAt?.toLocaleDateString(dateLocale) || '-',
+        startedBy: st.startedBy?.name || st.startedBy?.email || '',
+        startedAt: st.startedAt.toLocaleDateString(dateLocale),
+        completedBy: st.completedBy?.name || st.completedBy?.email || '-',
+        completedAt: st.completedAt?.toLocaleDateString(dateLocale) || '-',
       });
       row.height = 20;
       if (idx % 2 === 0) {
-        row.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLORS.altRow } };
+        row.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: COLORS.altRow },
+        };
       }
     });
 
     // Detail worksheet
     const detail = workbook.addWorksheet(this.t('wsDetail', locale));
     detail.columns = [
-      { header: 'Stock Take ID',                    key: 'stockTakeId', width: 25 },
-      { header: this.t('name', locale),             key: 'name',        width: 32 },
-      { header: this.t('sku', locale),              key: 'sku',         width: 16 },
-      { header: this.t('expectedQty', locale),      key: 'expected',    width: 16 },
-      { header: this.t('countedQty', locale),       key: 'counted',     width: 14 },
-      { header: this.t('variance', locale),         key: 'variance',    width: 12 },
-      { header: this.t('notes', locale),            key: 'notes',       width: 32 },
+      { header: 'Stock Take ID', key: 'stockTakeId', width: 25 },
+      { header: this.t('name', locale), key: 'name', width: 32 },
+      { header: this.t('sku', locale), key: 'sku', width: 16 },
+      { header: this.t('expectedQty', locale), key: 'expected', width: 16 },
+      { header: this.t('countedQty', locale), key: 'counted', width: 14 },
+      { header: this.t('variance', locale), key: 'variance', width: 12 },
+      { header: this.t('notes', locale), key: 'notes', width: 32 },
     ];
     this.applyHeader(detail, COLORS.stockTakes);
     detail.views = [{ state: 'frozen', ySplit: 1 }];
@@ -695,16 +824,20 @@ export class ReportsService {
       for (const item of st.items) {
         const row = detail.addRow({
           stockTakeId: st.id,
-          name:        item.item?.name || '',
-          sku:         item.item?.sku  || '',
-          expected:    item.expectedQty,
-          counted:     item.countedQty ?? '-',
-          variance:    item.variance   ?? '-',
-          notes:       item.notes || '',
+          name: item.item?.name || '',
+          sku: item.item?.sku || '',
+          expected: item.expectedQty,
+          counted: item.countedQty ?? '-',
+          variance: item.variance ?? '-',
+          notes: item.notes || '',
         });
         row.height = 20;
         if (detailIdx % 2 === 0) {
-          row.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLORS.altRow } };
+          row.fill = {
+            type: 'pattern',
+            pattern: 'solid',
+            fgColor: { argb: COLORS.altRow },
+          };
         }
         detailIdx++;
       }
@@ -720,7 +853,7 @@ export class ReportsService {
   ): Promise<Buffer> {
     const ExcelJS = await import('exceljs');
     const workbook = new ExcelJS.Workbook();
-    await this.applyWorkbookMeta(workbook, this.t('wsDischarges', locale));
+    this.applyWorkbookMeta(workbook, this.t('wsDischarges', locale));
     const worksheet = workbook.addWorksheet(this.t('wsDischarges', locale));
 
     const where: Prisma.DischargeRequestWhereInput = warehouseIds?.length
@@ -730,7 +863,7 @@ export class ReportsService {
     const discharges = await this.prisma.dischargeRequest.findMany({
       where,
       include: {
-        warehouse:  true,
+        warehouse: true,
         resolvedBy: { select: { name: true, email: true } },
         items: true,
       },
@@ -738,15 +871,19 @@ export class ReportsService {
     });
 
     worksheet.columns = [
-      { header: this.t('id', locale),           key: 'id',           width: 25 },
-      { header: this.t('status', locale),       key: 'status',       width: 14 },
-      { header: this.t('warehouse', locale),    key: 'warehouse',    width: 22 },
-      { header: this.t('itemCount', locale),    key: 'itemCount',    width: 12 },
-      { header: this.t('user', locale),         key: 'requester',    width: 22 },
-      { header: this.t('requestDate', locale),  key: 'requestDate',  width: 16 },
-      { header: this.t('resolvedBy', locale),   key: 'resolvedBy',   width: 22 },
-      { header: this.t('resolvedDate', locale), key: 'resolvedDate', width: 16 },
-      { header: this.t('notes', locale),        key: 'notes',        width: 32 },
+      { header: this.t('id', locale), key: 'id', width: 25 },
+      { header: this.t('status', locale), key: 'status', width: 14 },
+      { header: this.t('warehouse', locale), key: 'warehouse', width: 22 },
+      { header: this.t('itemCount', locale), key: 'itemCount', width: 12 },
+      { header: this.t('user', locale), key: 'requester', width: 22 },
+      { header: this.t('requestDate', locale), key: 'requestDate', width: 16 },
+      { header: this.t('resolvedBy', locale), key: 'resolvedBy', width: 22 },
+      {
+        header: this.t('resolvedDate', locale),
+        key: 'resolvedDate',
+        width: 16,
+      },
+      { header: this.t('notes', locale), key: 'notes', width: 32 },
     ];
 
     this.applyHeader(worksheet, COLORS.discharges);
@@ -757,19 +894,97 @@ export class ReportsService {
 
     discharges.forEach((dr, idx) => {
       const row = worksheet.addRow({
-        id:           dr.id,
-        status:       this.tStatus(dr.status, locale),
-        warehouse:    dr.warehouse?.name || '',
-        itemCount:    dr.items.length,
-        requester:    dr.requesterName || '',
-        requestDate:  dr.createdAt.toLocaleDateString(dateLocale),
-        resolvedBy:   dr.resolvedBy?.name || dr.resolvedBy?.email || '-',
+        id: dr.id,
+        status: this.tStatus(dr.status, locale),
+        warehouse: dr.warehouse?.name || '',
+        itemCount: dr.items.length,
+        requester: dr.requesterName || '',
+        requestDate: dr.createdAt.toLocaleDateString(dateLocale),
+        resolvedBy: dr.resolvedBy?.name || dr.resolvedBy?.email || '-',
         resolvedDate: dr.resolvedAt?.toLocaleDateString(dateLocale) || '-',
-        notes:        dr.notes || '',
+        notes: dr.notes || '',
       });
       row.height = 20;
       if (idx % 2 === 0) {
-        row.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLORS.altRow } };
+        row.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: COLORS.altRow },
+        };
+      }
+    });
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    return Buffer.from(buffer);
+  }
+
+  async generateOutflowsReport(
+    warehouseIds?: string[] | null,
+    locale: Locale = 'es',
+  ): Promise<Buffer> {
+    const ExcelJS = await import('exceljs');
+    const workbook = new ExcelJS.Workbook();
+    this.applyWorkbookMeta(workbook, this.t('wsOutflows', locale));
+    const worksheet = workbook.addWorksheet(this.t('wsOutflows', locale));
+
+    const where: Prisma.OutflowWhereInput = warehouseIds?.length
+      ? { warehouseId: { in: warehouseIds } }
+      : {};
+
+    const outflows = await this.prisma.outflow.findMany({
+      where,
+      include: {
+        warehouse: true,
+        createdBy: { select: { name: true, email: true } },
+        cancelledBy: { select: { name: true, email: true } },
+        items: true,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    worksheet.columns = [
+      { header: this.t('id', locale), key: 'id', width: 25 },
+      { header: this.t('name', locale), key: 'name', width: 28 },
+      { header: this.t('status', locale), key: 'status', width: 14 },
+      { header: this.t('reason', locale), key: 'reason', width: 16 },
+      { header: this.t('warehouse', locale), key: 'warehouse', width: 22 },
+      { header: this.t('itemCount', locale), key: 'itemCount', width: 12 },
+      { header: this.t('totalQty', locale), key: 'totalQty', width: 12 },
+      { header: this.t('user', locale), key: 'createdBy', width: 22 },
+      { header: this.t('date', locale), key: 'createdAt', width: 16 },
+      { header: this.t('cancelledBy', locale), key: 'cancelledBy', width: 22 },
+      { header: this.t('cancelledAt', locale), key: 'cancelledAt', width: 16 },
+      { header: this.t('notes', locale), key: 'notes', width: 32 },
+    ];
+
+    this.applyHeader(worksheet, COLORS.outflows);
+    worksheet.views = [{ state: 'frozen', ySplit: 1 }];
+    worksheet.autoFilter = { from: 'A1', to: 'L1' };
+
+    const dateLocale = locale === 'en' ? 'en-US' : 'es-HN';
+
+    outflows.forEach((o, idx) => {
+      const row = worksheet.addRow({
+        id: o.id,
+        name: o.name || '-',
+        status: OUTFLOW_STATUS_LABELS[o.status]?.[locale] ?? o.status,
+        reason: OUTFLOW_REASON_LABELS[o.reason]?.[locale] ?? o.reason,
+        warehouse: o.warehouse?.name || '',
+        itemCount: o.items.length,
+        totalQty: o.items.reduce((sum, it) => sum + it.quantity, 0),
+        createdBy: o.createdBy?.name || o.createdBy?.email || '-',
+        createdAt: o.createdAt.toLocaleDateString(dateLocale),
+        cancelledBy: o.cancelledBy?.name || o.cancelledBy?.email || '-',
+        cancelledAt: o.cancelledAt?.toLocaleDateString(dateLocale) || '-',
+        notes: o.notes || '',
+      });
+      row.height = 20;
+      if (idx % 2 === 0) {
+        row.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: COLORS.altRow },
+        };
       }
     });
 

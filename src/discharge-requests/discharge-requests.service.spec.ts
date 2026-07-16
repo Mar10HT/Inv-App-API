@@ -4,15 +4,25 @@ import { DischargeRequestsService } from './discharge-requests.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { QrService } from '../qr/qr.service';
-import { DischargeRequestStatus } from '@prisma/client';
+import {
+  DischargeRequestStatus,
+  type DischargeRequest,
+  type InventoryItem,
+  type Warehouse,
+  type Outflow,
+} from '@prisma/client';
+import { mockDeep, type DeepMockProxy } from 'jest-mock-extended';
 
 describe('DischargeRequestsService', () => {
   let service: DischargeRequestsService;
-  let prisma: jest.Mocked<PrismaService>;
+  let prisma: DeepMockProxy<PrismaService>;
   let auditService: jest.Mocked<AuditService>;
   let qrService: jest.Mocked<QrService>;
 
-  const mockWarehouse = { id: 'wh-1', name: 'Main Warehouse' };
+  const mockWarehouse = {
+    id: 'wh-1',
+    name: 'Main Warehouse',
+  } as unknown as Warehouse;
 
   const mockInventoryItem = {
     id: 'item-1',
@@ -30,7 +40,7 @@ describe('DischargeRequestsService', () => {
     currency: 'USD',
     sku: 'SKU-001',
     supplierId: null,
-  };
+  } as unknown as InventoryItem;
 
   const mockRequest = {
     id: 'req-1',
@@ -57,53 +67,51 @@ describe('DischargeRequestsService', () => {
         inventoryItem: mockInventoryItem,
       },
     ],
-  };
+  } as unknown as DischargeRequest;
 
   beforeEach(async () => {
-    const mockTransaction = jest.fn().mockImplementation(async (fn) => fn({
-      dischargeRequest: {
-        create: jest.fn().mockResolvedValue(mockRequest),
-        update: jest.fn().mockResolvedValue({ ...mockRequest, status: DischargeRequestStatus.COMPLETED }),
-      },
-      inventoryItem: {
-        findFirst: jest.fn().mockResolvedValue(mockInventoryItem),
-        update: jest.fn().mockResolvedValue(mockInventoryItem),
-      },
-    }));
+    prisma = mockDeep<PrismaService>();
+    // jest-mock-extended's DeepMockProxy methods are real jest.Mock functions
+    // at runtime, but their static type doesn't carry that through cleanly
+    // enough for this rule to recognize them as safe to reference unbound.
+    prisma.$transaction.mockImplementation(((
+      cb: (tx: DeepMockProxy<PrismaService>) => unknown,
+    ) => cb(prisma)) as never);
 
-    const mockPrismaService = {
-      inventoryItem: {
-        findUnique: jest.fn(),
-        findMany: jest.fn(),
-      },
-      dischargeRequest: {
-        findUnique: jest.fn(),
-        findMany: jest.fn(),
-        update: jest.fn(),
-        count: jest.fn(),
-      },
-      $transaction: mockTransaction,
-    };
+    // Seed defaults used by the transactional flows (createFromPublicForm,
+    // complete). Since `tx` above resolves to this same `prisma` mock, these
+    // apply equally whether the service calls `this.prisma.x` or `tx.x`.
+    prisma.dischargeRequest.create.mockResolvedValue(mockRequest);
+    prisma.dischargeRequest.update.mockResolvedValue({
+      ...mockRequest,
+      status: DischargeRequestStatus.COMPLETED,
+    } as unknown as DischargeRequest);
+    prisma.inventoryItem.findFirst.mockResolvedValue(mockInventoryItem);
+    prisma.inventoryItem.update.mockResolvedValue(mockInventoryItem);
+    prisma.outflow.create.mockResolvedValue({
+      id: 'outflow-1',
+    } as unknown as Outflow);
 
     const mockAuditService = {
       log: jest.fn().mockResolvedValue(undefined),
     };
 
     const mockQrService = {
-      generateUrlQrDataUrl: jest.fn().mockResolvedValue('data:image/png;base64,QR'),
+      generateUrlQrDataUrl: jest
+        .fn()
+        .mockResolvedValue('data:image/png;base64,QR'),
     };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         DischargeRequestsService,
-        { provide: PrismaService, useValue: mockPrismaService },
+        { provide: PrismaService, useValue: prisma },
         { provide: AuditService, useValue: mockAuditService },
         { provide: QrService, useValue: mockQrService },
       ],
     }).compile();
 
     service = module.get<DischargeRequestsService>(DischargeRequestsService);
-    prisma = module.get(PrismaService);
     auditService = module.get(AuditService);
     qrService = module.get(QrService);
   });
@@ -123,20 +131,26 @@ describe('DischargeRequestsService', () => {
     };
 
     it('creates discharge request and logs audit', async () => {
-      (prisma.inventoryItem.findUnique as jest.Mock).mockResolvedValue(mockInventoryItem);
+      prisma.inventoryItem.findUnique.mockResolvedValue(mockInventoryItem);
 
       const result = await service.createFromPublicForm(dto);
 
       expect(result.requestsCreated).toBe(1);
+      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(auditService.log).toHaveBeenCalledWith(
-        expect.objectContaining({ action: 'CREATE', entity: 'DischargeRequest' }),
+        expect.objectContaining({
+          action: 'CREATE',
+          entity: 'DischargeRequest',
+        }),
       );
     });
 
     it('throws NotFoundException when inventory item not found', async () => {
-      (prisma.inventoryItem.findUnique as jest.Mock).mockResolvedValue(null);
+      prisma.inventoryItem.findUnique.mockResolvedValue(null);
 
-      await expect(service.createFromPublicForm(dto)).rejects.toThrow(NotFoundException);
+      await expect(service.createFromPublicForm(dto)).rejects.toThrow(
+        NotFoundException,
+      );
     });
 
     it('throws BadRequestException when insufficient quantity', async () => {
@@ -144,19 +158,22 @@ describe('DischargeRequestsService', () => {
         ...dto,
         items: [{ inventoryItemId: 'item-1', quantity: 999 }],
       };
-      (prisma.inventoryItem.findUnique as jest.Mock).mockResolvedValue(mockInventoryItem);
+      prisma.inventoryItem.findUnique.mockResolvedValue(mockInventoryItem);
 
-      await expect(service.createFromPublicForm(dtoOverRequest)).rejects.toThrow(BadRequestException);
+      await expect(
+        service.createFromPublicForm(dtoOverRequest),
+      ).rejects.toThrow(BadRequestException);
     });
   });
 
   describe('getAvailableItems', () => {
     it('returns items with quantity > 0 and not deleted', async () => {
-      (prisma.inventoryItem.findMany as jest.Mock).mockResolvedValue([mockInventoryItem]);
+      prisma.inventoryItem.findMany.mockResolvedValue([mockInventoryItem]);
 
       const result = await service.getAvailableItems();
 
       expect(result).toHaveLength(1);
+      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(prisma.inventoryItem.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { quantity: { gt: 0 }, deletedAt: null },
@@ -167,8 +184,8 @@ describe('DischargeRequestsService', () => {
 
   describe('findAll', () => {
     it('returns paginated requests', async () => {
-      (prisma.dischargeRequest.findMany as jest.Mock).mockResolvedValue([mockRequest]);
-      (prisma.dischargeRequest.count as jest.Mock).mockResolvedValue(1);
+      prisma.dischargeRequest.findMany.mockResolvedValue([mockRequest]);
+      prisma.dischargeRequest.count.mockResolvedValue(1);
 
       const result = await service.findAll({});
 
@@ -177,14 +194,20 @@ describe('DischargeRequestsService', () => {
     });
 
     it('filters by status when provided', async () => {
-      (prisma.dischargeRequest.findMany as jest.Mock).mockResolvedValue([mockRequest]);
-      (prisma.dischargeRequest.count as jest.Mock).mockResolvedValue(1);
+      prisma.dischargeRequest.findMany.mockResolvedValue([mockRequest]);
+      prisma.dischargeRequest.count.mockResolvedValue(1);
 
       await service.findAll({ status: DischargeRequestStatus.PENDING });
 
+      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(prisma.dischargeRequest.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: expect.objectContaining({ status: DischargeRequestStatus.PENDING }),
+          // jest's expect.objectContaining() return type is `any` in the
+          // installed @types/jest — a known, long-standing typing gap.
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+          where: expect.objectContaining({
+            status: DischargeRequestStatus.PENDING,
+          }),
         }),
       );
     });
@@ -192,7 +215,7 @@ describe('DischargeRequestsService', () => {
 
   describe('findOne', () => {
     it('returns request by id', async () => {
-      (prisma.dischargeRequest.findUnique as jest.Mock).mockResolvedValue(mockRequest);
+      prisma.dischargeRequest.findUnique.mockResolvedValue(mockRequest);
 
       const result = await service.findOne('req-1');
 
@@ -200,67 +223,98 @@ describe('DischargeRequestsService', () => {
     });
 
     it('throws NotFoundException when not found', async () => {
-      (prisma.dischargeRequest.findUnique as jest.Mock).mockResolvedValue(null);
+      prisma.dischargeRequest.findUnique.mockResolvedValue(null);
 
-      await expect(service.findOne('not-found')).rejects.toThrow(NotFoundException);
+      await expect(service.findOne('not-found')).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 
   describe('complete', () => {
     it('completes a pending request and decrements inventory', async () => {
-      (prisma.dischargeRequest.findUnique as jest.Mock).mockResolvedValue(mockRequest);
+      prisma.dischargeRequest.findUnique.mockResolvedValue(mockRequest);
 
       const result = await service.complete('req-1', 'user-1');
 
       expect(result.status).toBe(DischargeRequestStatus.COMPLETED);
+      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(auditService.log).toHaveBeenCalledWith(
-        expect.objectContaining({ action: 'UPDATE', entity: 'DischargeRequest' }),
+        expect.objectContaining({
+          action: 'UPDATE',
+          entity: 'DischargeRequest',
+        }),
       );
     });
 
     it('throws BadRequestException when request is not PENDING', async () => {
-      const completedRequest = { ...mockRequest, status: DischargeRequestStatus.COMPLETED };
-      (prisma.dischargeRequest.findUnique as jest.Mock).mockResolvedValue(completedRequest);
+      const completedRequest = {
+        ...mockRequest,
+        status: DischargeRequestStatus.COMPLETED,
+      } as unknown as DischargeRequest;
+      prisma.dischargeRequest.findUnique.mockResolvedValue(completedRequest);
 
-      await expect(service.complete('req-1', 'user-1')).rejects.toThrow(BadRequestException);
+      await expect(service.complete('req-1', 'user-1')).rejects.toThrow(
+        BadRequestException,
+      );
     });
 
     it('throws NotFoundException when request not found', async () => {
-      (prisma.dischargeRequest.findUnique as jest.Mock).mockResolvedValue(null);
+      prisma.dischargeRequest.findUnique.mockResolvedValue(null);
 
-      await expect(service.complete('not-found', 'user-1')).rejects.toThrow(NotFoundException);
+      await expect(service.complete('not-found', 'user-1')).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 
   describe('reject', () => {
     it('rejects a pending request with reason', async () => {
-      const rejectedRequest = { ...mockRequest, status: DischargeRequestStatus.REJECTED, rejectedReason: 'No budget' };
-      (prisma.dischargeRequest.findUnique as jest.Mock).mockResolvedValue(mockRequest);
-      (prisma.dischargeRequest.update as jest.Mock).mockResolvedValue(rejectedRequest);
+      const rejectedRequest = {
+        ...mockRequest,
+        status: DischargeRequestStatus.REJECTED,
+        rejectedReason: 'No budget',
+      } as unknown as DischargeRequest;
+      prisma.dischargeRequest.findUnique.mockResolvedValue(mockRequest);
+      prisma.dischargeRequest.update.mockResolvedValue(rejectedRequest);
 
       const result = await service.reject('req-1', 'user-1', 'No budget');
 
       expect(result.status).toBe(DischargeRequestStatus.REJECTED);
+      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(auditService.log).toHaveBeenCalledWith(
-        expect.objectContaining({ changes: expect.objectContaining({ status: 'REJECTED', reason: 'No budget' }) }),
+        expect.objectContaining({
+          // jest's expect.objectContaining() return type is `any` in the
+          // installed @types/jest — a known, long-standing typing gap.
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+          changes: expect.objectContaining({
+            status: 'REJECTED',
+            reason: 'No budget',
+          }),
+        }),
       );
     });
 
     it('throws BadRequestException when request is not PENDING', async () => {
-      const rejectedRequest = { ...mockRequest, status: DischargeRequestStatus.REJECTED };
-      (prisma.dischargeRequest.findUnique as jest.Mock).mockResolvedValue(rejectedRequest);
+      const rejectedRequest = {
+        ...mockRequest,
+        status: DischargeRequestStatus.REJECTED,
+      } as unknown as DischargeRequest;
+      prisma.dischargeRequest.findUnique.mockResolvedValue(rejectedRequest);
 
-      await expect(service.reject('req-1', 'user-1')).rejects.toThrow(BadRequestException);
+      await expect(service.reject('req-1', 'user-1')).rejects.toThrow(
+        BadRequestException,
+      );
     });
   });
 
   describe('getStats', () => {
     it('returns counts by status', async () => {
-      (prisma.dischargeRequest.count as jest.Mock)
-        .mockResolvedValueOnce(10)  // total
-        .mockResolvedValueOnce(4)   // pending
-        .mockResolvedValueOnce(5)   // completed
-        .mockResolvedValueOnce(1);  // rejected
+      prisma.dischargeRequest.count
+        .mockResolvedValueOnce(10) // total
+        .mockResolvedValueOnce(4) // pending
+        .mockResolvedValueOnce(5) // completed
+        .mockResolvedValueOnce(1); // rejected
 
       const result = await service.getStats();
 
@@ -277,6 +331,7 @@ describe('DischargeRequestsService', () => {
 
       expect(result.qrDataUrl).toBe('data:image/png;base64,QR');
       expect(result.url).toContain('/request');
+      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(qrService.generateUrlQrDataUrl).toHaveBeenCalled();
     });
   });

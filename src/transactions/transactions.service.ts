@@ -1,9 +1,23 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { CreateTransactionDto, TransactionItemDto, TransactionType } from './dto/create-transaction.dto';
+import {
+  CreateTransactionDto,
+  TransactionItemDto,
+  TransactionType,
+} from './dto/create-transaction.dto';
 import { UpdateTransactionDto } from './dto/update-transaction.dto';
-import { PaginationDto, PaginatedResult, parsePagination, buildPaginationMeta, parseSortOrder } from '../common/dto';
+import {
+  PaginationDto,
+  PaginatedResult,
+  parsePagination,
+  buildPaginationMeta,
+  parseSortOrder,
+} from '../common/dto';
 import { EventsService } from '../events/events.service';
 import { warehouseFilterMultiField } from '../common/warehouse-access/warehouse-filter.util';
 
@@ -55,7 +69,7 @@ export class TransactionsService {
       });
 
       // Update inventory quantities based on transaction type (within same transaction)
-      await this.updateInventoryQuantitiesInTx(tx, items, transactionData.type as TransactionType);
+      await this.updateInventoryQuantitiesInTx(tx, items, transactionData.type);
 
       return newTransaction;
     });
@@ -66,9 +80,15 @@ export class TransactionsService {
     return result;
   }
 
-  async findAll(pagination?: PaginationDto, warehouseIds?: string[] | null): Promise<PaginatedResult<unknown>> {
+  async findAll(
+    pagination?: PaginationDto,
+    warehouseIds?: string[] | null,
+  ): Promise<PaginatedResult<unknown>> {
     const { page, limit, skip } = parsePagination(pagination);
-    const where = warehouseFilterMultiField(warehouseIds, ['sourceWarehouseId', 'destinationWarehouseId']);
+    const where = warehouseFilterMultiField(warehouseIds, [
+      'sourceWarehouseId',
+      'destinationWarehouseId',
+    ]);
 
     const [data, total] = await Promise.all([
       this.prisma.transaction.findMany({
@@ -90,7 +110,10 @@ export class TransactionsService {
   }
 
   async findRecent(limit: number = 10, warehouseIds?: string[] | null) {
-    const where = warehouseFilterMultiField(warehouseIds, ['sourceWarehouseId', 'destinationWarehouseId']);
+    const where = warehouseFilterMultiField(warehouseIds, [
+      'sourceWarehouseId',
+      'destinationWarehouseId',
+    ]);
 
     return this.prisma.transaction.findMany({
       where,
@@ -168,7 +191,10 @@ export class TransactionsService {
         },
       });
     } catch (error: unknown) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2025'
+      ) {
         throw new NotFoundException(`Transaction with ID ${id} not found`);
       }
       throw error;
@@ -182,7 +208,10 @@ export class TransactionsService {
         where: { id },
       });
     } catch (error: unknown) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2025'
+      ) {
         throw new NotFoundException(`Transaction with ID ${id} not found`);
       }
       throw error;
@@ -193,16 +222,25 @@ export class TransactionsService {
   private validateTransactionType(dto: CreateTransactionDto) {
     const { type, sourceWarehouseId, destinationWarehouseId } = dto;
 
-    if (type === 'IN' && !destinationWarehouseId) {
-      throw new BadRequestException('IN transactions require destinationWarehouseId');
+    if (type === TransactionType.IN && !destinationWarehouseId) {
+      throw new BadRequestException(
+        'IN transactions require destinationWarehouseId',
+      );
     }
 
-    if (type === 'OUT' && !sourceWarehouseId) {
-      throw new BadRequestException('OUT transactions require sourceWarehouseId');
+    if (type === TransactionType.OUT && !sourceWarehouseId) {
+      throw new BadRequestException(
+        'OUT transactions require sourceWarehouseId',
+      );
     }
 
-    if (type === 'TRANSFER' && (!sourceWarehouseId || !destinationWarehouseId)) {
-      throw new BadRequestException('TRANSFER transactions require both sourceWarehouseId and destinationWarehouseId');
+    if (
+      type === TransactionType.TRANSFER &&
+      (!sourceWarehouseId || !destinationWarehouseId)
+    ) {
+      throw new BadRequestException(
+        'TRANSFER transactions require both sourceWarehouseId and destinationWarehouseId',
+      );
     }
   }
 
@@ -216,7 +254,9 @@ export class TransactionsService {
     if (found.length !== ids.length) {
       const foundIds = new Set(found.map((f) => f.id));
       const missingId = ids.find((id) => !foundIds.has(id));
-      throw new NotFoundException(`Inventory item with ID ${missingId} not found`);
+      throw new NotFoundException(
+        `Inventory item with ID ${missingId} not found`,
+      );
     }
   }
 
@@ -252,7 +292,10 @@ export class TransactionsService {
       if (newQuantity <= 0) {
         newStatus = 'OUT_OF_STOCK';
         newQuantity = Math.max(0, newQuantity); // Don't allow negative
-      } else if (currentItem.itemType === 'UNIQUE' && currentItem.assignedToUserId) {
+      } else if (
+        currentItem.itemType === 'UNIQUE' &&
+        currentItem.assignedToUserId
+      ) {
         newStatus = 'IN_USE';
       } else if (newQuantity <= currentItem.minQuantity) {
         newStatus = 'LOW_STOCK';

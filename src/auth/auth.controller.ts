@@ -10,12 +10,14 @@ import {
   Request,
   Response,
   Param,
-  Ip,
   NotFoundException,
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
-import type { Response as ExpressResponse, Request as ExpressRequest } from 'express';
+import type {
+  Response as ExpressResponse,
+  Request as ExpressRequest,
+} from 'express';
 import { AuthService } from './auth.service';
 
 // Shape of the JWT payload attached to req.user by JwtAuthGuard
@@ -39,6 +41,7 @@ import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { JwtAuthGuard, PermissionsGuard } from './guards';
 import { Permissions } from './decorators';
 import { PermissionsService } from '../permissions/permissions.service';
+import { AuditService } from '../audit/audit.service';
 
 @ApiTags('auth')
 @Controller('auth')
@@ -48,6 +51,7 @@ export class AuthController {
     private readonly csrfService: CsrfService,
     private readonly usersService: UsersService,
     private readonly permissionsService: PermissionsService,
+    private readonly auditService: AuditService,
   ) {}
 
   /**
@@ -91,7 +95,7 @@ export class AuthController {
     const cookieOptions = {
       httpOnly: true,
       secure: isProduction, // Must be true for sameSite: 'none'
-      sameSite: isProduction ? 'none' as const : 'strict' as const,
+      sameSite: isProduction ? ('none' as const) : ('strict' as const),
     };
 
     // Access token cookie (short-lived, 15 min)
@@ -146,7 +150,7 @@ export class AuthController {
     const cookieOptions = {
       httpOnly: true,
       secure: isProduction,
-      sameSite: isProduction ? 'none' as const : 'strict' as const,
+      sameSite: isProduction ? ('none' as const) : ('strict' as const),
     };
 
     res.cookie('access_token', result.access_token, {
@@ -174,7 +178,8 @@ export class AuthController {
     @Body() body?: RefreshTokenDto,
   ) {
     // Get refresh token from cookie or body
-    const refreshToken = req.cookies?.refresh_token || body?.refresh_token;
+    const cookies = req.cookies as Record<string, string> | undefined;
+    const refreshToken = cookies?.refresh_token || body?.refresh_token;
 
     if (!refreshToken) {
       res.status(HttpStatus.UNAUTHORIZED);
@@ -199,7 +204,7 @@ export class AuthController {
     const cookieOptions = {
       httpOnly: true,
       secure: isProduction,
-      sameSite: isProduction ? 'none' as const : 'strict' as const,
+      sameSite: isProduction ? ('none' as const) : ('strict' as const),
     };
 
     res.cookie('access_token', result.access_token, {
@@ -228,16 +233,28 @@ export class AuthController {
     @Body('refresh_token') bodyRefreshToken?: string,
   ) {
     // Accept refresh token from cookie (web) or body (mobile)
-    const refreshToken = req.cookies?.refresh_token ?? bodyRefreshToken;
+    const cookies = req.cookies as Record<string, string> | undefined;
+    const refreshToken = cookies?.refresh_token ?? bodyRefreshToken;
+    let userId: string | undefined;
     if (refreshToken) {
-      await this.authService.revokeRefreshToken(refreshToken);
+      const revoked = await this.authService.revokeRefreshToken(refreshToken);
+      userId = revoked?.userId;
+    }
+
+    if (userId) {
+      this.auditService.logSafe({
+        action: 'LOGOUT',
+        entity: 'User',
+        entityId: userId,
+        userId,
+      });
     }
 
     const isProduction = process.env.NODE_ENV === 'production';
     const cookieOptions = {
       httpOnly: true,
       secure: isProduction,
-      sameSite: isProduction ? 'none' as const : 'strict' as const,
+      sameSite: isProduction ? ('none' as const) : ('strict' as const),
     };
 
     // Clear cookies
@@ -258,14 +275,16 @@ export class AuthController {
     // or 'staging'; 'development' is only valid for local dev servers.
     if (token && process.env.NODE_ENV === 'development') {
       return {
-        message: 'If an account exists with this email, a reset link has been sent.',
+        message:
+          'If an account exists with this email, a reset link has been sent.',
         _dev_token: token,
         _dev_reset_url: `${process.env.FRONTEND_URL || 'http://localhost:4200'}/reset-password/${token}`,
       };
     }
 
     return {
-      message: 'If an account exists with this email, a reset link has been sent.',
+      message:
+        'If an account exists with this email, a reset link has been sent.',
     };
   }
 
@@ -317,7 +336,10 @@ export class AuthController {
     @Body(ValidationPipe) dto: ResetPasswordDto,
   ) {
     await this.authService.resetPassword(token, dto.newPassword);
-    return { message: 'Password has been reset successfully. Please log in with your new password.' };
+    return {
+      message:
+        'Password has been reset successfully. Please log in with your new password.',
+    };
   }
 
   /**
@@ -329,10 +351,11 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   async getMe(@Request() req: AuthenticatedRequest) {
     const userId: string = req.user.userId;
-    const [user, { permissions, version: permissionsVersion }] = await Promise.all([
-      this.authService.validateUser(userId),
-      this.permissionsService.getPermissionsWithVersion(userId),
-    ]);
+    const [user, { permissions, version: permissionsVersion }] =
+      await Promise.all([
+        this.authService.validateUser(userId),
+        this.permissionsService.getPermissionsWithVersion(userId),
+      ]);
 
     return {
       user: {

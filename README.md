@@ -27,7 +27,9 @@ Handles authentication, stock operations, multi-warehouse logistics, and reporti
 - **Reports** — Excel and PDF export, inventory value and status analytics
 - **Audit Trail** — Full activity logging with user, action, and change tracking
 - **Stock Alerts** — Scheduled cron jobs for low stock and overdue loan notifications
-- **Permissions** — Granular RBAC: 46 permissions across 14 modules, 5 seeded roles, in-memory cache (60s TTL)
+- **Outflows** — Permanent write-offs (damaged, lost, expired, consumed, sold) with stock decrement, cancel-to-restore, and PDF receipts
+- **Sales** — Per-customer-tier pricing (wholesale / distributor / retail) with manual line pricing, totals, PDF receipts, and stock decrement with cancel-to-restore
+- **Permissions** — Granular RBAC: 55 permissions across 18 modules, 5 seeded roles, in-memory cache (60s TTL)
 - **Security** — Rate limiting, input validation, Helmet headers, CSRF protection, warehouse-level access control
 - **Transaction Safety** — Race condition prevention with sequential inventory updates and TOCTOU guards
 
@@ -35,10 +37,10 @@ Handles authentication, stock operations, multi-warehouse logistics, and reporti
 
 | | Technology |
 |---|---|
-| **Framework** | NestJS 10 |
-| **ORM** | Prisma 5 |
+| **Framework** | NestJS 11 |
+| **ORM** | Prisma 6 |
 | **Database** | SQLite (dev) · PostgreSQL (prod) |
-| **Auth** | Passport JWT · bcrypt |
+| **Auth** | Passport JWT · bcryptjs |
 | **Docs** | Swagger / OpenAPI |
 | **Logging** | Winston |
 | **Testing** | Jest |
@@ -48,12 +50,12 @@ Handles authentication, stock operations, multi-warehouse logistics, and reporti
 **Prerequisites:** Node.js 20+
 
 ```bash
-npm install
+bun install
 cp .env.example .env           # Configure environment
 npx prisma db push             # Push schema to SQLite (dev)
-npm run prisma:generate        # Generate Prisma client
-npm run start:dev              # → http://localhost:3000
-# POST http://localhost:3000/api/seed  (seed admin + RBAC permissions)
+bun run prisma:generate        # Generate Prisma client
+bun run start:dev              # → http://localhost:3001
+# POST http://localhost:3001/api/seed  (seed admin + RBAC permissions)
 ```
 
 > **Note:** In dev (SQLite) use `prisma db push` + `prisma:generate`, not `prisma migrate dev` — SQLite has migration drift.
@@ -77,6 +79,8 @@ Swagger documentation is available at [`/api/docs`](http://localhost:3000/api/do
 | Scheduled Reports | 5 | Cron-based report scheduling |
 | Transfers | 13 | Approval workflow, QR + **manual confirm**, atomically-safe inventory sync |
 | Discharge Requests | 8 | Public form + admin review |
+| Outflows | 6 | Write-offs, stats, PDF receipt, cancel-to-restore stock |
+| Sales | 6 | Sales with customer-tier pricing, stats, PDF receipt, cancel-to-restore stock |
 | Stock Take | 7 | Reconciliation, variance report |
 | Audit | 3 | Activity logs |
 | Seed | 2 | Admin + RBAC seed |
@@ -151,7 +155,7 @@ See [Deployment Guide](./context/DEPLOYMENT-GUIDE.md) and [Production Checklist]
 | Codemap | Coverage | Purpose |
 |---------|----------|---------|
 | **[Index](./docs/CODEMAPS/INDEX.md)** | Full codebase | Overview, architecture diagram, data flows |
-| **[Auth & RBAC](./docs/CODEMAPS/auth-rbac.md)** | `src/auth/`, `src/permissions/` | JWT, 46 granular permissions, caching, warehouse access control |
+| **[Auth & RBAC](./docs/CODEMAPS/auth-rbac.md)** | `src/auth/`, `src/permissions/` | JWT, 55 granular permissions, caching, warehouse access control |
 | **[Inventory](./docs/CODEMAPS/inventory.md)** | `src/inventory/` | CRUD, bulk operations, soft deletes, filtering, Excel import/export |
 | **[Loans & Transfers](./docs/CODEMAPS/loans-transfers.md)** | `src/loans/`, `src/transfer-requests/` | **Manual confirmation endpoints**, QR workflows, transaction safety, sequential updates |
 | **[Seed Data](./docs/CODEMAPS/seed-data.md)** | `scripts/seed-data.ts` | Dev database seeding, 300+ realistic items, transfers, loans |

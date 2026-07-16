@@ -12,19 +12,25 @@ import {
   Query,
   UseGuards,
   ForbiddenException,
+  Res,
 } from '@nestjs/common';
+import { Response } from 'express';
 import { LoansService } from './loans.service';
 import { CreateLoanDto } from './dto/create-loan.dto';
 import { UpdateLoanDto, ReturnLoanDto } from './dto/update-loan.dto';
 import { JwtAuthGuard, PermissionsGuard } from '../auth/guards';
 import { Permissions, CurrentUser } from '../auth/decorators';
 import { PaginationDto } from '../common/dto';
-import { AuthenticatedUser } from '../auth/interfaces/auth-user.interface';
+import type { AuthenticatedUser } from '../auth/interfaces/auth-user.interface';
+import { PdfReceiptsService } from '../pdf-receipts/pdf-receipts.service';
 
 @Controller('loans')
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 export class LoansController {
-  constructor(private readonly loansService: LoansService) {}
+  constructor(
+    private readonly loansService: LoansService,
+    private readonly pdfReceipts: PdfReceiptsService,
+  ) {}
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
@@ -39,7 +45,9 @@ export class LoansController {
         user.warehouseIds.includes(createLoanDto.sourceWarehouseId) ||
         user.warehouseIds.includes(createLoanDto.destinationWarehouseId);
       if (!hasAccess) {
-        throw new ForbiddenException('You do not have access to the involved warehouses');
+        throw new ForbiddenException(
+          'You do not have access to the involved warehouses',
+        );
       }
     }
     return this.loansService.create(createLoanDto, user.userId);
@@ -48,7 +56,8 @@ export class LoansController {
   @Get()
   @Permissions('loans:view')
   findAll(
-    @Query(new ValidationPipe({ whitelist: true, transform: true })) pagination: PaginationDto,
+    @Query(new ValidationPipe({ whitelist: true, transform: true }))
+    pagination: PaginationDto,
     @Query('status') status?: string,
     @CurrentUser() user: AuthenticatedUser,
   ) {
@@ -94,30 +103,45 @@ export class LoansController {
 
   @Get(':id')
   @Permissions('loans:view')
-  findOne(
-    @Param('id') id: string,
-    @CurrentUser() user: AuthenticatedUser,
-  ) {
+  findOne(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
     return this.loansService.findOne(id, user.warehouseIds);
+  }
+
+  @Get(':id/pdf')
+  @Permissions('loans:view')
+  async exportPdf(
+    @Param('id') id: string,
+    @Query('locale') locale: string | undefined,
+    @CurrentUser() user: AuthenticatedUser,
+    @Res() res: Response,
+  ) {
+    const resolvedLocale = locale === 'en' ? 'en' : 'es';
+    // Reuse findOne for warehouse-access enforcement before generating
+    await this.loansService.findOne(id, user.warehouseIds);
+    const buffer = await this.pdfReceipts.generateLoanReceipt(
+      id,
+      resolvedLocale,
+    );
+
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename=prestamo_${id}.pdf`,
+      'Content-Length': buffer.length,
+    });
+    res.send(buffer);
   }
 
   // ==================== QR Code Endpoints ====================
 
   @Patch(':id/send')
   @Permissions('loans:manage')
-  sendLoan(
-    @Param('id') id: string,
-    @CurrentUser() user: AuthenticatedUser,
-  ) {
-    return this.loansService.sendLoan(id, user.warehouseIds);
+  sendLoan(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.loansService.sendLoan(id, user.userId, user.warehouseIds);
   }
 
   @Get(':id/qr/:type')
   @Permissions('loans:manage')
-  async getQrCode(
-    @Param('id') id: string,
-    @Param('type') type: 'send' | 'return',
-  ) {
+  async getQrCode(@Param('id') id: string, @Param('type') type: string) {
     const qrDataUrl = await this.loansService.getQrCode(id, type);
     return { qrDataUrl };
   }
@@ -129,7 +153,11 @@ export class LoansController {
     @Body('qrCode') qrCode: string,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.loansService.confirmReceipt(qrCode, user.userId);
+    return this.loansService.confirmReceipt(
+      qrCode,
+      user.userId,
+      user.warehouseIds,
+    );
   }
 
   @Patch(':id/initiate-return')
@@ -138,7 +166,7 @@ export class LoansController {
     @Param('id') id: string,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.loansService.initiateReturn(id, user.warehouseIds);
+    return this.loansService.initiateReturn(id, user.userId, user.warehouseIds);
   }
 
   @Post('confirm-return')
@@ -148,7 +176,11 @@ export class LoansController {
     @Body('qrCode') qrCode: string,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.loansService.confirmReturn(qrCode, user.userId);
+    return this.loansService.confirmReturn(
+      qrCode,
+      user.userId,
+      user.warehouseIds,
+    );
   }
 
   @Post('scan-qr')
@@ -158,7 +190,11 @@ export class LoansController {
     @Body('scannedData') scannedData: string,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.loansService.processQrCode(scannedData, user.userId);
+    return this.loansService.processQrCode(
+      scannedData,
+      user.userId,
+      user.warehouseIds,
+    );
   }
 
   // ==================== Manual Confirmation Endpoints (No QR) ====================
@@ -169,7 +205,11 @@ export class LoansController {
     @Param('id') id: string,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.loansService.manualConfirmReceipt(id, user.userId, user.warehouseIds);
+    return this.loansService.manualConfirmReceipt(
+      id,
+      user.userId,
+      user.warehouseIds,
+    );
   }
 
   @Patch(':id/manual-confirm-return')
@@ -178,7 +218,11 @@ export class LoansController {
     @Param('id') id: string,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.loansService.manualConfirmReturn(id, user.userId, user.warehouseIds);
+    return this.loansService.manualConfirmReturn(
+      id,
+      user.userId,
+      user.warehouseIds,
+    );
   }
 
   // ==================== Standard Endpoints ====================
@@ -205,11 +249,8 @@ export class LoansController {
 
   @Patch(':id/cancel')
   @Permissions('loans:manage')
-  cancelLoan(
-    @Param('id') id: string,
-    @CurrentUser() user: AuthenticatedUser,
-  ) {
-    return this.loansService.cancel(id, user.warehouseIds);
+  cancelLoan(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.loansService.cancel(id, user.userId, user.warehouseIds);
   }
 
   @Delete(':id')

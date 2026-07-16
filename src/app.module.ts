@@ -30,6 +30,8 @@ import { QrModule } from './qr/qr.module';
 import { EventsModule } from './events/events.module';
 import { SearchModule } from './common/search/search.module';
 import { DischargeRequestsModule } from './discharge-requests/discharge-requests.module';
+import { OutflowsModule } from './outflows/outflows.module';
+import { SalesModule } from './sales/sales.module';
 import { WarehouseAccessModule } from './common/warehouse-access/warehouse-access.module';
 import { WarehouseAccessInterceptor } from './common/warehouse-access/warehouse-access.interceptor';
 import { ScheduledReportsModule } from './scheduled-reports/scheduled-reports.module';
@@ -41,7 +43,9 @@ import { RolesModule } from './roles/roles.module';
       isGlobal: true,
       envFilePath: '.env',
       validationSchema: Joi.object({
-        NODE_ENV: Joi.string().valid('development', 'production', 'test').default('development'),
+        NODE_ENV: Joi.string()
+          .valid('development', 'production', 'test')
+          .default('development'),
         PORT: Joi.number().default(3000),
         DATABASE_URL: Joi.string().required(),
         JWT_SECRET: Joi.string().min(32).required(),
@@ -110,6 +114,8 @@ import { RolesModule } from './roles/roles.module';
     EventsModule,
     SearchModule,
     DischargeRequestsModule,
+    OutflowsModule,
+    SalesModule,
     WarehouseAccessModule,
     ScheduledReportsModule,
     RolesModule,

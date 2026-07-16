@@ -1,8 +1,25 @@
-import { IsString, IsNotEmpty, IsOptional, IsInt, Min, IsNumber, IsEnum, MinLength, MaxLength, IsDateString, Validate, ValidatorConstraint, ValidatorConstraintInterface, ValidationArguments } from 'class-validator';
+import {
+  IsString,
+  IsNotEmpty,
+  IsOptional,
+  IsInt,
+  Min,
+  IsNumber,
+  IsEnum,
+  MinLength,
+  MaxLength,
+  IsDateString,
+  Validate,
+  ValidatorConstraint,
+  ValidatorConstraintInterface,
+  ValidationArguments,
+} from 'class-validator';
 import { InventoryStatus, Currency, ItemType } from '@prisma/client';
 
 @ValidatorConstraint({ name: 'UniqueItemQuantity', async: false })
-export class UniqueItemQuantityConstraint implements ValidatorConstraintInterface {
+export class UniqueItemQuantityConstraint
+  implements ValidatorConstraintInterface
+{
   validate(quantity: number, args: ValidationArguments) {
     const dto = args.object as CreateInventoryDto;
     // If UNIQUE item, quantity must be 0 or 1

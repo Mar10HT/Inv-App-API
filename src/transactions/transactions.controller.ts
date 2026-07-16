@@ -36,10 +36,16 @@ export class TransactionsController {
     // Validate user has access to at least one of the warehouses involved
     if (user.warehouseIds !== null) {
       const hasAccess =
-        (createTransactionDto.sourceWarehouseId && user.warehouseIds.includes(createTransactionDto.sourceWarehouseId)) ||
-        (createTransactionDto.destinationWarehouseId && user.warehouseIds.includes(createTransactionDto.destinationWarehouseId));
+        (createTransactionDto.sourceWarehouseId &&
+          user.warehouseIds.includes(createTransactionDto.sourceWarehouseId)) ||
+        (createTransactionDto.destinationWarehouseId &&
+          user.warehouseIds.includes(
+            createTransactionDto.destinationWarehouseId,
+          ));
       if (!hasAccess) {
-        throw new ForbiddenException('You do not have access to the involved warehouses');
+        throw new ForbiddenException(
+          'You do not have access to the involved warehouses',
+        );
       }
     }
     return this.transactionsService.create(createTransactionDto);

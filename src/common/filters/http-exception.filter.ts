@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { Request, Response } from 'express';
+import * as Sentry from '@sentry/node';
 
 interface HttpExceptionBody {
   message?: string | string[];
@@ -36,7 +37,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
         message = body.message || exception.message;
         error = body.error || 'Error';
       } else {
-        message = exceptionResponse as string;
+        message = exceptionResponse;
       }
     } else if (exception instanceof Prisma.PrismaClientKnownRequestError) {
       const prismaError = this.handlePrismaError(exception);
@@ -60,6 +61,12 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       exception instanceof Error ? exception.stack : undefined,
     );
 
+    // Only report unexpected server errors, not routine 4xx client errors.
+    // No-ops when SENTRY_DSN isn't configured (see common/sentry.ts).
+    if (status >= HttpStatus.INTERNAL_SERVER_ERROR) {
+      Sentry.captureException(exception);
+    }
+
     response.status(status).json({
       statusCode: status,
       error,
@@ -69,7 +76,11 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     });
   }
 
-  private handlePrismaError(error: Prisma.PrismaClientKnownRequestError): { status: number; message: string; error: string } {
+  private handlePrismaError(error: Prisma.PrismaClientKnownRequestError): {
+    status: number;
+    message: string;
+    error: string;
+  } {
     switch (error.code) {
       case 'P2002':
         return {
@@ -86,13 +97,15 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       case 'P2003':
         return {
           status: HttpStatus.BAD_REQUEST,
-          message: 'Foreign key constraint failed — related record does not exist',
+          message:
+            'Foreign key constraint failed — related record does not exist',
           error: 'Bad Request',
         };
       case 'P2014':
         return {
           status: HttpStatus.BAD_REQUEST,
-          message: 'The change you are trying to make would violate a required relation',
+          message:
+            'The change you are trying to make would violate a required relation',
           error: 'Bad Request',
         };
       case 'P2000':

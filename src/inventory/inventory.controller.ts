@@ -15,7 +15,6 @@ import {
   UploadedFile,
   BadRequestException,
   ForbiddenException,
-  Req,
   Res,
 } from '@nestjs/common';
 import { Response } from 'express';
@@ -24,7 +23,11 @@ import { InventoryService } from './inventory.service';
 import { CreateInventoryDto } from './dto/create-inventory.dto';
 import { UpdateInventoryDto } from './dto/update-inventory.dto';
 import { FilterInventoryDto } from './dto/filter-inventory.dto';
-import { BulkUpdateDto, BulkDeleteDto, BulkImportDto } from './dto/bulk-operations.dto';
+import {
+  BulkUpdateDto,
+  BulkDeleteDto,
+  BulkImportDto,
+} from './dto/bulk-operations.dto';
 import { JwtAuthGuard, PermissionsGuard } from '../auth/guards';
 import { Permissions, CurrentUser } from '../auth/decorators';
 import { AuthenticatedUser } from '../auth/interfaces/auth-user.interface';
@@ -42,7 +45,10 @@ export class InventoryController {
     @CurrentUser() user: AuthenticatedUser,
   ) {
     // Validate user has access to the target warehouse
-    if (user.warehouseIds !== null && !user.warehouseIds.includes(createInventoryDto.warehouseId)) {
+    if (
+      user.warehouseIds !== null &&
+      !user.warehouseIds.includes(createInventoryDto.warehouseId)
+    ) {
       throw new ForbiddenException('You do not have access to this warehouse');
     }
     createInventoryDto.createdById = user.userId;
@@ -87,8 +93,10 @@ export class InventoryController {
   async downloadImportTemplate(@Res() res: Response) {
     const buffer = await this.inventoryService.generateImportTemplate();
     res.set({
-      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      'Content-Disposition': 'attachment; filename="plantilla-importacion.xlsx"',
+      'Content-Type':
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition':
+        'attachment; filename="plantilla-importacion.xlsx"',
     });
     res.send(buffer);
   }
@@ -107,8 +115,14 @@ export class InventoryController {
     @CurrentUser() user: AuthenticatedUser,
   ) {
     // If changing warehouse, validate access to target warehouse
-    if (updateInventoryDto.warehouseId && user.warehouseIds !== null && !user.warehouseIds.includes(updateInventoryDto.warehouseId)) {
-      throw new ForbiddenException('You do not have access to the target warehouse');
+    if (
+      updateInventoryDto.warehouseId &&
+      user.warehouseIds !== null &&
+      !user.warehouseIds.includes(updateInventoryDto.warehouseId)
+    ) {
+      throw new ForbiddenException(
+        'You do not have access to the target warehouse',
+      );
     }
     return this.inventoryService.update(id, updateInventoryDto, user.userId);
   }
@@ -184,7 +198,9 @@ export class InventoryController {
     ];
 
     if (!allowedMimeTypes.includes(file.mimetype)) {
-      throw new BadRequestException('Invalid file type. Only Excel files (.xlsx, .xls) are allowed');
+      throw new BadRequestException(
+        'Invalid file type. Only Excel files (.xlsx, .xls) are allowed',
+      );
     }
 
     const items = await this.inventoryService.parseExcelFile(file.buffer);

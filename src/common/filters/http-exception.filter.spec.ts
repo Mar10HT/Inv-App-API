@@ -1,16 +1,25 @@
 import { HttpException, HttpStatus } from '@nestjs/common';
+import type { ArgumentsHost, LoggerService } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
+import type { Request, Response } from 'express';
 import { GlobalExceptionFilter } from './http-exception.filter';
+
+const prismaError = (code: string, message: string) =>
+  new Prisma.PrismaClientKnownRequestError(message, {
+    code,
+    clientVersion: '6.x',
+  });
 
 describe('GlobalExceptionFilter', () => {
   let filter: GlobalExceptionFilter;
-  let mockLogger: { error: jest.Mock; log: jest.Mock };
+  let mockLogger: { error: jest.Mock; log: jest.Mock; warn: jest.Mock };
   let mockResponse: { status: jest.Mock; json: jest.Mock };
   let mockRequest: { method: string; url: string; ip: string };
-  let mockHost: any;
+  let mockHost: ArgumentsHost;
 
   beforeEach(() => {
-    mockLogger = { error: jest.fn(), log: jest.fn() };
-    filter = new GlobalExceptionFilter(mockLogger as any);
+    mockLogger = { error: jest.fn(), log: jest.fn(), warn: jest.fn() };
+    filter = new GlobalExceptionFilter(mockLogger as unknown as LoggerService);
 
     mockResponse = {
       status: jest.fn().mockReturnThis(),
@@ -20,14 +29,17 @@ describe('GlobalExceptionFilter', () => {
 
     mockHost = {
       switchToHttp: () => ({
-        getResponse: () => mockResponse,
-        getRequest: () => mockRequest,
+        getResponse: () => mockResponse as unknown as Response,
+        getRequest: () => mockRequest as unknown as Request,
       }),
-    };
+    } as unknown as ArgumentsHost;
   });
 
   it('handles HttpException with object response', () => {
-    const exception = new HttpException({ message: 'Not found', error: 'Not Found' }, HttpStatus.NOT_FOUND);
+    const exception = new HttpException(
+      { message: 'Not found', error: 'Not Found' },
+      HttpStatus.NOT_FOUND,
+    );
 
     filter.catch(exception, mockHost);
 
@@ -63,7 +75,7 @@ describe('GlobalExceptionFilter', () => {
   });
 
   it('handles Prisma P2002 (unique constraint) as 409 Conflict', () => {
-    const exception = Object.assign(new Error('Unique constraint'), { code: 'P2002' });
+    const exception = prismaError('P2002', 'Unique constraint');
 
     filter.catch(exception, mockHost);
 
@@ -74,7 +86,7 @@ describe('GlobalExceptionFilter', () => {
   });
 
   it('handles Prisma P2025 (record not found) as 404', () => {
-    const exception = Object.assign(new Error('Not found'), { code: 'P2025' });
+    const exception = prismaError('P2025', 'Not found');
 
     filter.catch(exception, mockHost);
 
@@ -82,7 +94,7 @@ describe('GlobalExceptionFilter', () => {
   });
 
   it('handles Prisma P2003 (foreign key) as 400', () => {
-    const exception = Object.assign(new Error('FK failed'), { code: 'P2003' });
+    const exception = prismaError('P2003', 'FK failed');
 
     filter.catch(exception, mockHost);
 
@@ -90,12 +102,14 @@ describe('GlobalExceptionFilter', () => {
   });
 
   it('handles ForbiddenError (CSRF) as 403', () => {
-    const exception = Object.create({ constructor: { name: 'ForbiddenError' } });
+    const exception = Object.create({
+      constructor: { name: 'ForbiddenError' },
+    }) as Error;
     Object.defineProperty(exception, 'constructor', {
       value: { name: 'ForbiddenError' },
     });
     Object.setPrototypeOf(exception, Error.prototype);
-    (exception as any).message = 'CSRF error';
+    exception.message = 'CSRF error';
 
     filter.catch(exception, mockHost);
 
@@ -103,7 +117,10 @@ describe('GlobalExceptionFilter', () => {
   });
 
   it('logs the error', () => {
-    const exception = new HttpException('Unauthorized', HttpStatus.UNAUTHORIZED);
+    const exception = new HttpException(
+      'Unauthorized',
+      HttpStatus.UNAUTHORIZED,
+    );
 
     filter.catch(exception, mockHost);
 
@@ -111,11 +128,15 @@ describe('GlobalExceptionFilter', () => {
   });
 
   it('wraps non-array messages in array', () => {
-    const exception = new HttpException('Single message', HttpStatus.BAD_REQUEST);
+    const exception = new HttpException(
+      'Single message',
+      HttpStatus.BAD_REQUEST,
+    );
 
     filter.catch(exception, mockHost);
 
-    const jsonCall = mockResponse.json.mock.calls[0][0];
+    const call = mockResponse.json.mock.calls[0] as unknown[];
+    const jsonCall = call[0] as { message: unknown };
     expect(Array.isArray(jsonCall.message)).toBe(true);
   });
 
@@ -124,7 +145,8 @@ describe('GlobalExceptionFilter', () => {
 
     filter.catch(exception, mockHost);
 
-    const jsonCall = mockResponse.json.mock.calls[0][0];
+    const call = mockResponse.json.mock.calls[0] as unknown[];
+    const jsonCall = call[0] as { timestamp: unknown; path: unknown };
     expect(jsonCall.timestamp).toBeDefined();
     expect(jsonCall.path).toBe('/test');
   });

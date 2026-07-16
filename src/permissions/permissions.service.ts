@@ -44,7 +44,9 @@ export class PermissionsService {
    * Returns both the permission keys and the current permissionsVersion in a
    * single DB round-trip. Use this in GET /auth/me to avoid a second query.
    */
-  async getPermissionsWithVersion(userId: string): Promise<{ permissions: string[]; version: number }> {
+  async getPermissionsWithVersion(
+    userId: string,
+  ): Promise<{ permissions: string[]; version: number }> {
     const cached = this.cache.get(userId);
     if (cached && cached.expiresAt > Date.now()) {
       return { permissions: cached.permissions, version: cached.version };
@@ -67,7 +69,9 @@ export class PermissionsService {
     }
 
     if (!user.roleId) {
-      this.logger.warn(`User ${userId} has no roleId assigned — returning empty permissions.`);
+      this.logger.warn(
+        `User ${userId} has no roleId assigned — returning empty permissions.`,
+      );
       return this.setCache(userId, [], user.permissionsVersion);
     }
 
@@ -103,7 +107,9 @@ export class PermissionsService {
     for (const id of userIds) {
       this.cache.delete(id);
     }
-    this.logger.log(`Invalidated permission cache for ${userIds.length} users.`);
+    this.logger.log(
+      `Invalidated permission cache for ${userIds.length} users.`,
+    );
   }
 
   /**
@@ -127,7 +133,11 @@ export class PermissionsService {
     permissions: string[],
     version: number,
   ): { permissions: string[]; version: number } {
-    this.cache.set(userId, { permissions, version, expiresAt: Date.now() + CACHE_TTL_MS });
+    this.cache.set(userId, {
+      permissions,
+      version,
+      expiresAt: Date.now() + CACHE_TTL_MS,
+    });
     return { permissions, version };
   }
 }

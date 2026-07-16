@@ -11,6 +11,14 @@ import { Request, Response } from 'express';
 
 interface AuthenticatedRequest extends Request {
   user?: { userId: string };
+  body: Record<string, unknown>;
+}
+
+/** Minimal shape relied upon when logging an error surfaced by downstream handlers/pipes. */
+interface LoggableError {
+  status?: number;
+  message?: string;
+  stack?: string;
 }
 
 @Injectable()
@@ -20,8 +28,7 @@ export class LoggingInterceptor implements NestInterceptor {
   intercept(context: ExecutionContext, next: CallHandler): Observable<any> {
     const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
     const response = context.switchToHttp().getResponse<Response>();
-    const { method, url, body, query, params } = request;
-    const userAgent = request.get('user-agent') || '';
+    const { method, url, body } = request;
     const ip = request.ip || request.connection.remoteAddress;
     const userId = request.user?.userId || 'anonymous';
 
@@ -35,13 +42,20 @@ export class LoggingInterceptor implements NestInterceptor {
           const { statusCode } = response;
 
           const logMessage = `${method} ${url} ${statusCode} - ${duration}ms - ${userId} - ${ip}`;
-          if (sanitizedBody && Object.keys(sanitizedBody).length > 0 && method !== 'GET') {
-            this.logger.log(`${logMessage} - body: ${JSON.stringify(sanitizedBody)}`, 'HTTP');
+          if (
+            sanitizedBody &&
+            Object.keys(sanitizedBody).length > 0 &&
+            method !== 'GET'
+          ) {
+            this.logger.log(
+              `${logMessage} - body: ${JSON.stringify(sanitizedBody)}`,
+              'HTTP',
+            );
           } else {
             this.logger.log(logMessage, 'HTTP');
           }
         },
-        error: (error) => {
+        error: (error: LoggableError) => {
           const duration = Date.now() - startTime;
           const statusCode = error.status || 500;
 
@@ -59,7 +73,13 @@ export class LoggingInterceptor implements NestInterceptor {
     if (!body) return undefined;
 
     const sanitized = { ...body };
-    const sensitiveFields = ['password', 'currentPassword', 'newPassword', 'token', 'secret'];
+    const sensitiveFields = [
+      'password',
+      'currentPassword',
+      'newPassword',
+      'token',
+      'secret',
+    ];
 
     for (const field of sensitiveFields) {
       if (sanitized[field]) {

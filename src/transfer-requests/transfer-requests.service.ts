@@ -1,10 +1,19 @@
-import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { QrService } from '../qr/qr.service';
 import { CreateTransferRequestDto } from './dto/create-transfer-request.dto';
 import { Prisma, RequestStatus, ItemType } from '@prisma/client';
-import { PaginationDto, parsePagination, buildPaginationMeta } from '../common/dto';
+import {
+  PaginationDto,
+  parsePagination,
+  buildPaginationMeta,
+} from '../common/dto';
 import { warehouseFilterMultiField } from '../common/warehouse-access/warehouse-filter.util';
 
 @Injectable()
@@ -23,7 +32,9 @@ export class TransferRequestsService {
     receivedBy: { select: { id: true, name: true, email: true } },
     items: {
       include: {
-        inventoryItem: { select: { id: true, name: true, serviceTag: true, quantity: true } },
+        inventoryItem: {
+          select: { id: true, name: true, serviceTag: true, quantity: true },
+        },
       },
     },
   };
@@ -43,7 +54,9 @@ export class TransferRequestsService {
 
   async create(dto: CreateTransferRequestDto, requestedById: string) {
     if (dto.sourceWarehouseId === dto.destinationWarehouseId) {
-      throw new BadRequestException('Source and destination warehouses must be different');
+      throw new BadRequestException(
+        'Source and destination warehouses must be different',
+      );
     }
 
     const sourceWarehouse = await this.prisma.warehouse.findUnique({
@@ -83,24 +96,27 @@ export class TransferRequestsService {
       }
 
       if (inventoryItem.warehouseId !== dto.sourceWarehouseId) {
-        throw new BadRequestException(`Item ${inventoryItem.name} does not belong to source warehouse`);
+        throw new BadRequestException(
+          `Item ${inventoryItem.name} does not belong to source warehouse`,
+        );
       }
 
       if (inventoryItem.quantity < item.quantity) {
         throw new BadRequestException(
-          `Insufficient quantity for item ${inventoryItem.name}. Available: ${inventoryItem.quantity}, Requested: ${item.quantity}`
+          `Insufficient quantity for item ${inventoryItem.name}. Available: ${inventoryItem.quantity}, Requested: ${item.quantity}`,
         );
       }
     }
 
     const transferRequest = await this.prisma.transferRequest.create({
       data: {
+        name: dto.name?.trim() || null,
         sourceWarehouseId: dto.sourceWarehouseId,
         destinationWarehouseId: dto.destinationWarehouseId,
         requestedById,
         notes: dto.notes,
         items: {
-          create: dto.items.map(item => ({
+          create: dto.items.map((item) => ({
             inventoryItemId: item.inventoryItemId,
             quantity: item.quantity,
           })),
@@ -109,23 +125,41 @@ export class TransferRequestsService {
       include: this.includeFull,
     });
 
-    await this.auditService.log({
+    this.auditService.logSafe({
       action: 'CREATE',
       entity: 'TransferRequest',
       entityId: transferRequest.id,
       userId: requestedById,
-      changes: { status: 'PENDING', itemCount: dto.items.length },
+      changes: {
+        after: {
+          name: transferRequest.name,
+          sourceWarehouseId: transferRequest.sourceWarehouseId,
+          destinationWarehouseId: transferRequest.destinationWarehouseId,
+          status: transferRequest.status,
+          items: dto.items.map((i) => ({
+            inventoryItemId: i.inventoryItemId,
+            quantity: i.quantity,
+          })),
+        },
+      },
     });
 
     return transferRequest;
   }
 
-  async findAll(pagination?: PaginationDto, status?: RequestStatus, warehouseIds?: string[] | null) {
+  async findAll(
+    pagination?: PaginationDto,
+    status?: RequestStatus,
+    warehouseIds?: string[] | null,
+  ) {
     const { page, limit, skip } = parsePagination(pagination);
 
     const where: Prisma.TransferRequestWhereInput = {
       ...(status ? { status } : {}),
-      ...warehouseFilterMultiField(warehouseIds, ['sourceWarehouseId', 'destinationWarehouseId']),
+      ...warehouseFilterMultiField(warehouseIds, [
+        'sourceWarehouseId',
+        'destinationWarehouseId',
+      ]),
     };
 
     const [requests, total] = await Promise.all([
@@ -142,11 +176,14 @@ export class TransferRequestsService {
     return { data: requests, meta: buildPaginationMeta(total, page, limit) };
   }
 
-  async findPending(pagination?: PaginationDto, warehouseIds?: string[] | null) {
+  async findPending(
+    pagination?: PaginationDto,
+    warehouseIds?: string[] | null,
+  ) {
     return this.findAll(pagination, RequestStatus.PENDING, warehouseIds);
   }
 
-  async findOne(id: string) {
+  async findOne(id: string, userWarehouseIds?: string[] | null) {
     const request = await this.prisma.transferRequest.findUnique({
       where: { id },
       include: this.includeFull,
@@ -156,16 +193,32 @@ export class TransferRequestsService {
       throw new NotFoundException('Transfer request not found');
     }
 
+    if (userWarehouseIds != null) {
+      const hasAccess =
+        userWarehouseIds.includes(request.sourceWarehouseId) ||
+        userWarehouseIds.includes(request.destinationWarehouseId);
+      if (!hasAccess) {
+        throw new ForbiddenException('You do not have access to this transfer');
+      }
+    }
+
     return request;
   }
 
-  async approve(id: string, approvedById: string, userWarehouseIds?: string[] | null) {
+  async approve(
+    id: string,
+    approvedById: string,
+    userWarehouseIds?: string[] | null,
+  ) {
     const request = await this.findOne(id);
     if (userWarehouseIds != null) {
       const hasAccess =
         userWarehouseIds.includes(request.sourceWarehouseId) ||
         userWarehouseIds.includes(request.destinationWarehouseId);
-      if (!hasAccess) throw new ForbiddenException('You do not have access to the involved warehouses');
+      if (!hasAccess)
+        throw new ForbiddenException(
+          'You do not have access to the involved warehouses',
+        );
     }
 
     // Wrap status check, quantity validation, and update in a single transaction to prevent TOCTOU races
@@ -176,7 +229,7 @@ export class TransferRequestsService {
       });
       if (!current || current.status !== RequestStatus.PENDING) {
         throw new BadRequestException(
-          `Transfer request is not pending. Current status: ${current?.status ?? 'unknown'}`
+          `Transfer request is not pending. Current status: ${current?.status ?? 'unknown'}`,
         );
       }
 
@@ -186,7 +239,7 @@ export class TransferRequestsService {
         });
         if (!inventoryItem || inventoryItem.quantity < item.quantity) {
           throw new BadRequestException(
-            `Insufficient quantity for item ${item.inventoryItem.name}. Transfer cannot be approved.`
+            `Insufficient quantity for item ${item.inventoryItem.name}. Transfer cannot be approved.`,
           );
         }
       }
@@ -202,12 +255,16 @@ export class TransferRequestsService {
       });
     });
 
-    await this.auditService.log({
+    this.auditService.logSafe({
       action: 'UPDATE',
       entity: 'TransferRequest',
       entityId: id,
       userId: approvedById,
-      changes: { status: 'APPROVED' },
+      changes: {
+        before: { status: 'PENDING' },
+        after: { status: 'APPROVED' },
+        fields: ['status'],
+      },
     });
 
     return updated;
@@ -218,18 +275,25 @@ export class TransferRequestsService {
   /**
    * Send transfer - generates QR code for receipt confirmation
    */
-  async sendTransfer(id: string, userId: string, userWarehouseIds?: string[] | null) {
+  async sendTransfer(
+    id: string,
+    userId: string,
+    userWarehouseIds?: string[] | null,
+  ) {
     const request = await this.findOne(id);
     if (userWarehouseIds != null) {
       const hasAccess =
         userWarehouseIds.includes(request.sourceWarehouseId) ||
         userWarehouseIds.includes(request.destinationWarehouseId);
-      if (!hasAccess) throw new ForbiddenException('You do not have access to the involved warehouses');
+      if (!hasAccess)
+        throw new ForbiddenException(
+          'You do not have access to the involved warehouses',
+        );
     }
 
     if (request.status !== RequestStatus.APPROVED) {
       throw new BadRequestException(
-        `Cannot send transfer in ${request.status} status. Only APPROVED transfers can be sent.`
+        `Cannot send transfer in ${request.status} status. Only APPROVED transfers can be sent.`,
       );
     }
 
@@ -251,12 +315,16 @@ export class TransferRequestsService {
     };
     const qrDataUrl = await this.qrService.generateQrDataUrl(qrData);
 
-    await this.auditService.log({
+    this.auditService.logSafe({
       action: 'UPDATE',
       entity: 'TransferRequest',
       entityId: id,
       userId, // The user who performed the send action — NOT the approver or requester
-      changes: { status: 'SENT', qrGenerated: true },
+      changes: {
+        before: { status: 'APPROVED' },
+        after: { status: 'SENT' },
+        fields: ['status'],
+      },
     });
 
     return {
@@ -268,7 +336,11 @@ export class TransferRequestsService {
   /**
    * Confirm receipt by scanning QR code - also completes the transfer
    */
-  async confirmReceipt(qrCode: string, userId: string) {
+  async confirmReceipt(
+    qrCode: string,
+    userId: string,
+    userWarehouseIds?: string[] | null,
+  ) {
     const request = await this.prisma.transferRequest.findFirst({
       where: { sendQrCode: qrCode },
       include: this.includeFull,
@@ -278,26 +350,47 @@ export class TransferRequestsService {
       throw new NotFoundException('Invalid QR code or transfer not found');
     }
 
+    if (userWarehouseIds != null) {
+      const hasAccess =
+        userWarehouseIds.includes(request.sourceWarehouseId) ||
+        userWarehouseIds.includes(request.destinationWarehouseId);
+      if (!hasAccess)
+        throw new ForbiddenException(
+          'You do not have access to the involved warehouses',
+        );
+    }
+
     // Execute the transfer - all inventory modifications in a single transaction.
     // NOTE [M3]: Promise.all inside $transaction is safe on SQLite (dev) but can cause
     // serialization conflicts on PostgreSQL under high concurrency. See comments in complete().
     const updated = await this.prisma.$transaction(async (tx) => {
       // Re-check status inside the transaction to prevent double-confirmation under concurrency
-      const current = await tx.transferRequest.findUnique({ where: { id: request.id }, select: { status: true } });
+      const current = await tx.transferRequest.findUnique({
+        where: { id: request.id },
+        select: { status: true },
+      });
       if (!current || current.status !== RequestStatus.SENT) {
         throw new BadRequestException(
-          `Cannot confirm receipt. Transfer is in ${current?.status ?? 'unknown'} status.`
+          `Cannot confirm receipt. Transfer is in ${current?.status ?? 'unknown'} status.`,
         );
       }
       return this.applyInventoryTransfer(tx, request, userId);
     });
 
-    await this.auditService.log({
+    this.auditService.logSafe({
       action: 'UPDATE',
       entity: 'TransferRequest',
       entityId: request.id,
       userId,
-      changes: { status: 'COMPLETED', confirmedViaQr: true, itemsTransferred: request.items.length },
+      changes: {
+        before: { status: 'SENT' },
+        after: {
+          status: 'COMPLETED',
+          confirmedViaQr: true,
+          itemsTransferred: request.items.length,
+        },
+        fields: ['status'],
+      },
     });
 
     return updated;
@@ -310,7 +403,9 @@ export class TransferRequestsService {
     const request = await this.findOne(id);
 
     if (!request.sendQrCode) {
-      throw new BadRequestException('QR code not generated. Send the transfer first.');
+      throw new BadRequestException(
+        'QR code not generated. Send the transfer first.',
+      );
     }
 
     const qrData = {
@@ -325,7 +420,11 @@ export class TransferRequestsService {
   /**
    * Process scanned QR code
    */
-  async processQrCode(scannedData: string, userId: string) {
+  async processQrCode(
+    scannedData: string,
+    userId: string,
+    userWarehouseIds?: string[] | null,
+  ) {
     const qrData = this.qrService.parseQrData(scannedData);
 
     if (!qrData) {
@@ -336,18 +435,26 @@ export class TransferRequestsService {
       throw new BadRequestException('This QR code is not for a transfer');
     }
 
-    return this.confirmReceipt(qrData.code, userId);
+    return this.confirmReceipt(qrData.code, userId, userWarehouseIds);
   }
 
   // ==================== Standard Operations ====================
 
-  async reject(id: string, rejectedById: string, reason?: string, userWarehouseIds?: string[] | null) {
+  async reject(
+    id: string,
+    rejectedById: string,
+    reason?: string,
+    userWarehouseIds?: string[] | null,
+  ) {
     const request = await this.findOne(id);
     if (userWarehouseIds != null) {
       const hasAccess =
         userWarehouseIds.includes(request.sourceWarehouseId) ||
         userWarehouseIds.includes(request.destinationWarehouseId);
-      if (!hasAccess) throw new ForbiddenException('You do not have access to the involved warehouses');
+      if (!hasAccess)
+        throw new ForbiddenException(
+          'You do not have access to the involved warehouses',
+        );
     }
 
     // Wrap status check and update in a single transaction to prevent TOCTOU races
@@ -374,12 +481,16 @@ export class TransferRequestsService {
       });
     });
 
-    await this.auditService.log({
+    this.auditService.logSafe({
       action: 'UPDATE',
       entity: 'TransferRequest',
       entityId: id,
       userId: rejectedById,
-      changes: { status: 'REJECTED', reason },
+      changes: {
+        before: { status: 'PENDING' },
+        after: { status: 'REJECTED', reason },
+        fields: ['status'],
+      },
     });
 
     return updated;
@@ -390,13 +501,20 @@ export class TransferRequestsService {
    * Only accepts SENT status. The request must be explicitly sent before it
    * can be manually confirmed as received.
    */
-  async complete(id: string, completedById: string, userWarehouseIds?: string[] | null) {
+  async complete(
+    id: string,
+    completedById: string,
+    userWarehouseIds?: string[] | null,
+  ) {
     const request = await this.findOne(id);
     if (userWarehouseIds != null) {
       const hasAccess =
         userWarehouseIds.includes(request.sourceWarehouseId) ||
         userWarehouseIds.includes(request.destinationWarehouseId);
-      if (!hasAccess) throw new ForbiddenException('You do not have access to the involved warehouses');
+      if (!hasAccess)
+        throw new ForbiddenException(
+          'You do not have access to the involved warehouses',
+        );
     }
 
     // Execute the transfer - all inventory modifications in a single transaction.
@@ -406,21 +524,32 @@ export class TransferRequestsService {
     // level (requires PostgreSQL — cannot be set in dev SQLite schema).
     const updated = await this.prisma.$transaction(async (tx) => {
       // Re-check status inside the transaction to prevent double-confirmation under concurrency
-      const current = await tx.transferRequest.findUnique({ where: { id }, select: { status: true } });
+      const current = await tx.transferRequest.findUnique({
+        where: { id },
+        select: { status: true },
+      });
       if (!current || current.status !== RequestStatus.SENT) {
         throw new BadRequestException(
-          `Transfer request must be in SENT status to confirm receipt. Current status: ${current?.status ?? 'unknown'}`
+          `Transfer request must be in SENT status to confirm receipt. Current status: ${current?.status ?? 'unknown'}`,
         );
       }
       return this.applyInventoryTransfer(tx, request, completedById);
     });
 
-    await this.auditService.log({
+    this.auditService.logSafe({
       action: 'UPDATE',
       entity: 'TransferRequest',
       entityId: id,
       userId: completedById,
-      changes: { status: 'COMPLETED', confirmedManually: true, itemsTransferred: request.items.length },
+      changes: {
+        before: { status: 'SENT' },
+        after: {
+          status: 'COMPLETED',
+          confirmedManually: true,
+          itemsTransferred: request.items.length,
+        },
+        fields: ['status'],
+      },
     });
 
     return updated;
@@ -457,10 +586,12 @@ export class TransferRequestsService {
     // Re-validate quantities inside the transaction to prevent negative stock
     // in case another operation decremented inventory since the request was approved.
     for (const item of request.items) {
-      const currentItem = await tx.inventoryItem.findUnique({ where: { id: item.inventoryItemId } });
+      const currentItem = await tx.inventoryItem.findUnique({
+        where: { id: item.inventoryItemId },
+      });
       if (!currentItem || currentItem.quantity < item.quantity) {
         throw new BadRequestException(
-          `Insufficient quantity for item: ${item.inventoryItem.name}. Available: ${currentItem?.quantity ?? 0}, Required: ${item.quantity}`
+          `Insufficient quantity for item: ${item.inventoryItem.name}. Available: ${currentItem?.quantity ?? 0}, Required: ${item.quantity}`,
         );
       }
     }
@@ -502,7 +633,9 @@ export class TransferRequestsService {
             category: item.inventoryItem.category,
             price: item.inventoryItem.price,
             currency: item.inventoryItem.currency,
-            sku: item.inventoryItem.sku ? `${item.inventoryItem.sku}-${request.destinationWarehouseId.slice(0, 4)}` : null,
+            sku: item.inventoryItem.sku
+              ? `${item.inventoryItem.sku}-${request.destinationWarehouseId.slice(0, 4)}`
+              : null,
             warehouseId: request.destinationWarehouseId,
             supplierId: item.inventoryItem.supplierId,
             itemType: item.inventoryItem.itemType as ItemType,
@@ -523,23 +656,41 @@ export class TransferRequestsService {
     });
   }
 
-  async cancel(id: string, cancelledById: string, userWarehouseIds?: string[] | null) {
+  async cancel(
+    id: string,
+    cancelledById: string,
+    userWarehouseIds?: string[] | null,
+  ) {
     const request = await this.findOne(id);
     if (userWarehouseIds != null) {
       const hasAccess =
         userWarehouseIds.includes(request.sourceWarehouseId) ||
         userWarehouseIds.includes(request.destinationWarehouseId);
-      if (!hasAccess) throw new ForbiddenException('You do not have access to the involved warehouses');
+      if (!hasAccess)
+        throw new ForbiddenException(
+          'You do not have access to the involved warehouses',
+        );
     }
+
+    let previousStatus: string = 'unknown';
 
     // Wrap status check and update in a single transaction to prevent TOCTOU races
     const updated = await this.prisma.$transaction(async (tx) => {
-      const current = await tx.transferRequest.findUnique({ where: { id }, select: { status: true } });
-      if (!current || current.status === RequestStatus.COMPLETED || current.status === RequestStatus.REJECTED || current.status === RequestStatus.CANCELLED) {
+      const current = await tx.transferRequest.findUnique({
+        where: { id },
+        select: { status: true },
+      });
+      if (
+        !current ||
+        current.status === RequestStatus.COMPLETED ||
+        current.status === RequestStatus.REJECTED ||
+        current.status === RequestStatus.CANCELLED
+      ) {
         throw new BadRequestException(
-          `Cannot cancel a transfer request in ${current?.status ?? 'unknown'} status`
+          `Cannot cancel a transfer request in ${current?.status ?? 'unknown'} status`,
         );
       }
+      previousStatus = current.status;
       return tx.transferRequest.update({
         where: { id },
         data: { status: RequestStatus.CANCELLED },
@@ -547,29 +698,49 @@ export class TransferRequestsService {
       });
     });
 
-    await this.auditService.log({
+    this.auditService.logSafe({
       action: 'UPDATE',
       entity: 'TransferRequest',
       entityId: id,
       userId: cancelledById,
-      changes: { status: 'CANCELLED' },
+      changes: {
+        before: { status: previousStatus },
+        after: { status: 'CANCELLED' },
+        fields: ['status'],
+      },
     });
 
     return updated;
   }
 
   async getStats(warehouseIds?: string[] | null) {
-    const wFilter = warehouseFilterMultiField(warehouseIds, ['sourceWarehouseId', 'destinationWarehouseId']);
-
-    const [total, pending, approved, sent, completed, rejected, cancelled] = await Promise.all([
-      this.prisma.transferRequest.count({ where: { ...wFilter } }),
-      this.prisma.transferRequest.count({ where: { status: RequestStatus.PENDING, ...wFilter } }),
-      this.prisma.transferRequest.count({ where: { status: RequestStatus.APPROVED, ...wFilter } }),
-      this.prisma.transferRequest.count({ where: { status: RequestStatus.SENT, ...wFilter } }),
-      this.prisma.transferRequest.count({ where: { status: RequestStatus.COMPLETED, ...wFilter } }),
-      this.prisma.transferRequest.count({ where: { status: RequestStatus.REJECTED, ...wFilter } }),
-      this.prisma.transferRequest.count({ where: { status: RequestStatus.CANCELLED, ...wFilter } }),
+    const wFilter = warehouseFilterMultiField(warehouseIds, [
+      'sourceWarehouseId',
+      'destinationWarehouseId',
     ]);
+
+    const [total, pending, approved, sent, completed, rejected, cancelled] =
+      await Promise.all([
+        this.prisma.transferRequest.count({ where: { ...wFilter } }),
+        this.prisma.transferRequest.count({
+          where: { status: RequestStatus.PENDING, ...wFilter },
+        }),
+        this.prisma.transferRequest.count({
+          where: { status: RequestStatus.APPROVED, ...wFilter },
+        }),
+        this.prisma.transferRequest.count({
+          where: { status: RequestStatus.SENT, ...wFilter },
+        }),
+        this.prisma.transferRequest.count({
+          where: { status: RequestStatus.COMPLETED, ...wFilter },
+        }),
+        this.prisma.transferRequest.count({
+          where: { status: RequestStatus.REJECTED, ...wFilter },
+        }),
+        this.prisma.transferRequest.count({
+          where: { status: RequestStatus.CANCELLED, ...wFilter },
+        }),
+      ]);
 
     return {
       total,

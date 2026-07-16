@@ -1,9 +1,10 @@
 import { IsEmail, IsNotEmpty, IsOptional, IsString } from 'class-validator';
 import { Transform } from 'class-transformer';
 import { IsStrongPassword } from '../decorators/strong-password.decorator';
+import { normalizeEmail } from '../../common/decorators';
 
 export class RegisterDto {
-  @Transform(({ value }) => value?.toLowerCase().trim())
+  @Transform(normalizeEmail)
   @IsEmail()
   @IsNotEmpty()
   email: string;

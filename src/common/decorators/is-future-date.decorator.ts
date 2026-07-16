@@ -1,4 +1,4 @@
-import { registerDecorator, ValidationOptions, ValidationArguments } from 'class-validator';
+import { registerDecorator, ValidationOptions } from 'class-validator';
 
 /** Validates that a date string represents a date in the future (UTC comparison). */
 export function IsFutureDate(validationOptions?: ValidationOptions) {
@@ -9,7 +9,7 @@ export function IsFutureDate(validationOptions?: ValidationOptions) {
       propertyName,
       options: validationOptions,
       validator: {
-        validate(value: any, _args: ValidationArguments) {
+        validate(value: any) {
           if (typeof value !== 'string') return false;
           return new Date(value) > new Date();
         },

@@ -20,10 +20,10 @@ export class PermissionsGuard implements CanActivate {
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const required = this.reflector.getAllAndOverride<string[]>(PERMISSIONS_KEY, [
-      context.getHandler(),
-      context.getClass(),
-    ]);
+    const required = this.reflector.getAllAndOverride<string[]>(
+      PERMISSIONS_KEY,
+      [context.getHandler(), context.getClass()],
+    );
 
     // Open-by-default: if no @Permissions() decorator is present on the handler
     // or its class, ANY authenticated user is allowed through (including EXTERNAL
@@ -34,25 +34,37 @@ export class PermissionsGuard implements CanActivate {
     // must bypass JwtAuthGuard as well.
     if (!required || required.length === 0) return true;
 
-    const request = context.switchToHttp().getRequest<Request & { user?: AuthenticatedUser }>();
+    const request = context
+      .switchToHttp()
+      .getRequest<Request & { user?: AuthenticatedUser }>();
     const { user } = request;
 
     if (!user) throw new ForbiddenException('User not authenticated');
 
-    // SYSTEM_ADMIN bypasses all permission checks — log the access
+    // SYSTEM_ADMIN bypasses all permission checks. We only audit MUTATING
+    // requests (POST/PUT/PATCH/DELETE) under the bypass — auditing every GET
+    // floods the log with one entry per page navigation and drowns out real
+    // CREATE/UPDATE events. Read access by a trusted admin is not a security-
+    // relevant event we need a per-request trail for.
     if (user.role === 'SYSTEM_ADMIN') {
-      this.auditService
-        .log({
+      const method = request.method.toUpperCase();
+      const isMutation =
+        method === 'POST' ||
+        method === 'PUT' ||
+        method === 'PATCH' ||
+        method === 'DELETE';
+      if (isMutation) {
+        this.auditService.logSafe({
           action: 'ACCESS',
           entity: 'system_admin_bypass',
           entityId: user.userId,
           userId: user.userId,
           changes: {
             fields: required,
-            after: { method: request.method, path: request.path },
+            after: { method, path: request.path },
           },
-        })
-        .catch(() => undefined); // Non-blocking; never fail the request over audit
+        });
+      }
       return true;
     }
 
