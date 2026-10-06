@@ -367,14 +367,29 @@ describe('RolesService', () => {
       );
     });
 
-    it('throws BadRequestException when modifying permissions on a system role', async () => {
-      prisma.role.findUnique.mockResolvedValueOnce({
-        ...mockRoleForUpdate,
-        isSystem: true,
-      });
+    it('allows modifying permissions on a system role (not SYSTEM_ADMIN)', async () => {
+      prisma.role.findUnique
+        .mockResolvedValueOnce({ ...mockRoleForUpdate, isSystem: true })
+        .mockResolvedValueOnce(mockRoleFindOne);
+      prisma.permission.findMany.mockResolvedValue([
+        { id: 'perm-2' },
+      ] as unknown as Permission[]);
+      prisma.user.findMany.mockResolvedValue([
+        { id: 'user-1' },
+      ] as unknown as User[]);
 
-      await expect(service.update('role-1', dto(), 'actor-1')).rejects.toThrow(
-        BadRequestException,
+      const result = await service.update('role-1', dto(), 'actor-1');
+
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(prisma.rolePermission.deleteMany).toHaveBeenCalledWith({
+        where: { roleId: 'role-1' },
+      });
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(prisma.rolePermission.createMany).toHaveBeenCalledWith({
+        data: [{ roleId: 'role-1', permissionId: 'perm-2' }],
+      });
+      expect(result).toEqual(
+        expect.objectContaining({ id: 'role-1', name: 'manager' }),
       );
     });
 

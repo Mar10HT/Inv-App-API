@@ -138,12 +138,6 @@ export class RolesService {
     });
     if (!role) throw new NotFoundException('Role not found');
 
-    if (role.isSystem && dto.permissionIds !== undefined) {
-      throw new BadRequestException(
-        'System role permissions cannot be modified',
-      );
-    }
-
     if (dto.permissionIds?.length) {
       await this.validatePermissionIds(dto.permissionIds);
     }
