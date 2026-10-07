@@ -12,8 +12,10 @@ jobs:
     env:
       # prisma validate/generate resolve env("DATABASE_URL") from the schema
       # even though neither actually connects to a database — any
-      # syntactically valid SQLite URL satisfies it here.
-      DATABASE_URL: "file:./ci.db"
+      # syntactically valid URL for the declared provider satisfies it here.
+      # schema.prisma now declares postgresql (dev moved off SQLite), so this
+      # needs the matching protocol even though nothing here dials out to it.
+      DATABASE_URL: "postgresql://ci:ci@localhost:5432/ci"
     steps:
       - uses: actions/checkout@v4
 
