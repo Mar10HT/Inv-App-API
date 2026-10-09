@@ -15,6 +15,11 @@ interface ReceiptItem {
   quantity: number;
   unitPrice: number | null;
   currency: string | null;
+  // Sale-specific: stored per-line tax (already resolved at save time —
+  // null taxPercent here just means "no explicit line override was stored",
+  // not "untaxed"; the amount is what was actually charged).
+  taxPercent?: number | null;
+  taxAmount?: number | null;
 }
 
 interface ReceiptContext {
@@ -35,6 +40,11 @@ interface ReceiptContext {
   // Sale-specific metadata
   customerName?: string | null;
   customerType?: string | null;
+  // Null while DRAFT (a quotation isn't a numbered document yet).
+  number?: string | null;
+  // Sale-level default tax percent, used only to resolve a line's effective
+  // percent for display when that line's own taxPercent is null.
+  taxPercent?: number | null;
 }
 
 const STRINGS = {
@@ -43,9 +53,15 @@ const STRINGS = {
     transferTitle: 'COMPROBANTE DE TRANSFERENCIA',
     outflowTitle: 'COMPROBANTE DE SALIDA',
     saleTitle: 'COMPROBANTE DE VENTA',
+    quotationTitle: 'COTIZACIÓN',
     voidCancelled: 'CANCELADO',
     voidRejected: 'RECHAZADO',
     id: 'ID',
+    invoiceNumber: 'Venta Nº',
+    colTax: 'ISV',
+    exempt: 'Exento',
+    subtotal: 'Subtotal',
+    tax: 'Impuesto (ISV)',
     name: 'Nombre',
     status: 'Estado',
     from: 'Bodega origen',
@@ -94,9 +110,15 @@ const STRINGS = {
     transferTitle: 'TRANSFER RECEIPT',
     outflowTitle: 'OUTFLOW RECEIPT',
     saleTitle: 'SALE RECEIPT',
+    quotationTitle: 'QUOTATION',
     voidCancelled: 'CANCELLED',
     voidRejected: 'REJECTED',
     id: 'ID',
+    invoiceNumber: 'Sale No.',
+    colTax: 'Tax',
+    exempt: 'Exempt',
+    subtotal: 'Subtotal',
+    tax: 'Tax (ISV)',
     name: 'Name',
     status: 'Status',
     from: 'Source warehouse',
@@ -274,6 +296,8 @@ export class PdfReceiptsService {
         customerType: sale.customerType,
         createdAt: sale.createdAt,
         createdBy: sale.createdBy?.name || sale.createdBy?.email || '',
+        number: sale.number,
+        taxPercent: sale.taxPercent,
         items: sale.items.map((line) => ({
           // Prefer snapshot fields — they survive item renames and deletions.
           name: line.itemName ?? line.inventoryItem?.name ?? '',
@@ -281,6 +305,8 @@ export class PdfReceiptsService {
           quantity: line.quantity,
           unitPrice: line.unitPrice ?? null,
           currency: line.currency ?? null,
+          taxPercent: line.taxPercent,
+          taxAmount: line.taxAmount,
         })),
         notes: sale.notes,
       },
@@ -340,6 +366,38 @@ export class PdfReceiptsService {
     );
   }
 
+  /**
+   * A DRAFT sale is a quotation, not an invoice yet — distinct title, and
+   * never the loan/transfer/outflow titles since only 'sale' can be DRAFT.
+   */
+  private resolveTitle(
+    ctx: Pick<ReceiptContext, 'documentType' | 'status'>,
+    t: (typeof STRINGS)[Locale],
+  ): string {
+    if (ctx.documentType === 'sale' && ctx.status === 'DRAFT') {
+      return t.quotationTitle;
+    }
+    if (ctx.documentType === 'loan') return t.loanTitle;
+    if (ctx.documentType === 'transfer') return t.transferTitle;
+    if (ctx.documentType === 'sale') return t.saleTitle;
+    return t.outflowTitle;
+  }
+
+  /**
+   * ACTIVE/CANCELLED sales show their real invoice number (falling back to
+   * the internal id only if somehow missing, which shouldn't happen once a
+   * sale is past DRAFT). A DRAFT shows nothing number-related — it was
+   * never assigned one. Every non-sale document type keeps today's plain id line.
+   */
+  private resolveIdentifierLine(
+    ctx: Pick<ReceiptContext, 'documentType' | 'status' | 'id' | 'number'>,
+    t: (typeof STRINGS)[Locale],
+  ): string | null {
+    if (ctx.documentType !== 'sale') return `${t.id}: ${ctx.id}`;
+    if (ctx.status === 'DRAFT') return null;
+    return `${t.invoiceNumber}: ${ctx.number ?? ctx.id}`;
+  }
+
   private render(ctx: ReceiptContext, locale: Locale): Promise<Buffer> {
     const t = STRINGS[locale];
     const dateLocale = locale === 'en' ? 'en-US' : 'es-HN';
@@ -370,22 +428,18 @@ export class PdfReceiptsService {
       doc.on('error', reject);
 
       // Header
-      const title =
-        ctx.documentType === 'loan'
-          ? t.loanTitle
-          : ctx.documentType === 'transfer'
-            ? t.transferTitle
-            : ctx.documentType === 'sale'
-              ? t.saleTitle
-              : t.outflowTitle;
+      const title = this.resolveTitle(ctx, t);
       doc.fontSize(18).font('Helvetica-Bold').text(title, { align: 'center' });
       doc.moveDown(0.5);
-      doc
-        .fontSize(10)
-        .font('Helvetica')
-        .fillColor('#666666')
-        .text(`${t.id}: ${ctx.id}`, { align: 'center' });
-      doc.fillColor('#000000');
+      const identifierLine = this.resolveIdentifierLine(ctx, t);
+      if (identifierLine) {
+        doc
+          .fontSize(10)
+          .font('Helvetica')
+          .fillColor('#666666')
+          .text(identifierLine, { align: 'center' });
+        doc.fillColor('#000000');
+      }
       doc.moveDown(1.5);
 
       // Metadata block (two columns)
@@ -459,18 +513,30 @@ export class PdfReceiptsService {
         .text(t.items);
       doc.moveDown(0.3);
 
+      // Sales get a narrower layout to make room for a per-line ISV% column
+      // (Decision 17's receipt tax breakdown); every other document type
+      // keeps its exact existing column positions, untouched.
+      const isSale = ctx.documentType === 'sale';
+      const unitColWidth = isSale ? 65 : 80;
       const tableTop = doc.y;
       const colItem = left;
-      const colTag = left + 200;
-      const colQty = left + 320;
-      const colUnit = left + 360;
-      const colSub = left + 445;
+      const colTag = left + (isSale ? 165 : 200);
+      const colQty = left + (isSale ? 260 : 320);
+      const colUnit = left + (isSale ? 295 : 360);
+      const colTax = left + 365;
+      const colSub = left + (isSale ? 415 : 445);
 
       doc.font('Helvetica-Bold').fontSize(9).fillColor('#444444');
-      doc.text(t.colItem, colItem, tableTop, { width: 195 });
-      doc.text(t.colTag, colTag, tableTop, { width: 115 });
-      doc.text(t.colQty, colQty, tableTop, { width: 35, align: 'right' });
-      doc.text(t.colUnit, colUnit, tableTop, { width: 80, align: 'right' });
+      doc.text(t.colItem, colItem, tableTop, { width: isSale ? 160 : 195 });
+      doc.text(t.colTag, colTag, tableTop, { width: isSale ? 90 : 115 });
+      doc.text(t.colQty, colQty, tableTop, { width: 30, align: 'right' });
+      doc.text(t.colUnit, colUnit, tableTop, {
+        width: unitColWidth,
+        align: 'right',
+      });
+      if (isSale) {
+        doc.text(t.colTax, colTax, tableTop, { width: 40, align: 'right' });
+      }
       doc.text(t.colSubtotal, colSub, tableTop, { width: 70, align: 'right' });
 
       doc
@@ -480,10 +546,12 @@ export class PdfReceiptsService {
         .stroke();
 
       let cursor = tableTop + 20;
-      // One running total per currency; items with no price contribute to nothing.
-      // Items priced without a currency (currency = null) get bucketed under '' so they
+      // One running total (and, for sales, one running tax total) per
+      // currency; items with no price contribute to nothing. Items priced
+      // without a currency (currency = null) get bucketed under '' so they
       // don't accidentally merge with USD/HNL/etc.
       const totalsByCurrency = new Map<string, number>();
+      const taxByCurrency = new Map<string, number>();
 
       doc.font('Helvetica').fontSize(10).fillColor('#000000');
       for (const item of ctx.items) {
@@ -496,18 +564,34 @@ export class PdfReceiptsService {
         if (sub != null) {
           const key = item.currency ?? '';
           totalsByCurrency.set(key, (totalsByCurrency.get(key) ?? 0) + sub);
+          if (isSale) {
+            taxByCurrency.set(
+              key,
+              (taxByCurrency.get(key) ?? 0) + (item.taxAmount ?? 0),
+            );
+          }
         }
 
-        doc.text(item.name || '—', colItem, cursor, { width: 195 });
-        doc.text(item.serviceTag ?? '—', colTag, cursor, { width: 115 });
+        doc.text(item.name || '—', colItem, cursor, {
+          width: isSale ? 160 : 195,
+        });
+        doc.text(item.serviceTag ?? '—', colTag, cursor, {
+          width: isSale ? 90 : 115,
+        });
         doc.text(String(item.quantity), colQty, cursor, {
-          width: 35,
+          width: 30,
           align: 'right',
         });
         doc.text(fmtAmount(unit, item.currency), colUnit, cursor, {
-          width: 80,
+          width: unitColWidth,
           align: 'right',
         });
+        if (isSale) {
+          const effectivePercent = item.taxPercent ?? ctx.taxPercent ?? 0;
+          const taxLabel =
+            effectivePercent > 0 ? `${effectivePercent}%` : t.exempt;
+          doc.text(taxLabel, colTax, cursor, { width: 40, align: 'right' });
+        }
         doc.text(fmtAmount(sub, item.currency), colSub, cursor, {
           width: 70,
           align: 'right',
@@ -515,16 +599,24 @@ export class PdfReceiptsService {
         cursor += 18;
       }
 
-      // Totals — one row per currency present. If none have prices, show a single em-dash.
+      // Totals — one row per currency present (three, Subtotal/Impuesto/
+      // Total, for a sale currency that actually carried any tax). If none
+      // have prices, show a single em-dash.
       doc
         .moveTo(colUnit, cursor + 4)
         .lineTo(doc.page.width - 50, cursor + 4)
         .strokeColor('#cccccc')
         .stroke();
-      doc.font('Helvetica-Bold').fontSize(11).fillColor('#000000');
+
+      const labelX = left + 250;
+      const labelWidth = colSub - labelX - 10;
 
       if (totalsByCurrency.size === 0) {
-        doc.text(t.total, colUnit, cursor + 10, { width: 80, align: 'right' });
+        doc.font('Helvetica-Bold').fontSize(11).fillColor('#000000');
+        doc.text(t.total, colUnit, cursor + 10, {
+          width: unitColWidth,
+          align: 'right',
+        });
         doc.text(t.noPrice, colSub, cursor + 10, { width: 70, align: 'right' });
         cursor += 26;
       } else {
@@ -534,13 +626,51 @@ export class PdfReceiptsService {
         );
         let row = cursor + 10;
         for (const [currency, amount] of entries) {
-          const label = currency ? `${t.total} ${currency}` : t.total;
-          doc.text(label, colUnit, row, { width: 80, align: 'right' });
-          doc.text(fmtAmount(amount, currency || null), colSub, row, {
-            width: 70,
-            align: 'right',
-          });
-          row += 16;
+          const tax = isSale ? (taxByCurrency.get(currency) ?? 0) : 0;
+          if (tax > 0) {
+            doc.font('Helvetica').fontSize(10).fillColor('#000000');
+            const subtotalLabel = currency
+              ? `${t.subtotal} ${currency}`
+              : t.subtotal;
+            doc.text(subtotalLabel, labelX, row, {
+              width: labelWidth,
+              align: 'right',
+            });
+            doc.text(fmtAmount(amount, currency || null), colSub, row, {
+              width: 70,
+              align: 'right',
+            });
+            row += 14;
+            doc.text(t.tax, labelX, row, { width: labelWidth, align: 'right' });
+            doc.text(fmtAmount(tax, currency || null), colSub, row, {
+              width: 70,
+              align: 'right',
+            });
+            row += 14;
+            doc.font('Helvetica-Bold').fontSize(11);
+            const grandLabel = currency ? `${t.total} ${currency}` : t.total;
+            doc.text(grandLabel, labelX, row, {
+              width: labelWidth,
+              align: 'right',
+            });
+            doc.text(fmtAmount(amount + tax, currency || null), colSub, row, {
+              width: 70,
+              align: 'right',
+            });
+            row += 16;
+          } else {
+            doc.font('Helvetica-Bold').fontSize(11).fillColor('#000000');
+            const label = currency ? `${t.total} ${currency}` : t.total;
+            doc.text(label, colUnit, row, {
+              width: unitColWidth,
+              align: 'right',
+            });
+            doc.text(fmtAmount(amount, currency || null), colSub, row, {
+              width: 70,
+              align: 'right',
+            });
+            row += 16;
+          }
         }
         cursor = row;
       }

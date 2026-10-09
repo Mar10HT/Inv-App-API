@@ -15,6 +15,7 @@ import {
 import { Response } from 'express';
 import { SalesService } from './sales.service';
 import { CreateSaleDto } from './dto/create-sale.dto';
+import { UpdateSaleDto } from './dto/update-sale.dto';
 import { CancelSaleDto } from './dto/cancel-sale.dto';
 import { FilterSaleDto } from './dto/filter-sale.dto';
 import { JwtAuthGuard, PermissionsGuard } from '../auth/guards';
@@ -86,8 +87,28 @@ export class SalesController {
     res.send(buffer);
   }
 
+  @Patch(':id')
+  @Permissions('sales:create')
+  update(
+    @Param('id') id: string,
+    @Body(new ValidationPipe({ whitelist: true, transform: true }))
+    dto: UpdateSaleDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.salesService.update(id, dto, user.userId, user.warehouseIds);
+  }
+
+  @Patch(':id/confirm')
+  @Permissions('sales:confirm')
+  confirm(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.salesService.confirm(id, user.userId, user.warehouseIds);
+  }
+
   @Patch(':id/cancel')
-  @Permissions('sales:cancel')
+  // Cancelling your own DRAFT only needs sales:create (same precedent as
+  // Transfers); SalesService.cancel() re-checks sales:cancel in-service for
+  // the ACTIVE (stock-restoring) case specifically.
+  @Permissions('sales:create', 'sales:cancel')
   cancel(
     @Param('id') id: string,
     @Body(new ValidationPipe({ whitelist: true })) dto: CancelSaleDto,

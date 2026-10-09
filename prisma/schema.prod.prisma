@@ -821,13 +821,31 @@ model Sale {
   // A sale is single-currency: every line uses this currency and totalAmount
   // is computed against it. Defaults to USD.
   currency            String       @default("USD")
+  // Pre-tax sum of line totals. Keeps its pre-Phase-3 meaning unchanged so
+  // every existing consumer (PDF, stats, frontend) keeps working untouched;
+  // the grand total is totalAmount + taxAmount, computed at read time.
   totalAmount         Float        @default(0)
+  // Suggested default is FiscalConfig.isvPercent but always editable per
+  // document; null means no tax on this sale unless a line overrides it.
+  taxPercent          Float?
+  // Stored sum of each line's computed tax, same persisted-not-computed
+  // pattern as totalAmount/lineTotal.
+  taxAmount           Float?       @default(0)
   status              SaleStatus   @default(ACTIVE)
   notes               String?
   createdById         String
   cancelledById       String?
   cancelledAt         DateTime?
   cancellationReason  String?
+  // SAR-authorized invoice number (see CaiRange) or, when no CAI range is
+  // active, a simple "V-0001" correlative. Null while DRAFT — a quotation
+  // doesn't consume a real invoice number until confirmed, so it's never
+  // wasted on a quote that's discarded. Assigned exactly once, at
+  // convertToInvoice() time, and never reused even if the sale is later
+  // cancelled (a real unique constraint is correct here, unlike Client.code
+  // in Phase 2 — there's no soft-delete-and-reuse scenario for an invoice
+  // number).
+  number              String?      @unique
   createdAt           DateTime     @default(now())
   updatedAt           DateTime     @updatedAt
 
@@ -851,6 +869,10 @@ model SaleItem {
   quantity        Int      @default(1)
   unitPrice       Float    // Entered manually at sale time
   lineTotal       Float    @default(0) // quantity * unitPrice, snapshot
+  // Null inherits the sale's effective taxPercent; an explicit value
+  // (including 0) overrides it for this line only.
+  taxPercent      Float?
+  taxAmount       Float?   @default(0)
   // Snapshots captured at sale time so receipts/reports survive item
   // renames, price changes, or hard-delete attempts.
   itemName        String?
@@ -876,8 +898,9 @@ enum CustomerType {
 }
 
 enum SaleStatus {
+  DRAFT     // Quotation; not yet confirmed, no stock impact, no number assigned
   ACTIVE    // Sale is recorded; stock has been decremented
-  CANCELLED // Sale was reverted; stock has been restored
+  CANCELLED // Sale was reverted; stock has been restored (if it was ever decremented)
 }
 
 // Single-row company fiscal configuration (no multi-tenant Organization model
@@ -891,6 +914,10 @@ model FiscalConfig {
   address     String?
   currency    Currency @default(HNL)
   isvPercent  Float    @default(15) // Honduras general ISV rate; suggested default, overridable per sale/line in a later phase
+  // Correlative used for Sale.number when no active CaiRange exists. Same
+  // get-or-create singleton as the rest of this model; locked via a raw
+  // SELECT ... FOR UPDATE at consumption time by SaleNumberingService.
+  fallbackSaleNumber Int @default(1)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 

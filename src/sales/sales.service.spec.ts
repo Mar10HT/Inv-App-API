@@ -13,12 +13,16 @@ import {
 } from '@prisma/client';
 import { mockDeep, type DeepMockProxy } from 'jest-mock-extended';
 import { SalesService } from './sales.service';
+import { SaleNumberingService } from './sale-numbering.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
+import { PermissionsService } from '../permissions/permissions.service';
 
 describe('SalesService', () => {
   let service: SalesService;
   let prisma: DeepMockProxy<PrismaService>;
+  let saleNumbering: { assignNumber: jest.Mock };
+  let permissions: { getPermissionsForUser: jest.Mock };
 
   // Fixtures deliberately only populate the fields each test actually reads;
   // cast once here (rather than at each mockResolvedValue call site) now that
@@ -66,11 +70,28 @@ describe('SalesService', () => {
     warehouse: mockWarehouse,
   } as unknown as Sale;
 
+  const mockDraftSale = {
+    ...mockSale,
+    status: SaleStatus.DRAFT,
+    number: null,
+  } as unknown as Sale;
+
   beforeEach(async () => {
     prisma = mockDeep<PrismaService>();
     prisma.$transaction.mockImplementation(((
       cb: (tx: DeepMockProxy<PrismaService>) => unknown,
     ) => cb(prisma)) as never);
+    saleNumbering = {
+      assignNumber: jest
+        .fn()
+        .mockResolvedValue({ number: '001-001-01-00000001' }),
+    };
+    // Defaults to having sales:cancel, so existing cancel() tests (written
+    // before the DRAFT/ACTIVE permission branch existed) keep passing
+    // unchanged; the dedicated permission tests below override this.
+    permissions = {
+      getPermissionsForUser: jest.fn().mockResolvedValue(['sales:cancel']),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -80,6 +101,8 @@ describe('SalesService', () => {
           provide: AuditService,
           useValue: { log: jest.fn(), logSafe: jest.fn() },
         },
+        { provide: SaleNumberingService, useValue: saleNumbering },
+        { provide: PermissionsService, useValue: permissions },
       ],
     }).compile();
 
@@ -130,6 +153,49 @@ describe('SalesService', () => {
         where: { id: 'item-1' },
         data: { quantity: { decrement: 2 } },
       });
+    });
+
+    it('creates a DRAFT quotation with asDraft:true, skipping the stock check/decrement and numbering entirely', async () => {
+      // Only the outer item-existence/snapshot lookup runs for a draft — no
+      // second (quantity-checking) findMany inside createInternal's tx.
+      prisma.inventoryItem.findMany.mockResolvedValueOnce([mockItem]);
+      prisma.sale.create.mockResolvedValue({
+        ...mockSale,
+        status: SaleStatus.DRAFT,
+        number: null,
+      });
+
+      const result = await service.create(
+        { ...baseDto(), asDraft: true },
+        'user-1',
+      );
+
+      expect(result.status).toBe(SaleStatus.DRAFT);
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(prisma.inventoryItem.update).not.toHaveBeenCalled();
+      expect(saleNumbering.assignNumber).not.toHaveBeenCalled();
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(prisma.sale.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+          data: expect.objectContaining({
+            status: SaleStatus.DRAFT,
+            number: null,
+          }),
+        }),
+      );
+    });
+
+    it('does not relax the stock cap check for a quotation with items that reference an unknown item or wrong warehouse', async () => {
+      // The outer existence/warehouse validation still applies to a draft —
+      // only the real-time quantity check inside createInternal is skipped.
+      prisma.inventoryItem.findMany.mockResolvedValueOnce([
+        { ...mockItem, warehouseId: 'other-wh' },
+      ]);
+
+      await expect(
+        service.create({ ...baseDto(), asDraft: true }, 'user-1'),
+      ).rejects.toThrow(BadRequestException);
     });
 
     it('rounds totals to 2 decimals', async () => {
@@ -237,6 +303,106 @@ describe('SalesService', () => {
     });
   });
 
+  describe('update', () => {
+    it('replaces fields and items on a DRAFT and recomputes totals', async () => {
+      prisma.sale.findUnique
+        .mockResolvedValueOnce(mockDraftSale) // findOne() access check
+        .mockResolvedValueOnce(mockDraftSale); // inside the transaction
+      prisma.inventoryItem.findMany.mockResolvedValueOnce([mockItem]);
+      prisma.sale.update.mockResolvedValue(mockDraftSale);
+
+      await service.update(
+        'sale-1',
+        { items: [{ inventoryItemId: 'item-1', quantity: 3, unitPrice: 20 }] },
+        'user-1',
+      );
+
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(prisma.sale.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'sale-1' },
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+          data: expect.objectContaining({ totalAmount: 60 }),
+        }),
+      );
+    });
+
+    it('throws BadRequestException when the sale is not a DRAFT', async () => {
+      prisma.sale.findUnique
+        .mockResolvedValueOnce(mockSale)
+        .mockResolvedValueOnce(mockSale);
+
+      await expect(
+        service.update('sale-1', { notes: 'x' }, 'user-1'),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('throws ForbiddenException when user has no access to the warehouse', async () => {
+      prisma.sale.findUnique.mockResolvedValue(mockDraftSale);
+
+      await expect(
+        service.update('sale-1', { notes: 'x' }, 'user-1', ['other-wh']),
+      ).rejects.toThrow(ForbiddenException);
+    });
+  });
+
+  describe('confirm', () => {
+    it('assigns a number, decrements stock and sets status ACTIVE', async () => {
+      prisma.sale.findUnique
+        .mockResolvedValueOnce(mockDraftSale) // findOne() access check
+        .mockResolvedValueOnce(mockDraftSale); // inside the transaction
+      prisma.inventoryItem.findMany.mockResolvedValueOnce([mockItem]);
+      prisma.sale.update.mockResolvedValue({
+        ...mockDraftSale,
+        status: SaleStatus.ACTIVE,
+        number: '001-001-01-00000001',
+      });
+
+      const result = await service.confirm('sale-1', 'user-1');
+
+      expect(result.status).toBe(SaleStatus.ACTIVE);
+      expect(result.number).toBe('001-001-01-00000001');
+      expect(saleNumbering.assignNumber).toHaveBeenCalledTimes(1);
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(prisma.inventoryItem.update).toHaveBeenCalledWith({
+        where: { id: 'item-1' },
+        data: { quantity: { decrement: 2 } },
+      });
+    });
+
+    it('throws BadRequestException on insufficient stock, without assigning a number', async () => {
+      prisma.sale.findUnique
+        .mockResolvedValueOnce(mockDraftSale)
+        .mockResolvedValueOnce(mockDraftSale);
+      prisma.inventoryItem.findMany.mockResolvedValueOnce([
+        { ...mockItem, quantity: 1 },
+      ]);
+
+      await expect(service.confirm('sale-1', 'user-1')).rejects.toThrow(
+        BadRequestException,
+      );
+      expect(saleNumbering.assignNumber).not.toHaveBeenCalled();
+    });
+
+    it('throws BadRequestException when the sale is not a DRAFT', async () => {
+      prisma.sale.findUnique
+        .mockResolvedValueOnce(mockSale)
+        .mockResolvedValueOnce(mockSale);
+
+      await expect(service.confirm('sale-1', 'user-1')).rejects.toThrow(
+        BadRequestException,
+      );
+    });
+
+    it('throws ForbiddenException when user has no access to the warehouse', async () => {
+      prisma.sale.findUnique.mockResolvedValue(mockDraftSale);
+
+      await expect(
+        service.confirm('sale-1', 'user-1', ['other-wh']),
+      ).rejects.toThrow(ForbiddenException);
+    });
+  });
+
   describe('cancel', () => {
     it('restores stock and marks the sale CANCELLED', async () => {
       prisma.sale.findUnique
@@ -275,13 +441,59 @@ describe('SalesService', () => {
         service.cancel('sale-1', 'user-2', undefined, ['other-wh']),
       ).rejects.toThrow(ForbiddenException);
     });
+
+    it('cancels a DRAFT with no stock to restore and no extra permission check', async () => {
+      prisma.sale.findUnique
+        .mockResolvedValueOnce(mockDraftSale)
+        .mockResolvedValueOnce(mockDraftSale);
+      prisma.sale.update.mockResolvedValue({
+        ...mockDraftSale,
+        status: SaleStatus.CANCELLED,
+      });
+
+      const result = await service.cancel('sale-1', 'user-2');
+
+      expect(result.status).toBe(SaleStatus.CANCELLED);
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(prisma.inventoryItem.update).not.toHaveBeenCalled();
+      expect(permissions.getPermissionsForUser).not.toHaveBeenCalled();
+    });
+
+    it('throws ForbiddenException cancelling an ACTIVE sale when the caller only has sales:create', async () => {
+      permissions.getPermissionsForUser.mockResolvedValue(['sales:create']);
+      prisma.sale.findUnique
+        .mockResolvedValueOnce(mockSale)
+        .mockResolvedValueOnce(mockSale);
+
+      await expect(service.cancel('sale-1', 'user-2')).rejects.toThrow(
+        ForbiddenException,
+      );
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(prisma.inventoryItem.update).not.toHaveBeenCalled();
+    });
+
+    it('allows cancelling an ACTIVE sale for a caller with the SYSTEM_ADMIN wildcard', async () => {
+      permissions.getPermissionsForUser.mockResolvedValue(['*']);
+      prisma.sale.findUnique
+        .mockResolvedValueOnce(mockSale)
+        .mockResolvedValueOnce(mockSale);
+      prisma.sale.update.mockResolvedValue({
+        ...mockSale,
+        status: SaleStatus.CANCELLED,
+      });
+
+      const result = await service.cancel('sale-1', 'user-2');
+
+      expect(result.status).toBe(SaleStatus.CANCELLED);
+    });
   });
 
   describe('getStats', () => {
-    it('returns counts, breakdown by customer type and revenue by currency', async () => {
+    it('returns counts (including draft), breakdown by customer type and revenue by currency', async () => {
       prisma.sale.count
         .mockResolvedValueOnce(20) // total
-        .mockResolvedValueOnce(15) // active
+        .mockResolvedValueOnce(12) // active
+        .mockResolvedValueOnce(3) // draft
         .mockResolvedValueOnce(5); // cancelled
       prisma.sale.groupBy
         .mockResolvedValueOnce([
@@ -295,8 +507,12 @@ describe('SalesService', () => {
       const result = await service.getStats();
 
       expect(result.total).toBe(20);
-      expect(result.active).toBe(15);
+      expect(result.active).toBe(12);
+      expect(result.draft).toBe(3);
       expect(result.cancelled).toBe(5);
+      expect(result.total).toBe(
+        result.active + result.draft + result.cancelled,
+      );
       expect(result.byCustomerType).toEqual({ RETAIL: 10, WHOLESALE: 5 });
       expect(result.revenueByCurrency).toEqual({ USD: 1234.57 });
     });

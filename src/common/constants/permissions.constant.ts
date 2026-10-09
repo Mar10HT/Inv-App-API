@@ -262,13 +262,21 @@ export const PERMISSIONS = [
     key: 'sales:create',
     module: 'sales',
     action: 'create',
-    description: 'Create sales (decrements stock)',
+    description:
+      'Create sales (decrements stock), create/edit/cancel draft quotations',
   },
   {
     key: 'sales:cancel',
     module: 'sales',
     action: 'cancel',
-    description: 'Cancel sales and restore stock',
+    description: 'Cancel active sales and restore stock',
+  },
+  {
+    key: 'sales:confirm',
+    module: 'sales',
+    action: 'confirm',
+    description:
+      'Confirm a draft sale (quotation) into an active sale, decrementing stock',
   },
   // reports
   {
@@ -395,6 +403,7 @@ export const ROLE_PERMISSIONS: Record<string, PermissionKey[]> = {
     'sales:view',
     'sales:create',
     'sales:cancel',
+    'sales:confirm',
     'reports:view',
     'reports:export',
     'alerts:view',

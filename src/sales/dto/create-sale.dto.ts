@@ -4,10 +4,12 @@ import {
   IsOptional,
   IsNumber,
   Min,
+  Max,
   IsArray,
   ArrayMinSize,
   ValidateNested,
   IsEnum,
+  IsBoolean,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { CustomerType, Currency } from '@prisma/client';
@@ -29,6 +31,14 @@ export class SaleItemDto {
   @IsString()
   @IsOptional()
   notes?: string;
+
+  // Null/absent inherits the sale's effective taxPercent; an explicit value
+  // (including 0) overrides it for this line only.
+  @IsNumber()
+  @Min(0)
+  @Max(100)
+  @IsOptional()
+  taxPercent?: number;
 }
 
 export class CreateSaleDto {
@@ -62,4 +72,18 @@ export class CreateSaleDto {
   @IsString()
   @IsOptional()
   notes?: string;
+
+  // Suggested default is FiscalConfig.isvPercent but always editable per
+  // document; absent/null means no tax unless a line overrides it.
+  @IsNumber()
+  @Min(0)
+  @Max(100)
+  @IsOptional()
+  taxPercent?: number;
+
+  // true = create as a DRAFT quotation: no stock impact, no number assigned
+  // until confirmed. Absent/false is today's exact behavior (ACTIVE at once).
+  @IsBoolean()
+  @IsOptional()
+  asDraft?: boolean;
 }
