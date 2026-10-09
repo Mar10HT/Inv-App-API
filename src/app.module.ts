@@ -36,6 +36,7 @@ import { WarehouseAccessModule } from './common/warehouse-access/warehouse-acces
 import { WarehouseAccessInterceptor } from './common/warehouse-access/warehouse-access.interceptor';
 import { ScheduledReportsModule } from './scheduled-reports/scheduled-reports.module';
 import { RolesModule } from './roles/roles.module';
+import { ClientsModule } from './clients/clients.module';
 
 @Module({
   imports: [
@@ -119,6 +120,7 @@ import { RolesModule } from './roles/roles.module';
     WarehouseAccessModule,
     ScheduledReportsModule,
     RolesModule,
+    ClientsModule,
   ],
   controllers: [AppController],
   providers: [
