@@ -36,6 +36,8 @@ import { WarehouseAccessModule } from './common/warehouse-access/warehouse-acces
 import { WarehouseAccessInterceptor } from './common/warehouse-access/warehouse-access.interceptor';
 import { ScheduledReportsModule } from './scheduled-reports/scheduled-reports.module';
 import { RolesModule } from './roles/roles.module';
+import { FiscalConfigModule } from './fiscal-config/fiscal-config.module';
+import { CaiRangesModule } from './cai-ranges/cai-ranges.module';
 
 @Module({
   imports: [
@@ -119,6 +121,8 @@ import { RolesModule } from './roles/roles.module';
     WarehouseAccessModule,
     ScheduledReportsModule,
     RolesModule,
+    FiscalConfigModule,
+    CaiRangesModule,
   ],
   controllers: [AppController],
   providers: [

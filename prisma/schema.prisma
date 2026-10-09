@@ -879,3 +879,42 @@ enum SaleStatus {
   ACTIVE    // Sale is recorded; stock has been decremented
   CANCELLED // Sale was reverted; stock has been restored
 }
+
+// Single-row company fiscal configuration (no multi-tenant Organization model
+// exists yet; this app is single-tenant). Auto-created with defaults by
+// FiscalConfigService on first access.
+model FiscalConfig {
+  id          String   @id @default(cuid())
+  rtn         String? // Honduran tax ID, 14 digits, validated at the DTO layer
+  fiscalEmail String?
+  fiscalPhone String?
+  address     String?
+  currency    Currency @default(HNL)
+  isvPercent  Float    @default(15) // Honduras general ISV rate; suggested default, overridable per sale/line in a later phase
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("fiscal_config")
+}
+
+// SAR-authorized invoice numbering range (Código de Autorización de
+// Impresión). Printed invoice numbers follow the fixed Honduran format
+// establishmentCode-emissionPointCode-documentTypeCode-correlativo, e.g.
+// 001-001-01-00000001. currentNumber is managed by the sales numbering
+// service introduced in a later phase; this phase only manages the ranges.
+model CaiRange {
+  id                String   @id @default(cuid())
+  cai               String
+  establishmentCode String // 3-digit code from the SAR authorization
+  emissionPointCode String // 3-digit code from the SAR authorization
+  documentTypeCode  String   @default("01") // 2-digit code; 01 = invoice
+  rangeStart        Int
+  rangeEnd          Int
+  currentNumber     Int
+  expiresAt         DateTime
+  isActive          Boolean  @default(false)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@map("cai_ranges")
+}
