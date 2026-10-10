@@ -271,6 +271,9 @@ model Supplier {
   location    String
   phone       String?
   email       String?
+  code        String?  @unique // Nullable, no backfill required for existing suppliers
+  rtn         String?
+  isActive    Boolean?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -1049,8 +1052,30 @@ enum PurchaseInvoiceStatus {
   CANCELLED // Invoice was reverted; stock has been restored (BULK-only invoices)
 }
 
-// Shared by Client (a later phase) and PurchaseInvoice.
+// Shared by Client and PurchaseInvoice.
 enum PaymentCondition {
   CASH   // Contado
   CREDIT // Crédito
+}
+
+// Customer the business sells to. Soft-deleted (not hard-deleted) so a later
+// phase can safely link Sale.clientId without losing history.
+model Client {
+  id               String           @id @default(cuid())
+  // Not @unique: a DB-level unique constraint would also cover soft-deleted
+  // rows, permanently blocking a code's reuse after deletion. Uniqueness
+  // among active clients is enforced in ClientsService instead.
+  code             String
+  name             String
+  rtn              String? // Honduran tax ID, 14 digits, validated at the DTO layer
+  phone            String?
+  paymentCondition PaymentCondition @default(CASH)
+  creditLimit      Float? // Hook for a later Accounts Receivable phase
+  isActive         Boolean          @default(true)
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+  deletedAt        DateTime? // Soft delete
+
+  @@index([code])
+  @@map("clients")
 }

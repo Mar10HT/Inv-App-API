@@ -39,6 +39,7 @@ import { ScheduledReportsModule } from './scheduled-reports/scheduled-reports.mo
 import { RolesModule } from './roles/roles.module';
 import { FiscalConfigModule } from './fiscal-config/fiscal-config.module';
 import { CaiRangesModule } from './cai-ranges/cai-ranges.module';
+import { ClientsModule } from './clients/clients.module';
 
 @Module({
   imports: [
@@ -125,6 +126,7 @@ import { CaiRangesModule } from './cai-ranges/cai-ranges.module';
     RolesModule,
     FiscalConfigModule,
     CaiRangesModule,
+    ClientsModule,
   ],
   controllers: [AppController],
   providers: [
