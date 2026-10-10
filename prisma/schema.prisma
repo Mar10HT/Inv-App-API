@@ -61,6 +61,10 @@ model User {
   createdSales        Sale[]              @relation("CreatedSales")
   cancelledSales      Sale[]              @relation("CancelledSales")
 
+  // PurchaseInvoice relations
+  createdPurchaseInvoices   PurchaseInvoice[] @relation("CreatedPurchaseInvoices")
+  cancelledPurchaseInvoices PurchaseInvoice[] @relation("CancelledPurchaseInvoices")
+
   // Auth tokens relations
   refreshTokens       RefreshToken[]
   passwordResetTokens PasswordResetToken[]
@@ -121,6 +125,9 @@ model Warehouse {
 
   // Sale relations
   sales                   Sale[]
+
+  // PurchaseInvoice relations
+  purchaseInvoices        PurchaseInvoice[]
 
   scheduledReports        ScheduledReport[]
 
@@ -206,6 +213,7 @@ model InventoryItem {
   dischargeRequestItems  DischargeRequestItem[]
   outflowItems           OutflowItem[]
   saleItems              SaleItem[]
+  purchaseInvoiceItems   PurchaseInvoiceItem[]
 
   @@index([category])
   @@index([categoryId])
@@ -267,7 +275,8 @@ model Supplier {
   updatedAt   DateTime @updatedAt
 
   // Relations
-  inventoryItems InventoryItem[]
+  inventoryItems   InventoryItem[]
+  purchaseInvoices PurchaseInvoice[]
 
   @@map("suppliers")
 }
@@ -918,6 +927,10 @@ model FiscalConfig {
   // get-or-create singleton as the rest of this model; locked via a raw
   // SELECT ... FOR UPDATE at consumption time by SaleNumberingService.
   fallbackSaleNumber Int @default(1)
+  // Correlative used for PurchaseInvoice.number. Kept separate from
+  // fallbackSaleNumber so the two sequences never interfere with each
+  // other; same locking mechanism, by PurchaseNumberingService.
+  nextPurchaseNumber Int @default(1)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -944,4 +957,100 @@ model CaiRange {
   updatedAt         DateTime @updatedAt
 
   @@map("cai_ranges")
+}
+
+// ============================================
+// Purchases (compras)
+// A purchase invoice ADDS stock — the mirror of Sale. For a BULK line it
+// just increments an existing InventoryItem's quantity. For a UNIQUE line
+// (Decision 9 of the approved plan) the invoice is the one moment a unit's
+// serial number gets captured: each unit becomes a brand-new InventoryItem,
+// linked to this invoice, so a later failure can be traced back to the
+// supplier/invoice it came in on. No CaiRange involvement here — that's
+// only for invoices you ISSUE, not ones you receive.
+// ============================================
+
+model PurchaseInvoice {
+  id                 String                @id @default(cuid())
+  // Internal Obsid correlative, e.g. COM-0001. Never user-editable.
+  number             String                @unique
+  // The supplier's own invoice number — stays user-typed because it has to
+  // match the real physical document. Unique per supplier so the same
+  // invoice can't be entered twice.
+  invoiceNumber      String
+  supplierId         String
+  warehouseId        String
+  status             PurchaseInvoiceStatus @default(ACTIVE)
+  currency           String                @default("USD")
+  // Pre-tax sum of line totals, same meaning as Sale.totalAmount.
+  totalAmount        Float                 @default(0)
+  taxPercent         Float?
+  taxAmount          Float?                @default(0)
+  // Hook for a later Accounts Payable phase (Decision 12) — no `balance`
+  // field yet, meaningless before a Payment model exists to decrement it.
+  paymentCondition   PaymentCondition      @default(CASH)
+  notes              String?
+  createdById        String
+  cancelledById      String?
+  cancelledAt        DateTime?
+  cancellationReason String?
+  createdAt          DateTime              @default(now())
+  updatedAt          DateTime              @updatedAt
+
+  supplier    Supplier              @relation(fields: [supplierId], references: [id])
+  warehouse   Warehouse             @relation(fields: [warehouseId], references: [id])
+  createdBy   User                  @relation("CreatedPurchaseInvoices", fields: [createdById], references: [id])
+  cancelledBy User?                 @relation("CancelledPurchaseInvoices", fields: [cancelledById], references: [id])
+  items       PurchaseInvoiceItem[]
+
+  @@unique([supplierId, invoiceNumber])
+  @@index([warehouseId])
+  @@index([supplierId])
+  @@index([status])
+  @@index([createdById])
+  @@index([createdAt])
+  @@map("purchase_invoices")
+}
+
+model PurchaseInvoiceItem {
+  id                String   @id @default(cuid())
+  purchaseInvoiceId String
+  // BULK line: the existing item being topped up. UNIQUE line: the item
+  // created for this specific physical unit (quantity always 1 then — one
+  // row per unit, not one row per product type with N serials nested).
+  inventoryItemId   String
+  quantity          Int      @default(1)
+  unitPrice         Float
+  lineTotal         Float    @default(0)
+  // Null inherits the invoice's taxPercent; an explicit value (including 0)
+  // overrides it for this line only — same mechanism as SaleItem.
+  taxPercent        Float?
+  taxAmount         Float?   @default(0)
+  // Snapshots captured at purchase time so the invoice survives item
+  // renames or hard-delete attempts.
+  itemName          String?
+  serviceTag        String?
+  currency          String?
+  notes             String?
+  createdAt         DateTime @default(now())
+
+  purchaseInvoice PurchaseInvoice @relation(fields: [purchaseInvoiceId], references: [id], onDelete: Cascade)
+  // Restrict: purchase history must not silently disappear if someone
+  // hard-deletes the underlying item.
+  inventoryItem   InventoryItem   @relation(fields: [inventoryItemId], references: [id], onDelete: Restrict)
+
+  @@index([purchaseInvoiceId])
+  @@index([inventoryItemId])
+  @@map("purchase_invoice_items")
+}
+
+enum PurchaseInvoiceStatus {
+  ACTIVE    // Invoice is recorded; stock has been added
+  CANCELLED // Invoice was reverted; stock has been restored (BULK-only invoices)
+}
+
+// Shared by Client (a later phase) and PurchaseInvoice.
+enum PaymentCondition {
+  CASH   // Contado
+  CREDIT // Crédito
 }

@@ -251,6 +251,25 @@ export const PERMISSIONS = [
     action: 'cancel',
     description: 'Cancel outflows and restore stock',
   },
+  // purchases (compras)
+  {
+    key: 'purchases:view',
+    module: 'purchases',
+    action: 'view',
+    description: 'View purchase invoices',
+  },
+  {
+    key: 'purchases:create',
+    module: 'purchases',
+    action: 'create',
+    description: 'Create purchase invoices (increments stock)',
+  },
+  {
+    key: 'purchases:cancel',
+    module: 'purchases',
+    action: 'cancel',
+    description: 'Cancel BULK-only purchase invoices and restore stock',
+  },
   // sales (ventas)
   {
     key: 'sales:view',
@@ -400,6 +419,9 @@ export const ROLE_PERMISSIONS: Record<string, PermissionKey[]> = {
     'outflows:view',
     'outflows:create',
     'outflows:cancel',
+    'purchases:view',
+    'purchases:create',
+    'purchases:cancel',
     'sales:view',
     'sales:create',
     'sales:cancel',
@@ -435,6 +457,8 @@ export const ROLE_PERMISSIONS: Record<string, PermissionKey[]> = {
     'discharges:create',
     'outflows:view',
     'outflows:create',
+    'purchases:view',
+    'purchases:create',
     'sales:view',
     'sales:create',
     'reports:view',
@@ -453,6 +477,7 @@ export const ROLE_PERMISSIONS: Record<string, PermissionKey[]> = {
     'loans:view',
     'discharges:view',
     'outflows:view',
+    'purchases:view',
     'sales:view',
     'reports:view',
     'reports:export',

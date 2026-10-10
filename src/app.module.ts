@@ -32,6 +32,7 @@ import { SearchModule } from './common/search/search.module';
 import { DischargeRequestsModule } from './discharge-requests/discharge-requests.module';
 import { OutflowsModule } from './outflows/outflows.module';
 import { SalesModule } from './sales/sales.module';
+import { PurchaseInvoicesModule } from './purchase-invoices/purchase-invoices.module';
 import { WarehouseAccessModule } from './common/warehouse-access/warehouse-access.module';
 import { WarehouseAccessInterceptor } from './common/warehouse-access/warehouse-access.interceptor';
 import { ScheduledReportsModule } from './scheduled-reports/scheduled-reports.module';
@@ -118,6 +119,7 @@ import { CaiRangesModule } from './cai-ranges/cai-ranges.module';
     DischargeRequestsModule,
     OutflowsModule,
     SalesModule,
+    PurchaseInvoicesModule,
     WarehouseAccessModule,
     ScheduledReportsModule,
     RolesModule,

@@ -23,7 +23,7 @@ interface ReceiptItem {
 }
 
 interface ReceiptContext {
-  documentType: 'loan' | 'transfer' | 'outflow' | 'sale';
+  documentType: 'loan' | 'transfer' | 'outflow' | 'sale' | 'purchase';
   id: string;
   name: string | null;
   status: string;
@@ -40,10 +40,14 @@ interface ReceiptContext {
   // Sale-specific metadata
   customerName?: string | null;
   customerType?: string | null;
-  // Null while DRAFT (a quotation isn't a numbered document yet).
+  // Purchase-specific metadata
+  supplierName?: string | null;
+  supplierInvoiceNumber?: string | null;
+  // Null while DRAFT (a quotation isn't a numbered document yet). For a
+  // purchase, this is always set (purchases have no draft concept).
   number?: string | null;
-  // Sale-level default tax percent, used only to resolve a line's effective
-  // percent for display when that line's own taxPercent is null.
+  // Default tax percent (Sale/PurchaseInvoice), used only to resolve a
+  // line's effective percent for display when that line's own taxPercent is null.
   taxPercent?: number | null;
 }
 
@@ -53,11 +57,15 @@ const STRINGS = {
     transferTitle: 'COMPROBANTE DE TRANSFERENCIA',
     outflowTitle: 'COMPROBANTE DE SALIDA',
     saleTitle: 'COMPROBANTE DE VENTA',
+    purchaseTitle: 'COMPROBANTE DE COMPRA',
     quotationTitle: 'COTIZACIÓN',
     voidCancelled: 'CANCELADO',
     voidRejected: 'RECHAZADO',
     id: 'ID',
     invoiceNumber: 'Venta Nº',
+    purchaseNumber: 'Compra Nº',
+    supplier: 'Proveedor',
+    supplierInvoiceLabel: 'Factura del proveedor',
     colTax: 'ISV',
     exempt: 'Exento',
     subtotal: 'Subtotal',
@@ -110,11 +118,15 @@ const STRINGS = {
     transferTitle: 'TRANSFER RECEIPT',
     outflowTitle: 'OUTFLOW RECEIPT',
     saleTitle: 'SALE RECEIPT',
+    purchaseTitle: 'PURCHASE RECEIPT',
     quotationTitle: 'QUOTATION',
     voidCancelled: 'CANCELLED',
     voidRejected: 'REJECTED',
     id: 'ID',
     invoiceNumber: 'Sale No.',
+    purchaseNumber: 'Purchase No.',
+    supplier: 'Supplier',
+    supplierInvoiceLabel: 'Supplier invoice',
     colTax: 'Tax',
     exempt: 'Exempt',
     subtotal: 'Subtotal',
@@ -314,6 +326,57 @@ export class PdfReceiptsService {
     );
   }
 
+  async generatePurchaseReceipt(
+    purchaseInvoiceId: string,
+    locale: Locale = 'es',
+  ): Promise<Buffer> {
+    const invoice = await this.prisma.purchaseInvoice.findUnique({
+      where: { id: purchaseInvoiceId },
+      include: {
+        warehouse: { select: { name: true } },
+        supplier: { select: { name: true } },
+        createdBy: { select: { name: true, email: true } },
+        items: {
+          include: {
+            inventoryItem: { select: { name: true, serviceTag: true } },
+          },
+        },
+      },
+    });
+
+    if (!invoice) throw new NotFoundException('Purchase invoice not found');
+
+    return this.render(
+      {
+        documentType: 'purchase',
+        id: invoice.id,
+        name: null,
+        status: invoice.status,
+        sourceWarehouse: invoice.warehouse?.name ?? '',
+        destinationWarehouse: '',
+        warehouseLabel: invoice.warehouse?.name ?? '',
+        supplierName: invoice.supplier?.name,
+        supplierInvoiceNumber: invoice.invoiceNumber,
+        createdAt: invoice.createdAt,
+        createdBy: invoice.createdBy?.name || invoice.createdBy?.email || '',
+        number: invoice.number,
+        taxPercent: invoice.taxPercent,
+        items: invoice.items.map((line) => ({
+          // Prefer snapshot fields — they survive item renames and deletions.
+          name: line.itemName ?? line.inventoryItem?.name ?? '',
+          serviceTag: line.serviceTag ?? line.inventoryItem?.serviceTag,
+          quantity: line.quantity,
+          unitPrice: line.unitPrice,
+          currency: line.currency,
+          taxPercent: line.taxPercent,
+          taxAmount: line.taxAmount,
+        })),
+        notes: invoice.notes,
+      },
+      locale,
+    );
+  }
+
   async generateTransferReceipt(
     transferId: string,
     locale: Locale = 'es',
@@ -380,19 +443,23 @@ export class PdfReceiptsService {
     if (ctx.documentType === 'loan') return t.loanTitle;
     if (ctx.documentType === 'transfer') return t.transferTitle;
     if (ctx.documentType === 'sale') return t.saleTitle;
+    if (ctx.documentType === 'purchase') return t.purchaseTitle;
     return t.outflowTitle;
   }
 
   /**
-   * ACTIVE/CANCELLED sales show their real invoice number (falling back to
-   * the internal id only if somehow missing, which shouldn't happen once a
-   * sale is past DRAFT). A DRAFT shows nothing number-related — it was
-   * never assigned one. Every non-sale document type keeps today's plain id line.
+   * ACTIVE/CANCELLED sales and purchases show their real invoice number
+   * (falling back to the internal id only if somehow missing). A DRAFT sale
+   * shows nothing number-related — it was never assigned one. Every other
+   * document type keeps today's plain id line.
    */
   private resolveIdentifierLine(
     ctx: Pick<ReceiptContext, 'documentType' | 'status' | 'id' | 'number'>,
     t: (typeof STRINGS)[Locale],
   ): string | null {
+    if (ctx.documentType === 'purchase') {
+      return `${t.purchaseNumber}: ${ctx.number ?? ctx.id}`;
+    }
     if (ctx.documentType !== 'sale') return `${t.id}: ${ctx.id}`;
     if (ctx.status === 'DRAFT') return null;
     return `${t.invoiceNumber}: ${ctx.number ?? ctx.id}`;
@@ -461,7 +528,13 @@ export class PdfReceiptsService {
           .text(value || '—', x, y + 12, { width: colWidth - 10 });
       };
 
-      writeRow(t.name, ctx.name ?? '—', metaTop, left);
+      // Purchases have no "name" field — the top-left slot shows the
+      // supplier instead, since that's the more useful thing to see first.
+      if (ctx.documentType === 'purchase') {
+        writeRow(t.supplier, ctx.supplierName ?? '—', metaTop, left);
+      } else {
+        writeRow(t.name, ctx.name ?? '—', metaTop, left);
+      }
       writeRow(t.status, ctx.status, metaTop, right);
 
       if (ctx.documentType === 'outflow') {
@@ -486,6 +559,19 @@ export class PdfReceiptsService {
           ? (t.customerTypes[ctx.customerType] ?? ctx.customerType)
           : '—';
         writeRow(t.customerType, typeLabel, metaTop + 42, right);
+      } else if (ctx.documentType === 'purchase') {
+        writeRow(
+          t.warehouse,
+          ctx.warehouseLabel ?? ctx.sourceWarehouse,
+          metaTop + 42,
+          left,
+        );
+        writeRow(
+          t.supplierInvoiceLabel,
+          ctx.supplierInvoiceNumber ?? '—',
+          metaTop + 42,
+          right,
+        );
       } else {
         writeRow(t.from, ctx.sourceWarehouse, metaTop + 42, left);
         writeRow(t.to, ctx.destinationWarehouse, metaTop + 42, right);
@@ -513,28 +599,30 @@ export class PdfReceiptsService {
         .text(t.items);
       doc.moveDown(0.3);
 
-      // Sales get a narrower layout to make room for a per-line ISV% column
-      // (Decision 17's receipt tax breakdown); every other document type
-      // keeps its exact existing column positions, untouched.
-      const isSale = ctx.documentType === 'sale';
-      const unitColWidth = isSale ? 65 : 80;
+      // Sales and purchases get a narrower layout to make room for a
+      // per-line ISV% column (Decision 17's receipt tax breakdown); every
+      // other document type keeps its exact existing column positions,
+      // untouched.
+      const showTax =
+        ctx.documentType === 'sale' || ctx.documentType === 'purchase';
+      const unitColWidth = showTax ? 65 : 80;
       const tableTop = doc.y;
       const colItem = left;
-      const colTag = left + (isSale ? 165 : 200);
-      const colQty = left + (isSale ? 260 : 320);
-      const colUnit = left + (isSale ? 295 : 360);
+      const colTag = left + (showTax ? 165 : 200);
+      const colQty = left + (showTax ? 260 : 320);
+      const colUnit = left + (showTax ? 295 : 360);
       const colTax = left + 365;
-      const colSub = left + (isSale ? 415 : 445);
+      const colSub = left + (showTax ? 415 : 445);
 
       doc.font('Helvetica-Bold').fontSize(9).fillColor('#444444');
-      doc.text(t.colItem, colItem, tableTop, { width: isSale ? 160 : 195 });
-      doc.text(t.colTag, colTag, tableTop, { width: isSale ? 90 : 115 });
+      doc.text(t.colItem, colItem, tableTop, { width: showTax ? 160 : 195 });
+      doc.text(t.colTag, colTag, tableTop, { width: showTax ? 90 : 115 });
       doc.text(t.colQty, colQty, tableTop, { width: 30, align: 'right' });
       doc.text(t.colUnit, colUnit, tableTop, {
         width: unitColWidth,
         align: 'right',
       });
-      if (isSale) {
+      if (showTax) {
         doc.text(t.colTax, colTax, tableTop, { width: 40, align: 'right' });
       }
       doc.text(t.colSubtotal, colSub, tableTop, { width: 70, align: 'right' });
@@ -564,7 +652,7 @@ export class PdfReceiptsService {
         if (sub != null) {
           const key = item.currency ?? '';
           totalsByCurrency.set(key, (totalsByCurrency.get(key) ?? 0) + sub);
-          if (isSale) {
+          if (showTax) {
             taxByCurrency.set(
               key,
               (taxByCurrency.get(key) ?? 0) + (item.taxAmount ?? 0),
@@ -573,10 +661,10 @@ export class PdfReceiptsService {
         }
 
         doc.text(item.name || '—', colItem, cursor, {
-          width: isSale ? 160 : 195,
+          width: showTax ? 160 : 195,
         });
         doc.text(item.serviceTag ?? '—', colTag, cursor, {
-          width: isSale ? 90 : 115,
+          width: showTax ? 90 : 115,
         });
         doc.text(String(item.quantity), colQty, cursor, {
           width: 30,
@@ -586,7 +674,7 @@ export class PdfReceiptsService {
           width: unitColWidth,
           align: 'right',
         });
-        if (isSale) {
+        if (showTax) {
           const effectivePercent = item.taxPercent ?? ctx.taxPercent ?? 0;
           const taxLabel =
             effectivePercent > 0 ? `${effectivePercent}%` : t.exempt;
@@ -626,7 +714,7 @@ export class PdfReceiptsService {
         );
         let row = cursor + 10;
         for (const [currency, amount] of entries) {
-          const tax = isSale ? (taxByCurrency.get(currency) ?? 0) : 0;
+          const tax = showTax ? (taxByCurrency.get(currency) ?? 0) : 0;
           if (tax > 0) {
             doc.font('Helvetica').fontSize(10).fillColor('#000000');
             const subtotalLabel = currency
