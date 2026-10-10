@@ -25,6 +25,7 @@ import {
   parseSortOrder,
 } from '../common/dto';
 import { warehouseFilter } from '../common/warehouse-access/warehouse-filter.util';
+import { attachBalances } from '../common/balance/balance.util';
 
 // Round to 2 decimals to avoid floating point noise accumulating in totals.
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -358,8 +359,6 @@ export class PurchaseInvoicesService {
     filters: FilterPurchaseInvoiceDto,
     userWarehouseIds?: string[] | null,
   ) {
-    const { page, limit, skip } = parsePagination(filters);
-
     const wFilter = warehouseFilter(userWarehouseIds);
     const where: Prisma.PurchaseInvoiceWhereInput = {
       ...wFilter,
@@ -368,18 +367,49 @@ export class PurchaseInvoicesService {
       ...(filters.supplierId ? { supplierId: filters.supplierId } : {}),
     };
 
-    const [data, total] = await Promise.all([
-      this.prisma.purchaseInvoice.findMany({
-        where,
-        skip,
-        take: limit,
-        orderBy: { createdAt: parseSortOrder(filters.sortOrder) },
-        include: this.includeLight,
-      }),
-      this.prisma.purchaseInvoice.count({ where }),
-    ]);
+    const { page, limit, skip } = parsePagination(filters);
 
-    return { data, meta: buildPaginationMeta(total, page, limit) };
+    if (!filters.onlyWithBalance) {
+      const [data, total] = await Promise.all([
+        this.prisma.purchaseInvoice.findMany({
+          where,
+          skip,
+          take: limit,
+          orderBy: { createdAt: parseSortOrder(filters.sortOrder) },
+          include: this.includeLight,
+        }),
+        this.prisma.purchaseInvoice.count({ where }),
+      ]);
+      const withBalance = await attachBalances(
+        this.prisma,
+        data,
+        'purchaseInvoiceId',
+      );
+      return {
+        data: withBalance,
+        meta: buildPaginationMeta(total, page, limit),
+      };
+    }
+
+    // Accounts Payable view — same bounded-candidate, in-memory filter/
+    // paginate approach as SalesService.findAll, same rationale (see there).
+    const candidates = await this.prisma.purchaseInvoice.findMany({
+      where: { ...where, status: PurchaseInvoiceStatus.ACTIVE },
+      orderBy: { createdAt: parseSortOrder(filters.sortOrder) },
+      include: this.includeLight,
+      take: 2000,
+    });
+    const withBalance = await attachBalances(
+      this.prisma,
+      candidates,
+      'purchaseInvoiceId',
+    );
+    const filtered = withBalance.filter((p) => p.balance > 0);
+    const start = (page - 1) * limit;
+    return {
+      data: filtered.slice(start, start + limit),
+      meta: buildPaginationMeta(filtered.length, page, limit),
+    };
   }
 
   async findOne(id: string, userWarehouseIds?: string[] | null) {

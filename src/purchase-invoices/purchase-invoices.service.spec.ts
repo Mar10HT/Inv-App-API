@@ -513,6 +513,37 @@ describe('PurchaseInvoicesService', () => {
     });
   });
 
+  describe('findAll', () => {
+    it('with onlyWithBalance returns only ACTIVE invoices whose balance is greater than zero', async () => {
+      const paidOff = {
+        ...mockInvoice,
+        id: 'paid-off',
+        totalAmount: 50,
+        taxAmount: 0,
+      };
+      const owing = {
+        ...mockInvoice,
+        id: 'owing',
+        totalAmount: 100,
+        taxAmount: 0,
+      };
+      prisma.purchaseInvoice.findMany.mockResolvedValueOnce([
+        paidOff,
+        owing,
+      ] as never);
+      prisma.payment.groupBy.mockResolvedValueOnce([
+        { purchaseInvoiceId: 'paid-off', _sum: { amount: 50 } },
+        { purchaseInvoiceId: 'owing', _sum: { amount: 30 } },
+      ] as never);
+
+      const result = await service.findAll({ onlyWithBalance: true } as never);
+
+      expect(
+        result.data.map((p) => (p as unknown as { id: string }).id),
+      ).toEqual(['owing']);
+    });
+  });
+
   describe('getStats', () => {
     it('returns counts', async () => {
       prisma.purchaseInvoice.count

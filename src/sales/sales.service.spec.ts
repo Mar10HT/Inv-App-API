@@ -7,6 +7,7 @@ import {
 import {
   CustomerType,
   SaleStatus,
+  PaymentCondition,
   type Sale,
   type InventoryItem,
   type Warehouse,
@@ -275,6 +276,102 @@ describe('SalesService', () => {
         BadRequestException,
       );
     });
+
+    describe('credit limit', () => {
+      const creditDto = () => ({
+        ...baseDto(),
+        clientId: 'client-1',
+        paymentCondition: PaymentCondition.CREDIT,
+      });
+
+      it('blocks a credit sale whose own amount alone exceeds the limit, touching no stock', async () => {
+        prisma.inventoryItem.findMany
+          .mockResolvedValueOnce([mockItem])
+          .mockResolvedValueOnce([mockItem]);
+        prisma.$queryRaw.mockResolvedValueOnce([
+          { id: 'client-1', creditLimit: 50 },
+        ] as never);
+        prisma.sale.findMany.mockResolvedValueOnce([]);
+
+        await expect(service.create(creditDto(), 'user-1')).rejects.toThrow(
+          BadRequestException,
+        );
+        // eslint-disable-next-line @typescript-eslint/unbound-method
+        expect(prisma.inventoryItem.update).not.toHaveBeenCalled();
+      });
+
+      it('blocks when the sum of other open CREDIT sales plus this one exceeds the limit', async () => {
+        prisma.inventoryItem.findMany
+          .mockResolvedValueOnce([mockItem])
+          .mockResolvedValueOnce([mockItem]);
+        prisma.$queryRaw.mockResolvedValueOnce([
+          { id: 'client-1', creditLimit: 150 },
+        ] as never);
+        prisma.sale.findMany.mockResolvedValueOnce([
+          { id: 'other-sale', totalAmount: 80, taxAmount: 0 },
+        ] as never);
+        prisma.payment.aggregate.mockResolvedValueOnce({
+          _sum: { amount: 0 },
+        } as never);
+
+        // outstanding 80 + this sale's 100 = 180 > 150
+        await expect(service.create(creditDto(), 'user-1')).rejects.toThrow(
+          BadRequestException,
+        );
+      });
+
+      it('is not blocked when creditLimit is null (unrestricted credit)', async () => {
+        prisma.inventoryItem.findMany
+          .mockResolvedValueOnce([mockItem])
+          .mockResolvedValueOnce([mockItem]);
+        prisma.$queryRaw.mockResolvedValueOnce([
+          { id: 'client-1', creditLimit: null },
+        ] as never);
+        prisma.sale.create.mockResolvedValue(mockSale);
+
+        await expect(
+          service.create(creditDto(), 'user-1'),
+        ).resolves.toBeDefined();
+        // eslint-disable-next-line @typescript-eslint/unbound-method
+        expect(prisma.sale.findMany).not.toHaveBeenCalled();
+      });
+
+      it('is not blocked for a CASH sale even with a clientId and a tight creditLimit — the check never runs', async () => {
+        prisma.inventoryItem.findMany
+          .mockResolvedValueOnce([mockItem])
+          .mockResolvedValueOnce([mockItem]);
+        prisma.sale.create.mockResolvedValue(mockSale);
+
+        await expect(
+          service.create(
+            {
+              ...baseDto(),
+              clientId: 'client-1',
+              paymentCondition: PaymentCondition.CASH,
+            },
+            'user-1',
+          ),
+        ).resolves.toBeDefined();
+        // eslint-disable-next-line @typescript-eslint/unbound-method
+        expect(prisma.$queryRaw).not.toHaveBeenCalled();
+      });
+
+      it('is not blocked without a clientId regardless of paymentCondition', async () => {
+        prisma.inventoryItem.findMany
+          .mockResolvedValueOnce([mockItem])
+          .mockResolvedValueOnce([mockItem]);
+        prisma.sale.create.mockResolvedValue(mockSale);
+
+        await expect(
+          service.create(
+            { ...baseDto(), paymentCondition: PaymentCondition.CREDIT },
+            'user-1',
+          ),
+        ).resolves.toBeDefined();
+        // eslint-disable-next-line @typescript-eslint/unbound-method
+        expect(prisma.$queryRaw).not.toHaveBeenCalled();
+      });
+    });
   });
 
   describe('findOne', () => {
@@ -401,6 +498,61 @@ describe('SalesService', () => {
         service.confirm('sale-1', 'user-1', ['other-wh']),
       ).rejects.toThrow(ForbiddenException);
     });
+
+    describe('credit limit', () => {
+      it('blocks confirming when the amount exceeds the client credit limit — status stays DRAFT, no number assigned, no stock touched', async () => {
+        const draftWithClient = {
+          ...mockDraftSale,
+          clientId: 'client-1',
+          paymentCondition: PaymentCondition.CREDIT,
+        };
+        prisma.sale.findUnique
+          .mockResolvedValueOnce(draftWithClient)
+          .mockResolvedValueOnce(draftWithClient);
+        prisma.$queryRaw.mockResolvedValueOnce([
+          { id: 'client-1', creditLimit: 50 },
+        ] as never);
+        prisma.sale.findMany.mockResolvedValueOnce([]);
+
+        await expect(service.confirm('sale-1', 'user-1')).rejects.toThrow(
+          BadRequestException,
+        );
+        expect(saleNumbering.assignNumber).not.toHaveBeenCalled();
+        // eslint-disable-next-line @typescript-eslint/unbound-method
+        expect(prisma.inventoryItem.update).not.toHaveBeenCalled();
+      });
+
+      it("excludes the sale itself from the sum of the client's other open CREDIT sales", async () => {
+        const draftWithClient = {
+          ...mockDraftSale,
+          id: 'sale-1',
+          clientId: 'client-1',
+          paymentCondition: PaymentCondition.CREDIT,
+        };
+        prisma.sale.findUnique
+          .mockResolvedValueOnce(draftWithClient)
+          .mockResolvedValueOnce(draftWithClient);
+        prisma.inventoryItem.findMany.mockResolvedValueOnce([mockItem]);
+        prisma.$queryRaw.mockResolvedValueOnce([
+          { id: 'client-1', creditLimit: 1000 },
+        ] as never);
+        prisma.sale.findMany.mockResolvedValueOnce([]);
+        prisma.sale.update.mockResolvedValue({
+          ...draftWithClient,
+          status: SaleStatus.ACTIVE,
+        });
+
+        await service.confirm('sale-1', 'user-1');
+
+        // eslint-disable-next-line @typescript-eslint/unbound-method
+        expect(prisma.sale.findMany).toHaveBeenCalledWith(
+          expect.objectContaining({
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+            where: expect.objectContaining({ id: { not: 'sale-1' } }),
+          }),
+        );
+      });
+    });
   });
 
   describe('cancel', () => {
@@ -485,6 +637,34 @@ describe('SalesService', () => {
       const result = await service.cancel('sale-1', 'user-2');
 
       expect(result.status).toBe(SaleStatus.CANCELLED);
+    });
+  });
+
+  describe('findAll', () => {
+    it('with onlyWithBalance returns only ACTIVE sales whose balance is greater than zero', async () => {
+      const paidOff = {
+        ...mockSale,
+        id: 'paid-off',
+        totalAmount: 50,
+        taxAmount: 0,
+      };
+      const owing = {
+        ...mockSale,
+        id: 'owing',
+        totalAmount: 100,
+        taxAmount: 0,
+      };
+      prisma.sale.findMany.mockResolvedValueOnce([paidOff, owing] as never);
+      prisma.payment.groupBy.mockResolvedValueOnce([
+        { saleId: 'paid-off', _sum: { amount: 50 } },
+        { saleId: 'owing', _sum: { amount: 30 } },
+      ] as never);
+
+      const result = await service.findAll({ onlyWithBalance: true } as never);
+
+      expect(
+        result.data.map((s) => (s as unknown as { id: string }).id),
+      ).toEqual(['owing']);
     });
   });
 

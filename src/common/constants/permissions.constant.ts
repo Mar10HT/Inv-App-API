@@ -322,6 +322,25 @@ export const PERMISSIONS = [
     description:
       'Confirm a draft sale (quotation) into an active sale, decrementing stock',
   },
+  // payments (abonos)
+  {
+    key: 'payments:view',
+    module: 'payments',
+    action: 'view',
+    description: 'View payments',
+  },
+  {
+    key: 'payments:create',
+    module: 'payments',
+    action: 'create',
+    description: 'Record payments against sales or purchase invoices',
+  },
+  {
+    key: 'payments:cancel',
+    module: 'payments',
+    action: 'cancel',
+    description: 'Cancel (void) a payment',
+  },
   // reports
   {
     key: 'reports:view',
@@ -455,6 +474,9 @@ export const ROLE_PERMISSIONS: Record<string, PermissionKey[]> = {
     'sales:create',
     'sales:cancel',
     'sales:confirm',
+    'payments:view',
+    'payments:create',
+    'payments:cancel',
     'reports:view',
     'reports:export',
     'alerts:view',
@@ -493,6 +515,8 @@ export const ROLE_PERMISSIONS: Record<string, PermissionKey[]> = {
     'purchases:create',
     'sales:view',
     'sales:create',
+    'payments:view',
+    'payments:create',
     'reports:view',
     'alerts:view',
     'dashboard:view',
@@ -512,6 +536,7 @@ export const ROLE_PERMISSIONS: Record<string, PermissionKey[]> = {
     'outflows:view',
     'purchases:view',
     'sales:view',
+    'payments:view',
     'reports:view',
     'reports:export',
     'alerts:view',

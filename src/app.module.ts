@@ -40,6 +40,7 @@ import { RolesModule } from './roles/roles.module';
 import { FiscalConfigModule } from './fiscal-config/fiscal-config.module';
 import { CaiRangesModule } from './cai-ranges/cai-ranges.module';
 import { ClientsModule } from './clients/clients.module';
+import { PaymentsModule } from './payments/payments.module';
 
 @Module({
   imports: [
@@ -127,6 +128,7 @@ import { ClientsModule } from './clients/clients.module';
     FiscalConfigModule,
     CaiRangesModule,
     ClientsModule,
+    PaymentsModule,
   ],
   controllers: [AppController],
   providers: [

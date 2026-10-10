@@ -65,6 +65,10 @@ model User {
   createdPurchaseInvoices   PurchaseInvoice[] @relation("CreatedPurchaseInvoices")
   cancelledPurchaseInvoices PurchaseInvoice[] @relation("CancelledPurchaseInvoices")
 
+  // Payment relations
+  createdPayments   Payment[] @relation("CreatedPayments")
+  cancelledPayments Payment[] @relation("CancelledPayments")
+
   // Auth tokens relations
   refreshTokens       RefreshToken[]
   passwordResetTokens PasswordResetToken[]
@@ -828,8 +832,18 @@ model Sale {
   id                  String       @id @default(cuid())
   name                String?
   warehouseId         String
+  // Free-text fallback, kept for a walk-in sale with no Client record. Not
+  // removed or made conditional by clientId — both can coexist.
   customerName        String?
   customerType        CustomerType @default(RETAIL)
+  // Optional link to a real Client (Phase 2). Null for a walk-in/anonymous
+  // sale — customerName above still covers that case.
+  clientId            String?
+  // Suggested default from Client.paymentCondition when a client is linked
+  // (frontend-only prefill, same pattern as unitPrice prefilled from the
+  // selected item), always editable. Only CREDIT sales with an outstanding
+  // balance count toward a client's credit limit (Phase 5).
+  paymentCondition    PaymentCondition @default(CASH)
   // A sale is single-currency: every line uses this currency and totalAmount
   // is computed against it. Defaults to USD.
   currency            String       @default("USD")
@@ -862,13 +876,16 @@ model Sale {
   updatedAt           DateTime     @updatedAt
 
   warehouse   Warehouse  @relation(fields: [warehouseId], references: [id])
+  client      Client?    @relation(fields: [clientId], references: [id])
   createdBy   User       @relation("CreatedSales", fields: [createdById], references: [id])
   cancelledBy User?      @relation("CancelledSales", fields: [cancelledById], references: [id])
   items       SaleItem[]
+  payments    Payment[]
 
   @@index([warehouseId])
   @@index([status])
   @@index([customerType])
+  @@index([clientId])
   @@index([createdById])
   @@index([createdAt])
   @@map("sales")
@@ -989,8 +1006,8 @@ model PurchaseInvoice {
   totalAmount        Float                 @default(0)
   taxPercent         Float?
   taxAmount          Float?                @default(0)
-  // Hook for a later Accounts Payable phase (Decision 12) — no `balance`
-  // field yet, meaningless before a Payment model exists to decrement it.
+  // No `balance` field: computed on demand from totalAmount + taxAmount -
+  // SUM(payments.amount WHERE status = ACTIVE), see src/common/balance.
   paymentCondition   PaymentCondition      @default(CASH)
   notes              String?
   createdById        String
@@ -1005,6 +1022,7 @@ model PurchaseInvoice {
   createdBy   User                  @relation("CreatedPurchaseInvoices", fields: [createdById], references: [id])
   cancelledBy User?                 @relation("CancelledPurchaseInvoices", fields: [cancelledById], references: [id])
   items       PurchaseInvoiceItem[]
+  payments    Payment[]
 
   @@unique([supplierId, invoiceNumber])
   @@index([warehouseId])
@@ -1058,8 +1076,57 @@ enum PaymentCondition {
   CREDIT // Crédito
 }
 
-// Customer the business sells to. Soft-deleted (not hard-deleted) so a later
-// phase can safely link Sale.clientId without losing history.
+// ============================================
+// Payments (abonos)
+// Linked to a Sale XOR a PurchaseInvoice — never both, never neither.
+// Enforced in PaymentsService, not the DB (this codebase has no
+// migration-based CHECK constraints, only db push; same precedent as the
+// BULK/UNIQUE discriminator on PurchaseInvoiceItem). Balance is never
+// stored: it's totalAmount + taxAmount - SUM(payment.amount WHERE status =
+// ACTIVE), computed on demand (see src/common/balance/balance.util.ts).
+// ============================================
+enum PaymentMethod {
+  CASH
+  BANK_TRANSFER
+  CHECK
+}
+
+enum PaymentStatus {
+  ACTIVE    // Payment is recorded; counts toward the document's balance
+  CANCELLED // Voided; stops counting toward the balance (no restore step needed — balance is derived)
+}
+
+model Payment {
+  id                 String        @id @default(cuid())
+  saleId             String?
+  purchaseInvoiceId  String?
+  amount             Float
+  method             PaymentMethod
+  reference          String? // Check number / bank transfer confirmation code
+  notes              String?
+  status             PaymentStatus @default(ACTIVE)
+  createdById        String
+  cancelledById      String?
+  cancelledAt        DateTime?
+  cancellationReason String?
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+
+  sale            Sale?            @relation(fields: [saleId], references: [id])
+  purchaseInvoice PurchaseInvoice? @relation(fields: [purchaseInvoiceId], references: [id])
+  createdBy       User             @relation("CreatedPayments", fields: [createdById], references: [id])
+  cancelledBy     User?            @relation("CancelledPayments", fields: [cancelledById], references: [id])
+
+  @@index([saleId])
+  @@index([purchaseInvoiceId])
+  @@index([status])
+  @@index([createdById])
+  @@index([createdAt])
+  @@map("payments")
+}
+
+// Customer the business sells to. Soft-deleted (not hard-deleted) so
+// Sale.clientId can safely keep pointing at it without losing history.
 model Client {
   id               String           @id @default(cuid())
   // Not @unique: a DB-level unique constraint would also cover soft-deleted
@@ -1070,11 +1137,15 @@ model Client {
   rtn              String? // Honduran tax ID, 14 digits, validated at the DTO layer
   phone            String?
   paymentCondition PaymentCondition @default(CASH)
-  creditLimit      Float? // Hook for a later Accounts Receivable phase
+  // Credit limit (Phase 5): only CREDIT sales with an outstanding balance
+  // count toward it. Null means unrestricted credit.
+  creditLimit      Float?
   isActive         Boolean          @default(true)
   createdAt        DateTime         @default(now())
   updatedAt        DateTime         @updatedAt
   deletedAt        DateTime? // Soft delete
+
+  sales Sale[]
 
   @@index([code])
   @@map("clients")

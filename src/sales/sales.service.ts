@@ -7,10 +7,13 @@ import {
 import {
   CustomerType,
   SaleStatus,
+  PaymentCondition,
+  PaymentStatus,
   Prisma,
   type Sale,
   type SaleItem,
 } from '@prisma/client';
+import { attachBalances } from '../common/balance/balance.util';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { PermissionsService } from '../permissions/permissions.service';
@@ -46,6 +49,8 @@ interface CreateInternalArgs {
   warehouseId: string;
   customerName?: string | null;
   customerType: CustomerType;
+  clientId?: string | null;
+  paymentCondition: PaymentCondition;
   currency: string;
   totalAmount: number;
   taxPercent?: number | null;
@@ -80,6 +85,69 @@ export class SalesService {
     const totalAmount = round2(items.reduce((sum, i) => sum + i.lineTotal, 0));
     const taxAmount = round2(lineTaxAmounts.reduce((sum, t) => sum + t, 0));
     return { lineTaxAmounts, totalAmount, taxAmount };
+  }
+
+  /**
+   * Decision 15: a CREDIT sale linked to a Client with a configured
+   * creditLimit is blocked if the client's other open CREDIT sales'
+   * combined balance, plus this sale's own amount, would exceed it. A CASH
+   * sale, a sale with no client, or a client with no creditLimit configured
+   * never triggers a single extra query — unrestricted credit by default.
+   *
+   * Locks the Client row (same FOR UPDATE mechanism as the numbering
+   * services) so two concurrent credit sales for the same client serialize
+   * instead of both reading a stale "room left" figure.
+   */
+  private async enforceCreditLimit(
+    tx: Prisma.TransactionClient,
+    args: {
+      clientId: string | null;
+      paymentCondition: PaymentCondition;
+      amount: number;
+      excludeSaleId?: string;
+    },
+  ): Promise<void> {
+    if (!args.clientId || args.paymentCondition !== PaymentCondition.CREDIT) {
+      return;
+    }
+
+    const [client] = await tx.$queryRaw<
+      { id: string; creditLimit: number | null }[]
+    >(Prisma.sql`
+      SELECT "id","creditLimit" FROM "clients" WHERE "id" = ${args.clientId} FOR UPDATE
+    `);
+    if (client?.creditLimit == null) return;
+
+    const openSales = await tx.sale.findMany({
+      where: {
+        clientId: args.clientId,
+        status: SaleStatus.ACTIVE,
+        paymentCondition: PaymentCondition.CREDIT,
+        ...(args.excludeSaleId ? { id: { not: args.excludeSaleId } } : {}),
+      },
+      select: { id: true, totalAmount: true, taxAmount: true },
+    });
+
+    const saleIds = openSales.map((s) => s.id);
+    const paidAgg = saleIds.length
+      ? await tx.payment.aggregate({
+          where: { saleId: { in: saleIds }, status: PaymentStatus.ACTIVE },
+          _sum: { amount: true },
+        })
+      : { _sum: { amount: 0 } };
+
+    const outstanding =
+      openSales.reduce(
+        (sum, s) => sum + s.totalAmount + (s.taxAmount ?? 0),
+        0,
+      ) - (paidAgg._sum.amount ?? 0);
+    const projected = round2(outstanding + args.amount);
+
+    if (projected > client.creditLimit) {
+      throw new BadRequestException(
+        `This sale would exceed the client's credit limit (${client.creditLimit}). Outstanding + this sale: ${projected}`,
+      );
+    }
   }
 
   private readonly includeLight = {
@@ -195,6 +263,8 @@ export class SalesService {
       warehouseId: dto.warehouseId,
       customerName: dto.customerName?.trim() || null,
       customerType: dto.customerType,
+      clientId: dto.clientId ?? null,
+      paymentCondition: dto.paymentCondition ?? PaymentCondition.CASH,
       currency,
       totalAmount,
       taxPercent: dto.taxPercent ?? null,
@@ -238,6 +308,8 @@ export class SalesService {
             warehouseId: args.warehouseId,
             customerName: args.customerName,
             customerType: args.customerType,
+            clientId: args.clientId ?? null,
+            paymentCondition: args.paymentCondition,
             currency: args.currency,
             totalAmount: args.totalAmount,
             taxPercent: args.taxPercent ?? null,
@@ -251,6 +323,15 @@ export class SalesService {
           include: this.includeFull,
         });
       }
+
+      // A DRAFT reserves nothing, so the credit-limit check (which only
+      // ever matters once a sale actually commits a client to the debt)
+      // runs here, before the stock lookup — a blocked sale touches nothing.
+      await this.enforceCreditLimit(tx, {
+        clientId: args.clientId ?? null,
+        paymentCondition: args.paymentCondition,
+        amount: round2(args.totalAmount + args.taxAmount),
+      });
 
       const currentItems = await tx.inventoryItem.findMany({
         where: { id: { in: ids }, deletedAt: null },
@@ -289,6 +370,8 @@ export class SalesService {
           warehouseId: args.warehouseId,
           customerName: args.customerName,
           customerType: args.customerType,
+          clientId: args.clientId ?? null,
+          paymentCondition: args.paymentCondition,
           currency: args.currency,
           totalAmount: args.totalAmount,
           taxPercent: args.taxPercent ?? null,
@@ -325,8 +408,6 @@ export class SalesService {
   }
 
   async findAll(filters: FilterSaleDto, userWarehouseIds?: string[] | null) {
-    const { page, limit, skip } = parsePagination(filters);
-
     const wFilter = warehouseFilter(userWarehouseIds);
     const where: Prisma.SaleWhereInput = {
       ...wFilter,
@@ -335,18 +416,44 @@ export class SalesService {
       ...(filters.warehouseId ? { warehouseId: filters.warehouseId } : {}),
     };
 
-    const [data, total] = await Promise.all([
-      this.prisma.sale.findMany({
-        where,
-        skip,
-        take: limit,
-        orderBy: { createdAt: parseSortOrder(filters.sortOrder) },
-        include: this.includeLight,
-      }),
-      this.prisma.sale.count({ where }),
-    ]);
+    const { page, limit, skip } = parsePagination(filters);
 
-    return { data, meta: buildPaginationMeta(total, page, limit) };
+    if (!filters.onlyWithBalance) {
+      const [data, total] = await Promise.all([
+        this.prisma.sale.findMany({
+          where,
+          skip,
+          take: limit,
+          orderBy: { createdAt: parseSortOrder(filters.sortOrder) },
+          include: this.includeLight,
+        }),
+        this.prisma.sale.count({ where }),
+      ]);
+      const withBalance = await attachBalances(this.prisma, data, 'saleId');
+      return {
+        data: withBalance,
+        meta: buildPaginationMeta(total, page, limit),
+      };
+    }
+
+    // Accounts Receivable view: balance is derived, never stored, so it
+    // can't be filtered at the DB layer without raw SQL. Bounded candidate
+    // fetch + in-memory filter/paginate — fine while ACTIVE sales stay in
+    // the hundreds/low thousands; move to a raw SQL HAVING query if this
+    // table outgrows that.
+    const candidates = await this.prisma.sale.findMany({
+      where: { ...where, status: SaleStatus.ACTIVE },
+      orderBy: { createdAt: parseSortOrder(filters.sortOrder) },
+      include: this.includeLight,
+      take: 2000,
+    });
+    const withBalance = await attachBalances(this.prisma, candidates, 'saleId');
+    const filtered = withBalance.filter((s) => s.balance > 0);
+    const start = (page - 1) * limit;
+    return {
+      data: filtered.slice(start, start + limit),
+      meta: buildPaginationMeta(filtered.length, page, limit),
+    };
   }
 
   async findOne(id: string, userWarehouseIds?: string[] | null) {
@@ -532,6 +639,21 @@ export class SalesService {
         );
       }
 
+      const { totalAmount, taxAmount, lineTaxAmounts } = this.computeTotals(
+        current.items,
+        current.taxPercent,
+      );
+
+      // Same "fail cheap before touching stock" ordering as createInternal's
+      // ACTIVE branch; excludeSaleId keeps this DRAFT's own (not-yet-ACTIVE)
+      // amount from double-counting itself in the "other open sales" sum.
+      await this.enforceCreditLimit(tx, {
+        clientId: current.clientId,
+        paymentCondition: current.paymentCondition,
+        amount: round2(totalAmount + taxAmount),
+        excludeSaleId: current.id,
+      });
+
       const ids = current.items.map((i) => i.inventoryItemId);
       const currentItems = await tx.inventoryItem.findMany({
         where: { id: { in: ids }, deletedAt: null },
@@ -552,11 +674,6 @@ export class SalesService {
           );
         }
       }
-
-      const { totalAmount, taxAmount, lineTaxAmounts } = this.computeTotals(
-        current.items,
-        current.taxPercent,
-      );
 
       await Promise.all(
         current.items.map((line) =>
