@@ -398,6 +398,22 @@ describe('SalesService', () => {
         ForbiddenException,
       );
     });
+
+    it('includes the linked client (id + name)', async () => {
+      prisma.sale.findUnique.mockResolvedValue(mockSale);
+
+      await service.findOne('sale-1');
+
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(prisma.sale.findUnique).toHaveBeenCalledWith(
+        expect.objectContaining({
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+          include: expect.objectContaining({
+            client: { select: { id: true, name: true } },
+          }),
+        }),
+      );
+    });
   });
 
   describe('update', () => {
@@ -641,6 +657,24 @@ describe('SalesService', () => {
   });
 
   describe('findAll', () => {
+    it('includes the linked client (id + name), so Accounts Receivable can show who owes', async () => {
+      prisma.sale.findMany.mockResolvedValueOnce([]);
+      prisma.sale.count.mockResolvedValueOnce(0);
+      prisma.payment.groupBy.mockResolvedValueOnce([]);
+
+      await service.findAll({} as never);
+
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(prisma.sale.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+          include: expect.objectContaining({
+            client: { select: { id: true, name: true } },
+          }),
+        }),
+      );
+    });
+
     it('with onlyWithBalance returns only ACTIVE sales whose balance is greater than zero', async () => {
       const paidOff = {
         ...mockSale,

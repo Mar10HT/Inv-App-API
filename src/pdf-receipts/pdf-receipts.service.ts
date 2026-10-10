@@ -284,6 +284,7 @@ export class PdfReceiptsService {
       where: { id: saleId },
       include: {
         warehouse: { select: { name: true } },
+        client: { select: { name: true } },
         createdBy: { select: { name: true, email: true } },
         items: {
           include: {
@@ -304,7 +305,10 @@ export class PdfReceiptsService {
         sourceWarehouse: sale.warehouse?.name ?? '',
         destinationWarehouse: '',
         warehouseLabel: sale.warehouse?.name ?? '',
-        customerName: sale.customerName,
+        // The linked Client (used for credit-limit tracking) is the
+        // authoritative name when present — customerName is only the
+        // free-text fallback for a walk-in sale with no client record.
+        customerName: sale.client?.name ?? sale.customerName,
         customerType: sale.customerType,
         createdAt: sale.createdAt,
         createdBy: sale.createdBy?.name || sale.createdBy?.email || '',

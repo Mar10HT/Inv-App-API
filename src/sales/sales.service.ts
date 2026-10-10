@@ -152,6 +152,7 @@ export class SalesService {
 
   private readonly includeLight = {
     warehouse: { select: { id: true, name: true } },
+    client: { select: { id: true, name: true } },
     createdBy: { select: { id: true, name: true, email: true } },
     cancelledBy: { select: { id: true, name: true, email: true } },
     items: {
@@ -165,6 +166,7 @@ export class SalesService {
 
   private readonly includeFull = {
     warehouse: true,
+    client: { select: { id: true, name: true } },
     createdBy: { select: { id: true, name: true, email: true } },
     cancelledBy: { select: { id: true, name: true, email: true } },
     items: {
