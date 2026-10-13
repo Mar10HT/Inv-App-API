@@ -27,6 +27,8 @@ export class LoanItemDto {
 }
 
 export class CreateLoanDto {
+  // Deprecated and ignored: documents are numbered automatically now. Still
+  // accepted so a browser tab running the previous frontend doesn't get a 400.
   @IsString()
   @IsOptional()
   name?: string;

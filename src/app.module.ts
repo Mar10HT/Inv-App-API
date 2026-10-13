@@ -22,6 +22,7 @@ import { SeedModule } from './seed/seed.module';
 import { AuditModule } from './audit/audit.module';
 import { HealthModule } from './health/health.module';
 import { AlertsModule } from './alerts/alerts.module';
+import { DocumentNumberingModule } from './common/numbering/document-numbering.module';
 import { TransferRequestsModule } from './transfer-requests/transfer-requests.module';
 import { ReportsModule } from './reports/reports.module';
 import { StockTakeModule } from './stock-take/stock-take.module';
@@ -113,6 +114,7 @@ import { PaymentsModule } from './payments/payments.module';
     SeedModule,
     AuditModule,
     AlertsModule,
+    DocumentNumberingModule,
     TransferRequestsModule,
     ReportsModule,
     StockTakeModule,

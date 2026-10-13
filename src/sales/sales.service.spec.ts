@@ -19,9 +19,11 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { PermissionsService } from '../permissions/permissions.service';
 import { StockLevelService } from '../alerts/stock-level.service';
+import { DocumentNumberingService } from '../common/numbering/document-numbering.service';
 
 describe('SalesService', () => {
   let service: SalesService;
+  let numbering: { assignNumber: jest.Mock };
   let prisma: DeepMockProxy<PrismaService>;
   let saleNumbering: { assignNumber: jest.Mock };
   let permissions: { getPermissionsForUser: jest.Mock };
@@ -100,6 +102,10 @@ describe('SalesService', () => {
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
+        {
+          provide: DocumentNumberingService,
+          useValue: { assignNumber: jest.fn().mockResolvedValue('DOC-0001') },
+        },
         SalesService,
         { provide: StockLevelService, useValue: stockLevel },
         { provide: PrismaService, useValue: prisma },
@@ -113,6 +119,7 @@ describe('SalesService', () => {
     }).compile();
 
     service = module.get<SalesService>(SalesService);
+    numbering = module.get(DocumentNumberingService);
   });
 
   afterEach(() => jest.clearAllMocks());
@@ -161,9 +168,23 @@ describe('SalesService', () => {
       });
       // Stock moved: statuses and alerts must be re-evaluated.
       expect(stockLevel.scheduleRefresh).toHaveBeenCalledTimes(1);
+      // A direct sale is never a quotation.
+      expect(numbering.assignNumber).not.toHaveBeenCalled();
     });
 
-    it('creates a DRAFT quotation with asDraft:true, skipping the stock check/decrement and numbering entirely', async () => {
+    it('ignores a typed reference', async () => {
+      prisma.inventoryItem.findMany
+        .mockResolvedValueOnce([mockItem])
+        .mockResolvedValueOnce([mockItem]);
+      prisma.sale.create.mockResolvedValue(mockSale);
+
+      await service.create({ ...baseDto(), name: 'Typed by hand' }, 'user-1');
+
+      const { data } = prisma.sale.create.mock.calls[0][0];
+      expect(data).not.toHaveProperty('name');
+    });
+
+    it('creates a DRAFT quotation with asDraft:true: a quotation number, but no stock check/decrement and no invoice number', async () => {
       // Only the outer item-existence/snapshot lookup runs for a draft — no
       // second (quantity-checking) findMany inside createInternal's tx.
       prisma.inventoryItem.findMany.mockResolvedValueOnce([mockItem]);
@@ -182,6 +203,7 @@ describe('SalesService', () => {
       // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(prisma.inventoryItem.update).not.toHaveBeenCalled();
       expect(saleNumbering.assignNumber).not.toHaveBeenCalled();
+      expect(numbering.assignNumber).toHaveBeenCalledWith(prisma, 'QUOTE');
       // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(prisma.sale.create).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -189,6 +211,7 @@ describe('SalesService', () => {
           data: expect.objectContaining({
             status: SaleStatus.DRAFT,
             number: null,
+            quoteNumber: 'DOC-0001',
           }),
         }),
       );

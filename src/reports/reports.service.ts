@@ -32,6 +32,7 @@ const translations: Record<string, Record<Locale, string>> = {
   difference: { en: 'Difference', es: 'Diferencia' },
   // Transactions
   id: { en: 'ID', es: 'ID' },
+  number: { en: 'Number', es: 'Número' },
   type: { en: 'Type', es: 'Tipo' },
   date: { en: 'Date', es: 'Fecha' },
   sourceWarehouse: { en: 'Source Warehouse', es: 'Almacen Origen' },
@@ -609,7 +610,7 @@ export class ReportsService {
     });
 
     worksheet.columns = [
-      { header: this.t('id', locale), key: 'id', width: 25 },
+      { header: this.t('number', locale), key: 'number', width: 14 },
       { header: this.t('item', locale), key: 'item', width: 32 },
       { header: this.t('quantity', locale), key: 'quantity', width: 10 },
       { header: this.t('source', locale), key: 'source', width: 22 },
@@ -633,7 +634,7 @@ export class ReportsService {
         .join('; ');
       const totalQty = loan.items.reduce((sum, li) => sum + li.quantity, 0);
       const row = worksheet.addRow({
-        id: loan.id,
+        number: loan.number ?? loan.id,
         item: itemSummary,
         quantity: totalQty,
         source: loan.sourceWarehouse?.name || '',
@@ -691,7 +692,7 @@ export class ReportsService {
     });
 
     worksheet.columns = [
-      { header: this.t('id', locale), key: 'id', width: 25 },
+      { header: this.t('number', locale), key: 'number', width: 14 },
       { header: this.t('status', locale), key: 'status', width: 14 },
       { header: this.t('sourceWarehouse', locale), key: 'source', width: 22 },
       {
@@ -714,7 +715,7 @@ export class ReportsService {
 
     transfers.forEach((tr, idx) => {
       const row = worksheet.addRow({
-        id: tr.id,
+        number: tr.number ?? tr.id,
         status: this.tStatus(tr.status, locale),
         source: tr.sourceWarehouse?.name || '',
         destination: tr.destinationWarehouse?.name || '',
@@ -943,8 +944,7 @@ export class ReportsService {
     });
 
     worksheet.columns = [
-      { header: this.t('id', locale), key: 'id', width: 25 },
-      { header: this.t('name', locale), key: 'name', width: 28 },
+      { header: this.t('number', locale), key: 'number', width: 14 },
       { header: this.t('status', locale), key: 'status', width: 14 },
       { header: this.t('reason', locale), key: 'reason', width: 16 },
       { header: this.t('warehouse', locale), key: 'warehouse', width: 22 },
@@ -959,14 +959,13 @@ export class ReportsService {
 
     this.applyHeader(worksheet, COLORS.outflows);
     worksheet.views = [{ state: 'frozen', ySplit: 1 }];
-    worksheet.autoFilter = { from: 'A1', to: 'L1' };
+    worksheet.autoFilter = { from: 'A1', to: 'K1' };
 
     const dateLocale = locale === 'en' ? 'en-US' : 'es-HN';
 
     outflows.forEach((o, idx) => {
       const row = worksheet.addRow({
-        id: o.id,
-        name: o.name || '-',
+        number: o.number ?? o.id,
         status: OUTFLOW_STATUS_LABELS[o.status]?.[locale] ?? o.status,
         reason: OUTFLOW_REASON_LABELS[o.reason]?.[locale] ?? o.reason,
         warehouse: o.warehouse?.name || '',

@@ -22,6 +22,7 @@ import {
 } from '../common/dto';
 import { warehouseFilter } from '../common/warehouse-access/warehouse-filter.util';
 import { StockLevelService } from '../alerts/stock-level.service';
+import { DocumentNumberingService } from '../common/numbering/document-numbering.service';
 
 interface OutflowItemSeed {
   inventoryItemId: string;
@@ -34,7 +35,6 @@ interface OutflowItemSeed {
 }
 
 interface CreateInternalArgs {
-  name?: string | null;
   warehouseId: string;
   reason: OutflowReason;
   notes?: string | null;
@@ -47,6 +47,7 @@ export class OutflowsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditService: AuditService,
+    private readonly documentNumbering: DocumentNumberingService,
     private readonly stockLevelService: StockLevelService,
   ) {}
 
@@ -138,7 +139,6 @@ export class OutflowsService {
     }
 
     return this.createInternal({
-      name: dto.name?.trim() || null,
       warehouseId: dto.warehouseId,
       reason: dto.reason,
       notes: dto.notes ?? null,
@@ -199,7 +199,7 @@ export class OutflowsService {
 
       return tx.outflow.create({
         data: {
-          name: args.name,
+          number: await this.documentNumbering.assignNumber(tx, 'OUTFLOW'),
           warehouseId: args.warehouseId,
           reason: args.reason,
           status: OutflowStatus.ACTIVE,
@@ -228,6 +228,7 @@ export class OutflowsService {
       userId: args.createdById,
       changes: {
         after: {
+          number: outflow.number,
           warehouseId: outflow.warehouseId,
           reason: outflow.reason,
           status: outflow.status,

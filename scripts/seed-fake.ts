@@ -670,6 +670,7 @@ async function main() {
 
     await prisma.loan.create({
       data: {
+        number: `PRE-${String(loanCount + 1).padStart(4, '0')}`,
         items: {
           create: loanItems.map(it => ({
             inventoryItemId: it.id,
@@ -749,6 +750,7 @@ async function main() {
 
     await prisma.transferRequest.create({
       data: {
+        number: `TRA-${String(trCount + 1).padStart(4, '0')}`,
         status: scenario.status,
         sourceWarehouseId: srcWh.id,
         destinationWarehouseId: dstWh.id,
@@ -772,6 +774,13 @@ async function main() {
   }
 
   console.log(`   ✓ ${trCount} transfer requests\n`);
+
+  // Continue the app's own numbering after the seeded documents.
+  const fiscalConfig = (await prisma.fiscalConfig.findFirst()) ?? (await prisma.fiscalConfig.create({ data: {} }));
+  await prisma.fiscalConfig.update({
+    where: { id: fiscalConfig.id },
+    data: { nextLoanNumber: loanCount + 1, nextTransferNumber: trCount + 1 },
+  });
 
   // ----------------------------------------
   // Audit Logs

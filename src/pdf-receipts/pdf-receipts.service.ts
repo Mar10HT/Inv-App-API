@@ -25,7 +25,6 @@ interface ReceiptItem {
 interface ReceiptContext {
   documentType: 'loan' | 'transfer' | 'outflow' | 'sale' | 'purchase';
   id: string;
-  name: string | null;
   status: string;
   sourceWarehouse: string;
   destinationWarehouse: string;
@@ -43,9 +42,11 @@ interface ReceiptContext {
   // Purchase-specific metadata
   supplierName?: string | null;
   supplierInvoiceNumber?: string | null;
-  // Null while DRAFT (a quotation isn't a numbered document yet). For a
-  // purchase, this is always set (purchases have no draft concept).
+  // The document's own correlative: PRE-/TRA-/SAL- for loans, transfers
+  // and outflows, COM- for purchases, the invoice number for a sale (null
+  // while it's a DRAFT quotation, which shows quoteNumber instead).
   number?: string | null;
+  quoteNumber?: string | null;
   // Default tax percent (Sale/PurchaseInvoice), used only to resolve a
   // line's effective percent for display when that line's own taxPercent is null.
   taxPercent?: number | null;
@@ -63,6 +64,8 @@ const STRINGS = {
     voidRejected: 'RECHAZADO',
     id: 'ID',
     invoiceNumber: 'Venta Nº',
+    quoteNumber: 'Cotización Nº',
+    number: 'Número',
     purchaseNumber: 'Compra Nº',
     supplier: 'Proveedor',
     supplierInvoiceLabel: 'Factura del proveedor',
@@ -124,6 +127,8 @@ const STRINGS = {
     voidRejected: 'REJECTED',
     id: 'ID',
     invoiceNumber: 'Sale No.',
+    quoteNumber: 'Quotation No.',
+    number: 'Number',
     purchaseNumber: 'Purchase No.',
     supplier: 'Supplier',
     supplierInvoiceLabel: 'Supplier invoice',
@@ -211,7 +216,7 @@ export class PdfReceiptsService {
       {
         documentType: 'loan',
         id: loan.id,
-        name: loan.name,
+        number: loan.number,
         status: loan.status,
         sourceWarehouse: loan.sourceWarehouse?.name ?? '',
         destinationWarehouse: loan.destinationWarehouse?.name ?? '',
@@ -254,7 +259,7 @@ export class PdfReceiptsService {
       {
         documentType: 'outflow',
         id: outflow.id,
-        name: outflow.name,
+        number: outflow.number,
         status: outflow.status,
         sourceWarehouse: outflow.warehouse?.name ?? '',
         destinationWarehouse: '',
@@ -300,7 +305,7 @@ export class PdfReceiptsService {
       {
         documentType: 'sale',
         id: sale.id,
-        name: sale.name,
+        quoteNumber: sale.quoteNumber,
         status: sale.status,
         sourceWarehouse: sale.warehouse?.name ?? '',
         destinationWarehouse: '',
@@ -354,7 +359,6 @@ export class PdfReceiptsService {
       {
         documentType: 'purchase',
         id: invoice.id,
-        name: null,
         status: invoice.status,
         sourceWarehouse: invoice.warehouse?.name ?? '',
         destinationWarehouse: '',
@@ -412,7 +416,7 @@ export class PdfReceiptsService {
       {
         documentType: 'transfer',
         id: transfer.id,
-        name: transfer.name,
+        number: transfer.number,
         status: transfer.status,
         sourceWarehouse: transfer.sourceWarehouse?.name ?? '',
         destinationWarehouse: transfer.destinationWarehouse?.name ?? '',
@@ -452,20 +456,26 @@ export class PdfReceiptsService {
   }
 
   /**
-   * ACTIVE/CANCELLED sales and purchases show their real invoice number
-   * (falling back to the internal id only if somehow missing). A DRAFT sale
-   * shows nothing number-related — it was never assigned one. Every other
-   * document type keeps today's plain id line.
+   * ACTIVE/CANCELLED sales and purchases show their real invoice number,
+   * a DRAFT sale its quotation number, and loans, transfers and outflows
+   * their own correlative (each falls back to the internal id only for a
+   * document saved before numbering existed and not yet backfilled).
    */
   private resolveIdentifierLine(
-    ctx: Pick<ReceiptContext, 'documentType' | 'status' | 'id' | 'number'>,
+    ctx: Pick<
+      ReceiptContext,
+      'documentType' | 'status' | 'id' | 'number' | 'quoteNumber'
+    >,
     t: (typeof STRINGS)[Locale],
   ): string | null {
     if (ctx.documentType === 'purchase') {
       return `${t.purchaseNumber}: ${ctx.number ?? ctx.id}`;
     }
-    if (ctx.documentType !== 'sale') return `${t.id}: ${ctx.id}`;
-    if (ctx.status === 'DRAFT') return null;
+    if (ctx.documentType !== 'sale')
+      return `${t.number}: ${ctx.number ?? ctx.id}`;
+    if (ctx.status === 'DRAFT') {
+      return ctx.quoteNumber ? `${t.quoteNumber}: ${ctx.quoteNumber}` : null;
+    }
     return `${t.invoiceNumber}: ${ctx.number ?? ctx.id}`;
   }
 
@@ -532,12 +542,12 @@ export class PdfReceiptsService {
           .text(value || '—', x, y + 12, { width: colWidth - 10 });
       };
 
-      // Purchases have no "name" field — the top-left slot shows the
-      // supplier instead, since that's the more useful thing to see first.
+      // Purchases show their supplier first; every other document its
+      // number (the free-text reference these used to show is gone).
       if (ctx.documentType === 'purchase') {
         writeRow(t.supplier, ctx.supplierName ?? '—', metaTop, left);
       } else {
-        writeRow(t.name, ctx.name ?? '—', metaTop, left);
+        writeRow(t.number, ctx.number ?? ctx.quoteNumber ?? '—', metaTop, left);
       }
       writeRow(t.status, ctx.status, metaTop, right);
 

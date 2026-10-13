@@ -22,6 +22,7 @@ import {
 } from '../common/dto';
 import { EventsService } from '../events/events.service';
 import { AuditService } from '../audit/audit.service';
+import { DocumentNumberingService } from '../common/numbering/document-numbering.service';
 import { warehouseFilterMultiField } from '../common/warehouse-access/warehouse-filter.util';
 
 @Injectable()
@@ -31,6 +32,7 @@ export class LoansService {
     private qrService: QrService,
     private eventsService: EventsService,
     private auditService: AuditService,
+    private documentNumbering: DocumentNumberingService,
   ) {}
 
   // Light include for list queries (faster)
@@ -183,26 +185,29 @@ export class LoansService {
       throw new BadRequestException(`Item(s) already on loan: ${conflict}`);
     }
 
-    // Create the loan and its items in one transaction
-    const loan = await this.prisma.loan.create({
-      data: {
-        name: createLoanDto.name?.trim() || null,
-        sourceWarehouseId: createLoanDto.sourceWarehouseId,
-        destinationWarehouseId: createLoanDto.destinationWarehouseId,
-        dueDate: new Date(createLoanDto.dueDate),
-        createdById: userId,
-        notes: createLoanDto.notes,
-        status: 'PENDING',
-        items: {
-          create: createLoanDto.items.map((i) => ({
-            inventoryItemId: i.inventoryItemId,
-            quantity: i.quantity,
-            notes: i.notes,
-          })),
+    // Create the loan and its items in one transaction, numbered inside it so
+    // a failed insert never consumes a number
+    const loan = await this.prisma.$transaction(async (tx) =>
+      tx.loan.create({
+        data: {
+          number: await this.documentNumbering.assignNumber(tx, 'LOAN'),
+          sourceWarehouseId: createLoanDto.sourceWarehouseId,
+          destinationWarehouseId: createLoanDto.destinationWarehouseId,
+          dueDate: new Date(createLoanDto.dueDate),
+          createdById: userId,
+          notes: createLoanDto.notes,
+          status: 'PENDING',
+          items: {
+            create: createLoanDto.items.map((i) => ({
+              inventoryItemId: i.inventoryItemId,
+              quantity: i.quantity,
+              notes: i.notes,
+            })),
+          },
         },
-      },
-      include: this.loanInclude,
-    });
+        include: this.loanInclude,
+      }),
+    );
 
     this.auditService.logSafe({
       action: 'CREATE',
@@ -211,7 +216,7 @@ export class LoansService {
       userId,
       changes: {
         after: {
-          name: loan.name,
+          number: loan.number,
           sourceWarehouseId: loan.sourceWarehouseId,
           destinationWarehouseId: loan.destinationWarehouseId,
           dueDate: loan.dueDate,

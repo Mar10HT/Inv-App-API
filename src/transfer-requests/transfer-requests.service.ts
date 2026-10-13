@@ -16,6 +16,7 @@ import {
 } from '../common/dto';
 import { warehouseFilterMultiField } from '../common/warehouse-access/warehouse-filter.util';
 import { StockLevelService } from '../alerts/stock-level.service';
+import { DocumentNumberingService } from '../common/numbering/document-numbering.service';
 
 @Injectable()
 export class TransferRequestsService {
@@ -24,6 +25,7 @@ export class TransferRequestsService {
     private auditService: AuditService,
     private qrService: QrService,
     private readonly stockLevelService: StockLevelService,
+    private readonly documentNumbering: DocumentNumberingService,
   ) {}
 
   private readonly includeLight = {
@@ -110,22 +112,25 @@ export class TransferRequestsService {
       }
     }
 
-    const transferRequest = await this.prisma.transferRequest.create({
-      data: {
-        name: dto.name?.trim() || null,
-        sourceWarehouseId: dto.sourceWarehouseId,
-        destinationWarehouseId: dto.destinationWarehouseId,
-        requestedById,
-        notes: dto.notes,
-        items: {
-          create: dto.items.map((item) => ({
-            inventoryItemId: item.inventoryItemId,
-            quantity: item.quantity,
-          })),
+    // Numbered inside the transaction so a failed insert never consumes a number
+    const transferRequest = await this.prisma.$transaction(async (tx) =>
+      tx.transferRequest.create({
+        data: {
+          number: await this.documentNumbering.assignNumber(tx, 'TRANSFER'),
+          sourceWarehouseId: dto.sourceWarehouseId,
+          destinationWarehouseId: dto.destinationWarehouseId,
+          requestedById,
+          notes: dto.notes,
+          items: {
+            create: dto.items.map((item) => ({
+              inventoryItemId: item.inventoryItemId,
+              quantity: item.quantity,
+            })),
+          },
         },
-      },
-      include: this.includeFull,
-    });
+        include: this.includeFull,
+      }),
+    );
 
     this.auditService.logSafe({
       action: 'CREATE',
@@ -134,7 +139,7 @@ export class TransferRequestsService {
       userId: requestedById,
       changes: {
         after: {
-          name: transferRequest.name,
+          number: transferRequest.number,
           sourceWarehouseId: transferRequest.sourceWarehouseId,
           destinationWarehouseId: transferRequest.destinationWarehouseId,
           status: transferRequest.status,

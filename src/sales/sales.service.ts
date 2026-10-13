@@ -28,6 +28,7 @@ import {
 } from '../common/dto';
 import { warehouseFilter } from '../common/warehouse-access/warehouse-filter.util';
 import { StockLevelService } from '../alerts/stock-level.service';
+import { DocumentNumberingService } from '../common/numbering/document-numbering.service';
 
 // Round to 2 decimals to avoid floating point noise accumulating in totals.
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -46,7 +47,6 @@ interface SaleItemSeed {
 }
 
 interface CreateInternalArgs {
-  name?: string | null;
   warehouseId: string;
   customerName?: string | null;
   customerType: CustomerType;
@@ -70,6 +70,7 @@ export class SalesService {
     private readonly saleNumbering: SaleNumberingService,
     private readonly permissionsService: PermissionsService,
     private readonly stockLevelService: StockLevelService,
+    private readonly documentNumbering: DocumentNumberingService,
   ) {}
 
   /**
@@ -263,7 +264,6 @@ export class SalesService {
     }));
 
     return this.createInternal({
-      name: dto.name?.trim() || null,
       warehouseId: dto.warehouseId,
       customerName: dto.customerName?.trim() || null,
       customerType: dto.customerType,
@@ -308,7 +308,7 @@ export class SalesService {
       if (args.asDraft) {
         return tx.sale.create({
           data: {
-            name: args.name,
+            quoteNumber: await this.documentNumbering.assignNumber(tx, 'QUOTE'),
             warehouseId: args.warehouseId,
             customerName: args.customerName,
             customerType: args.customerType,
@@ -370,7 +370,6 @@ export class SalesService {
 
       return tx.sale.create({
         data: {
-          name: args.name,
           warehouseId: args.warehouseId,
           customerName: args.customerName,
           customerType: args.customerType,
@@ -570,8 +569,6 @@ export class SalesService {
       return tx.sale.update({
         where: { id },
         data: {
-          name:
-            dto.name !== undefined ? dto.name?.trim() || null : current.name,
           warehouseId: targetWarehouseId,
           customerName:
             dto.customerName !== undefined

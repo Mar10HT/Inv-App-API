@@ -16,9 +16,11 @@ import { OutflowsService } from './outflows.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { StockLevelService } from '../alerts/stock-level.service';
+import { DocumentNumberingService } from '../common/numbering/document-numbering.service';
 
 describe('OutflowsService', () => {
   let service: OutflowsService;
+  let numbering: { assignNumber: jest.Mock };
   let prisma: DeepMockProxy<PrismaService>;
 
   // Fixtures deliberately only populate the fields each test actually reads;
@@ -73,6 +75,10 @@ describe('OutflowsService', () => {
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
+        {
+          provide: DocumentNumberingService,
+          useValue: { assignNumber: jest.fn().mockResolvedValue('DOC-0001') },
+        },
         OutflowsService,
         {
           provide: StockLevelService,
@@ -87,6 +93,7 @@ describe('OutflowsService', () => {
     }).compile();
 
     service = module.get<OutflowsService>(OutflowsService);
+    numbering = module.get(DocumentNumberingService);
   });
 
   afterEach(() => jest.clearAllMocks());
@@ -115,6 +122,22 @@ describe('OutflowsService', () => {
         where: { id: 'item-1' },
         data: { quantity: { decrement: 2 } },
       });
+    });
+
+    it('numbers the outflow automatically and ignores a typed reference', async () => {
+      prisma.inventoryItem.findMany
+        .mockResolvedValueOnce([mockItem])
+        .mockResolvedValueOnce([mockItem]);
+      prisma.outflow.create.mockResolvedValue(mockOutflow);
+      numbering.assignNumber.mockResolvedValue('SAL-0042');
+
+      await service.create({ ...baseDto(), name: 'Typed by hand' }, 'user-1');
+
+      expect(numbering.assignNumber).toHaveBeenCalledWith(prisma, 'OUTFLOW');
+
+      const { data } = prisma.outflow.create.mock.calls[0][0];
+      expect(data.number).toBe('SAL-0042');
+      expect(data).not.toHaveProperty('name');
     });
 
     it('throws ForbiddenException when user has no access to the warehouse', async () => {

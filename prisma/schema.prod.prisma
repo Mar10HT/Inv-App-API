@@ -348,6 +348,11 @@ model TransactionItem {
 // Loan model for tracking item loans between warehouses (multi-item)
 model Loan {
   id                     String     @id @default(cuid())
+  // Correlative assigned at creation, e.g. PRE-0001 (DocumentNumberingService).
+  number                 String?    @unique
+  // Deprecated: was a free-text "reference" typed by the user. Its content was
+  // moved into notes (prisma/migrate-document-numbers.sql); kept only so
+  // `prisma db push` never has to drop a column. Not read or written anymore.
   name                   String?
   sourceWarehouseId      String
   destinationWarehouseId String
@@ -447,6 +452,11 @@ enum AlertType {
 // Transfer Request model for approval workflow
 model TransferRequest {
   id                     String        @id @default(cuid())
+  // Correlative assigned at creation, e.g. TRA-0001 (DocumentNumberingService).
+  number                 String?       @unique
+  // Deprecated: was a free-text "reference" typed by the user. Its content was
+  // moved into notes (prisma/migrate-document-numbers.sql); kept only so
+  // `prisma db push` never has to drop a column. Not read or written anymore.
   name                   String?
   status                 RequestStatus @default(PENDING)
   sourceWarehouseId      String
@@ -741,6 +751,11 @@ model RolePermission {
 
 model Outflow {
   id                  String         @id @default(cuid())
+  // Correlative assigned at creation, e.g. SAL-0001 (DocumentNumberingService).
+  number              String?        @unique
+  // Deprecated: was a free-text "reference" typed by the user. Its content was
+  // moved into notes (prisma/migrate-document-numbers.sql); kept only so
+  // `prisma db push` never has to drop a column. Not read or written anymore.
   name                String?
   warehouseId         String
   reason              OutflowReason
@@ -831,6 +846,13 @@ model PasswordResetToken {
 
 model Sale {
   id                  String       @id @default(cuid())
+  // Quotation correlative, e.g. COT-0001, assigned when a DRAFT is created.
+  // A sale created directly as ACTIVE has none; `number` below is its invoice
+  // number either way.
+  quoteNumber         String?      @unique
+  // Deprecated: was a free-text "reference" typed by the user. Its content was
+  // moved into notes (prisma/migrate-document-numbers.sql); kept only so
+  // `prisma db push` never has to drop a column. Not read or written anymore.
   name                String?
   warehouseId         String
   // Free-text fallback, kept for a walk-in sale with no Client record. Not
@@ -952,6 +974,12 @@ model FiscalConfig {
   // fallbackSaleNumber so the two sequences never interfere with each
   // other; same locking mechanism, by PurchaseNumberingService.
   nextPurchaseNumber Int @default(1)
+  // Correlatives for loans (PRE-), transfers (TRA-), outflows (SAL-) and
+  // quotations (COT-); same locking mechanism, by DocumentNumberingService.
+  nextLoanNumber     Int @default(1)
+  nextTransferNumber Int @default(1)
+  nextOutflowNumber  Int @default(1)
+  nextQuoteNumber    Int @default(1)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
