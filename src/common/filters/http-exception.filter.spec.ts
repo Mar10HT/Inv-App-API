@@ -109,6 +109,24 @@ describe('GlobalExceptionFilter', () => {
     expect(body.message).toEqual(['Plain message']);
   });
 
+  it('tags DTO validation failures (a list of messages) as VALIDATION_FAILED', () => {
+    // What ValidationPipe throws for a body that fails its class-validator checks
+    const exception = new BadRequestException([
+      'quantity must not be less than 1',
+      'warehouseId should not be empty',
+    ]);
+
+    filter.catch(exception, mockHost);
+
+    const call = mockResponse.json.mock.calls[0] as unknown[];
+    const body = call[0] as Record<string, unknown>;
+    expect(body.code).toBe('VALIDATION_FAILED');
+    expect(body.message).toEqual([
+      'quantity must not be less than 1',
+      'warehouseId should not be empty',
+    ]);
+  });
+
   it('handles HttpException with string response', () => {
     const exception = new HttpException('Forbidden', HttpStatus.FORBIDDEN);
 

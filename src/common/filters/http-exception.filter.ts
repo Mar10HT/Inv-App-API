@@ -2,6 +2,7 @@ import {
   ExceptionFilter,
   Catch,
   ArgumentsHost,
+  BadRequestException,
   HttpException,
   HttpStatus,
   LoggerService,
@@ -59,6 +60,15 @@ export class GlobalExceptionFilter implements ExceptionFilter {
           if (body.params && typeof body.params === 'object') {
             params = body.params as Record<string, unknown>;
           }
+        } else if (
+          exception instanceof BadRequestException &&
+          Array.isArray(body.message)
+        ) {
+          // ValidationPipe rejections (DTO checks) are the only 400s whose
+          // message is a list; every other one is thrown with apiError().
+          // Tagging them lets the frontend tell a form validation failure
+          // from an error that is simply missing its code.
+          code = 'VALIDATION_FAILED';
         }
       } else {
         message = exceptionResponse;
