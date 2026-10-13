@@ -655,6 +655,7 @@ enum ReportType {
   TRANSFERS
   STOCK_TAKES
   DISCHARGES
+  OUTFLOWS
 }
 
 enum ReportFrequency {
