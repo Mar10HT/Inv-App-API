@@ -661,12 +661,21 @@ async function main() {
       returnConfirmedById = random(managerUsers).id;
     }
 
-    const quantity = item.itemType === ItemType.UNIQUE ? 1 : randomInt(1, Math.min(5, item.quantity));
+    // A loan holds 1-3 distinct items, all from the source warehouse
+    const sameWarehouse = loanableItems.filter(it => it.id !== item.id && it.warehouseId === item.warehouseId);
+    const loanItems = [item];
+    for (let n = randomInt(0, 2); n > 0 && sameWarehouse.length > 0; n--) {
+      loanItems.push(sameWarehouse.splice(randomInt(0, sameWarehouse.length - 1), 1)[0]);
+    }
 
     await prisma.loan.create({
       data: {
-        inventoryItemId: item.id,
-        quantity,
+        items: {
+          create: loanItems.map(it => ({
+            inventoryItemId: it.id,
+            quantity: it.itemType === ItemType.UNIQUE ? 1 : randomInt(1, Math.min(5, it.quantity)),
+          })),
+        },
         sourceWarehouseId: srcWh.id,
         destinationWarehouseId: dstWh.id,
         loanDate,
