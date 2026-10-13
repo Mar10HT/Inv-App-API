@@ -21,6 +21,7 @@ import {
 import { EventsService } from '../events/events.service';
 import { warehouseFilterMultiField } from '../common/warehouse-access/warehouse-filter.util';
 import { StockLevelService } from '../alerts/stock-level.service';
+import { computeInventoryStatus } from '../inventory/inventory-status';
 
 @Injectable()
 export class TransactionsService {
@@ -205,20 +206,45 @@ export class TransactionsService {
   }
 
   async remove(id: string) {
-    try {
-      // Note: This will cascade delete transaction items
-      await this.prisma.transaction.delete({
+    await this.prisma.$transaction(async (tx) => {
+      const transaction = await tx.transaction.findUnique({
         where: { id },
+        include: { items: { include: { inventoryItem: true } } },
       });
-    } catch (error: unknown) {
-      if (
-        error instanceof Prisma.PrismaClientKnownRequestError &&
-        error.code === 'P2025'
-      ) {
+      if (!transaction) {
         throw new NotFoundException(`Transaction with ID ${id} not found`);
       }
-      throw error;
-    }
+
+      // Deleting undoes the stock movement the transaction made, so the
+      // inventory stays consistent. A TRANSFER never changed quantities.
+      const type = transaction.type as TransactionType;
+      for (const line of transaction.items) {
+        if (type === TransactionType.IN) {
+          if (line.inventoryItem.quantity < line.quantity) {
+            throw new BadRequestException(
+              `Cannot delete this entry: undoing it would take ${line.inventoryItem.name} below zero. Available: ${line.inventoryItem.quantity}, to remove: ${line.quantity}`,
+            );
+          }
+          await tx.inventoryItem.update({
+            where: { id: line.inventoryItemId },
+            data: { quantity: { decrement: line.quantity } },
+          });
+        } else if (type === TransactionType.OUT) {
+          await tx.inventoryItem.update({
+            where: { id: line.inventoryItemId },
+            data: { quantity: { increment: line.quantity } },
+          });
+        }
+      }
+
+      // Cascades to the transaction items
+      await tx.transaction.delete({ where: { id } });
+    });
+
+    this.eventsService.emitTransactionChange('deleted', id);
+    this.eventsService.emitInventoryChange('updated');
+
+    this.stockLevelService.scheduleRefresh();
   }
 
   // Helper methods
@@ -286,23 +312,21 @@ export class TransactionsService {
       if (type === TransactionType.IN) {
         newQuantity += item.quantity;
       } else if (type === TransactionType.OUT) {
+        // Reject instead of clamping at zero: a clamped OUT could not be
+        // undone exactly when the transaction is deleted.
+        if (item.quantity > currentItem.quantity) {
+          throw new BadRequestException(
+            `Insufficient quantity for item ${currentItem.name}. Available: ${currentItem.quantity}, Requested: ${item.quantity}`,
+          );
+        }
         newQuantity -= item.quantity;
       }
       // TRANSFER doesn't change total quantity, just location
 
-      // Determine new status based on quantity and assignment
-      let newStatus = 'IN_STOCK';
-      if (newQuantity <= 0) {
-        newStatus = 'OUT_OF_STOCK';
-        newQuantity = Math.max(0, newQuantity); // Don't allow negative
-      } else if (
-        currentItem.itemType === 'UNIQUE' &&
-        currentItem.assignedToUserId
-      ) {
-        newStatus = 'IN_USE';
-      } else if (newQuantity <= currentItem.minQuantity) {
-        newStatus = 'LOW_STOCK';
-      }
+      const newStatus = computeInventoryStatus({
+        ...currentItem,
+        quantity: newQuantity,
+      });
 
       await tx.inventoryItem.update({
         where: { id: item.inventoryItemId },
