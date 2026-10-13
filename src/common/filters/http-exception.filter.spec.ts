@@ -1,8 +1,14 @@
-import { HttpException, HttpStatus } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  HttpException,
+  HttpStatus,
+} from '@nestjs/common';
 import type { ArgumentsHost, LoggerService } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import type { Request, Response } from 'express';
 import { GlobalExceptionFilter } from './http-exception.filter';
+import { apiError } from '../errors/api-error';
 
 const prismaError = (code: string, message: string) =>
   new Prisma.PrismaClientKnownRequestError(message, {
@@ -50,6 +56,57 @@ describe('GlobalExceptionFilter', () => {
         message: ['Not found'],
       }),
     );
+  });
+
+  it('passes apiError code and params through to the response', () => {
+    const exception = new BadRequestException(
+      apiError(
+        'INSUFFICIENT_STOCK',
+        'Insufficient quantity for item Mouse. Available: 1, Requested: 3',
+        { item: 'Mouse', available: 1, requested: 3 },
+      ),
+    );
+
+    filter.catch(exception, mockHost);
+
+    expect(mockResponse.status).toHaveBeenCalledWith(400);
+    expect(mockResponse.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        statusCode: 400,
+        error: 'Bad Request',
+        code: 'INSUFFICIENT_STOCK',
+        params: { item: 'Mouse', available: 1, requested: 3 },
+        message: [
+          'Insufficient quantity for item Mouse. Available: 1, Requested: 3',
+        ],
+      }),
+    );
+  });
+
+  it('passes apiError code through without params', () => {
+    const exception = new ConflictException(
+      apiError('EMAIL_ALREADY_EXISTS', 'User with this email already exists'),
+    );
+
+    filter.catch(exception, mockHost);
+
+    const call = mockResponse.json.mock.calls[0] as unknown[];
+    const body = call[0] as Record<string, unknown>;
+    expect(body.code).toBe('EMAIL_ALREADY_EXISTS');
+    expect(body.error).toBe('Conflict');
+    expect(body).not.toHaveProperty('params');
+  });
+
+  it('omits code and params for exceptions without a code', () => {
+    const exception = new BadRequestException('Plain message');
+
+    filter.catch(exception, mockHost);
+
+    const call = mockResponse.json.mock.calls[0] as unknown[];
+    const body = call[0] as Record<string, unknown>;
+    expect(body).not.toHaveProperty('code');
+    expect(body).not.toHaveProperty('params');
+    expect(body.message).toEqual(['Plain message']);
   });
 
   it('handles HttpException with string response', () => {

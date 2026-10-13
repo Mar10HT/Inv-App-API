@@ -20,6 +20,7 @@ import {
   buildPaginationMeta,
   parseSortOrder,
 } from '../common/dto';
+import { apiError } from '../common/errors/api-error';
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
@@ -49,7 +50,10 @@ export class PaymentsService {
   ): Promise<Payment> {
     if (!!dto.saleId === !!dto.purchaseInvoiceId) {
       throw new BadRequestException(
-        'Exactly one of saleId or purchaseInvoiceId is required',
+        apiError(
+          'PAYMENT_TARGET_REQUIRED',
+          'Exactly one of saleId or purchaseInvoiceId is required',
+        ),
       );
     }
     const isSale = !!dto.saleId;
@@ -84,7 +88,11 @@ export class PaymentsService {
 
       if (dto.amount > balance) {
         throw new BadRequestException(
-          `Payment amount (${dto.amount}) exceeds the current balance (${balance})`,
+          apiError(
+            'PAYMENT_EXCEEDS_BALANCE',
+            `Payment amount (${dto.amount}) exceeds the current balance (${balance})`,
+            { amount: dto.amount, balance },
+          ),
         );
       }
 
@@ -148,7 +156,11 @@ export class PaymentsService {
     }
     if (current.status !== requiredStatus) {
       throw new BadRequestException(
-        `Cannot record a payment against a document in ${current.status} status`,
+        apiError(
+          'PAYMENT_DOCUMENT_INVALID_STATUS',
+          `Cannot record a payment against a document in ${current.status} status`,
+          { status: current.status },
+        ),
       );
     }
 
@@ -255,7 +267,11 @@ export class PaymentsService {
       }
       if (current.status !== PaymentStatus.ACTIVE) {
         throw new BadRequestException(
-          `Cannot cancel payment in ${current.status} status`,
+          apiError(
+            'PAYMENT_NOT_CANCELLABLE',
+            `Cannot cancel payment in ${current.status} status`,
+            { status: current.status },
+          ),
         );
       }
 

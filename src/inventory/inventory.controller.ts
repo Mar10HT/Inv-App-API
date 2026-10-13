@@ -31,6 +31,7 @@ import {
 import { JwtAuthGuard, PermissionsGuard } from '../auth/guards';
 import { Permissions, CurrentUser } from '../auth/decorators';
 import { AuthenticatedUser } from '../auth/interfaces/auth-user.interface';
+import { apiError } from '../common/errors/api-error';
 
 @Controller('inventory')
 @UseGuards(JwtAuthGuard, PermissionsGuard)
@@ -189,7 +190,9 @@ export class InventoryController {
     @CurrentUser() user: AuthenticatedUser,
   ) {
     if (!file) {
-      throw new BadRequestException('No file uploaded');
+      throw new BadRequestException(
+        apiError('NO_FILE_UPLOADED', 'No file uploaded'),
+      );
     }
 
     const allowedMimeTypes = [
@@ -199,14 +202,22 @@ export class InventoryController {
 
     if (!allowedMimeTypes.includes(file.mimetype)) {
       throw new BadRequestException(
-        'Invalid file type. Only Excel files (.xlsx, .xls) are allowed',
+        apiError(
+          'INVALID_FILE_TYPE_EXCEL',
+          'Invalid file type. Only Excel files (.xlsx, .xls) are allowed',
+        ),
       );
     }
 
     const items = await this.inventoryService.parseExcelFile(file.buffer);
 
     if (items.length === 0) {
-      throw new BadRequestException('No valid items found in the Excel file');
+      throw new BadRequestException(
+        apiError(
+          'EXCEL_NO_VALID_ITEMS',
+          'No valid items found in the Excel file',
+        ),
+      );
     }
 
     return this.inventoryService.bulkImport({

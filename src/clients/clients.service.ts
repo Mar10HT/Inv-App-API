@@ -9,6 +9,7 @@ import { AuditService } from '../audit/audit.service';
 import { BaseRepository, BaseRepositoryOptions } from '../common/repository';
 import { CreateClientDto } from './dto/create-client.dto';
 import { UpdateClientDto } from './dto/update-client.dto';
+import { apiError } from '../common/errors/api-error';
 
 @Injectable()
 export class ClientsService extends BaseRepository<
@@ -38,7 +39,11 @@ export class ClientsService extends BaseRepository<
     });
     if (conflict) {
       throw new ConflictException(
-        `A client with code "${dto.code}" already exists`,
+        apiError(
+          'CLIENT_CODE_ALREADY_EXISTS',
+          `A client with code "${dto.code}" already exists`,
+          { code: dto.code },
+        ),
       );
     }
     return super.create(dto, userId);
@@ -55,7 +60,11 @@ export class ClientsService extends BaseRepository<
       });
       if (conflict) {
         throw new ConflictException(
-          `A client with code "${dto.code}" already exists`,
+          apiError(
+            'CLIENT_CODE_ALREADY_EXISTS',
+            `A client with code "${dto.code}" already exists`,
+            { code: dto.code },
+          ),
         );
       }
     }

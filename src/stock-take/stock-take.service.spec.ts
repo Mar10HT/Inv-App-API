@@ -122,9 +122,14 @@ describe('StockTakeService', () => {
       prisma.warehouse.findUnique.mockResolvedValue(mockWarehouse);
       prisma.stockTake.findFirst.mockResolvedValue(mockStockTake);
 
-      await expect(service.create(dto, 'user-1')).rejects.toThrow(
-        BadRequestException,
-      );
+      const result = service.create(dto, 'user-1');
+      await expect(result).rejects.toThrow(BadRequestException);
+      await expect(result).rejects.toMatchObject({
+        response: {
+          code: 'STOCK_TAKE_ALREADY_IN_PROGRESS',
+          params: { id: mockStockTake.id },
+        },
+      });
     });
   });
 

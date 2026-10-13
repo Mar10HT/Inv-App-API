@@ -1,5 +1,6 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { apiError } from '../errors/api-error';
 
 @Injectable()
 export class WarehouseAccessService {
@@ -100,7 +101,9 @@ export class WarehouseAccessService {
       });
 
       if (!user) {
-        throw new BadRequestException('User not found');
+        throw new BadRequestException(
+          apiError('USER_NOT_FOUND', 'User not found'),
+        );
       }
     }
 

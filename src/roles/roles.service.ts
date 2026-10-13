@@ -9,6 +9,7 @@ import { PermissionsService } from '../permissions/permissions.service';
 import { AuditService } from '../audit/audit.service';
 import { CreateRoleDto } from './dto/create-role.dto';
 import { UpdateRoleDto } from './dto/update-role.dto';
+import { apiError } from '../common/errors/api-error';
 
 @Injectable()
 export class RolesService {
@@ -80,7 +81,13 @@ export class RolesService {
       where: { name: dto.name },
     });
     if (existing)
-      throw new ConflictException(`Role name '${dto.name}' is already taken`);
+      throw new ConflictException(
+        apiError(
+          'ROLE_NAME_TAKEN',
+          `Role name '${dto.name}' is already taken`,
+          { name: dto.name },
+        ),
+      );
 
     if (dto.permissionIds?.length) {
       await this.validatePermissionIds(dto.permissionIds);
@@ -108,7 +115,11 @@ export class RolesService {
         // Guard against a race-condition duplicate (P2002 unique constraint)
         if (err.code === 'P2002')
           throw new ConflictException(
-            `Role name '${dto.name}' is already taken`,
+            apiError(
+              'ROLE_NAME_TAKEN',
+              `Role name '${dto.name}' is already taken`,
+              { name: dto.name },
+            ),
           );
         throw err;
       });
@@ -224,10 +235,16 @@ export class RolesService {
 
     if (!role) throw new NotFoundException('Role not found');
     if (role.isSystem)
-      throw new BadRequestException('System roles cannot be deleted');
+      throw new BadRequestException(
+        apiError('SYSTEM_ROLE_NOT_DELETABLE', 'System roles cannot be deleted'),
+      );
     if (role._count.users > 0) {
       throw new BadRequestException(
-        `Cannot delete role: ${role._count.users} user(s) are assigned to it`,
+        apiError(
+          'ROLE_HAS_USERS',
+          `Cannot delete role: ${role._count.users} user(s) are assigned to it`,
+          { count: role._count.users },
+        ),
       );
     }
 
@@ -268,7 +285,11 @@ export class RolesService {
       const foundSet = new Set(found.map((p) => p.id));
       const invalid = uniqueIds.filter((id) => !foundSet.has(id));
       throw new BadRequestException(
-        `Invalid permission IDs: ${invalid.join(', ')}`,
+        apiError(
+          'INVALID_PERMISSION_IDS',
+          `Invalid permission IDs: ${invalid.join(', ')}`,
+          { ids: invalid.join(', ') },
+        ),
       );
     }
   }

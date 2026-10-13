@@ -1,5 +1,6 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { apiError } from '../common/errors/api-error';
 
 interface LockedCaiRow {
   id: string;
@@ -40,10 +41,14 @@ export class SaleNumberingService {
     if (caiRows.length > 0) {
       const range = caiRows[0];
       if (range.expiresAt <= new Date()) {
-        throw new BadRequestException('CAI range has expired');
+        throw new BadRequestException(
+          apiError('CAI_RANGE_EXPIRED', 'CAI range has expired'),
+        );
       }
       if (range.currentNumber > range.rangeEnd) {
-        throw new BadRequestException('CAI range is exhausted');
+        throw new BadRequestException(
+          apiError('CAI_RANGE_EXHAUSTED', 'CAI range is exhausted'),
+        );
       }
 
       await tx.caiRange.update({

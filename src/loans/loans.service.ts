@@ -23,6 +23,7 @@ import {
 import { EventsService } from '../events/events.service';
 import { AuditService } from '../audit/audit.service';
 import { warehouseFilterMultiField } from '../common/warehouse-access/warehouse-filter.util';
+import { apiError } from '../common/errors/api-error';
 
 @Injectable()
 export class LoansService {
@@ -123,18 +124,28 @@ export class LoansService {
       createLoanDto.sourceWarehouseId === createLoanDto.destinationWarehouseId
     ) {
       throw new BadRequestException(
-        'Source and destination warehouses must be different',
+        apiError(
+          'SAME_SOURCE_AND_DESTINATION',
+          'Source and destination warehouses must be different',
+        ),
       );
     }
 
     if (!createLoanDto.items?.length) {
-      throw new BadRequestException('At least one item is required');
+      throw new BadRequestException(
+        apiError('ITEMS_REQUIRED', 'At least one item is required'),
+      );
     }
 
     // Reject duplicate item ids in the same payload
     const ids = createLoanDto.items.map((i) => i.inventoryItemId);
     if (new Set(ids).size !== ids.length) {
-      throw new BadRequestException('Duplicate inventory item in loan payload');
+      throw new BadRequestException(
+        apiError(
+          'DUPLICATE_INVENTORY_ITEM',
+          'Duplicate inventory item in loan payload',
+        ),
+      );
     }
 
     // Validate warehouses exist
@@ -163,7 +174,11 @@ export class LoansService {
     );
     if (wrongWarehouse) {
       throw new BadRequestException(
-        `Item ${wrongWarehouse.id} does not belong to the source warehouse`,
+        apiError(
+          'ITEM_NOT_IN_SOURCE_WAREHOUSE',
+          `Item ${wrongWarehouse.id} does not belong to the source warehouse`,
+          { item: wrongWarehouse.id },
+        ),
       );
     }
 
@@ -180,7 +195,13 @@ export class LoansService {
     });
     if (activeLoanItems.length > 0) {
       const conflict = activeLoanItems.map((i) => i.inventoryItemId).join(', ');
-      throw new BadRequestException(`Item(s) already on loan: ${conflict}`);
+      throw new BadRequestException(
+        apiError(
+          'ITEMS_ALREADY_ON_LOAN',
+          `Item(s) already on loan: ${conflict}`,
+          { items: conflict },
+        ),
+      );
     }
 
     // Create the loan and its items in one transaction
@@ -252,7 +273,11 @@ export class LoansService {
 
     if (loan.status !== 'PENDING') {
       throw new BadRequestException(
-        `Cannot send loan in ${loan.status} status. Only PENDING loans can be sent.`,
+        apiError(
+          'LOAN_NOT_PENDING',
+          `Cannot send loan in ${loan.status} status. Only PENDING loans can be sent.`,
+          { status: loan.status },
+        ),
       );
     }
 
@@ -327,7 +352,11 @@ export class LoansService {
       const current = await tx.loan.findUnique({ where: { id: loan.id } });
       if (!current || current.status !== 'SENT') {
         throw new BadRequestException(
-          `Cannot confirm receipt. Loan is in ${current?.status ?? 'unknown'} status.`,
+          apiError(
+            'LOAN_RECEIPT_INVALID_STATUS',
+            `Cannot confirm receipt. Loan is in ${current?.status ?? 'unknown'} status.`,
+            { status: current?.status ?? 'unknown' },
+          ),
         );
       }
       return tx.loan.update({
@@ -377,7 +406,11 @@ export class LoansService {
     const allowedStatuses = ['RECEIVED', 'OVERDUE', 'ACTIVE'];
     if (!allowedStatuses.includes(loan.status)) {
       throw new BadRequestException(
-        `Cannot initiate return. Loan is in ${loan.status} status. Only RECEIVED, OVERDUE or ACTIVE loans can be returned.`,
+        apiError(
+          'LOAN_RETURN_INVALID_STATUS',
+          `Cannot initiate return. Loan is in ${loan.status} status. Only RECEIVED, OVERDUE or ACTIVE loans can be returned.`,
+          { status: loan.status },
+        ),
       );
     }
 
@@ -454,7 +487,11 @@ export class LoansService {
       const current = await tx.loan.findUnique({ where: { id: loan.id } });
       if (!current || current.status !== 'RETURN_PENDING') {
         throw new BadRequestException(
-          `Cannot confirm return. Loan is in ${current?.status ?? 'unknown'} status.`,
+          apiError(
+            'LOAN_RETURN_CONFIRM_INVALID_STATUS',
+            `Cannot confirm return. Loan is in ${current?.status ?? 'unknown'} status.`,
+            { status: current?.status ?? 'unknown' },
+          ),
         );
       }
       return tx.loan.update({
@@ -486,7 +523,11 @@ export class LoansService {
   async getQrCode(id: string, type: string) {
     if (type !== 'send' && type !== 'return') {
       throw new BadRequestException(
-        `Invalid QR code type: ${type}. Must be 'send' or 'return'.`,
+        apiError(
+          'INVALID_QR_TYPE',
+          `Invalid QR code type: ${type}. Must be 'send' or 'return'.`,
+          { type },
+        ),
       );
     }
 
@@ -495,7 +536,10 @@ export class LoansService {
     if (type === 'send') {
       if (!loan.sendQrCode) {
         throw new BadRequestException(
-          'Send QR code not generated. Send the loan first.',
+          apiError(
+            'LOAN_SEND_QR_NOT_GENERATED',
+            'Send QR code not generated. Send the loan first.',
+          ),
         );
       }
       const qrData = {
@@ -507,7 +551,10 @@ export class LoansService {
     } else {
       if (!loan.returnQrCode) {
         throw new BadRequestException(
-          'Return QR code not generated. Initiate return first.',
+          apiError(
+            'LOAN_RETURN_QR_NOT_GENERATED',
+            'Return QR code not generated. Initiate return first.',
+          ),
         );
       }
       const qrData = {
@@ -530,7 +577,9 @@ export class LoansService {
     const qrData = this.qrService.parseQrData(scannedData);
 
     if (!qrData) {
-      throw new BadRequestException('Invalid QR code format');
+      throw new BadRequestException(
+        apiError('INVALID_QR_FORMAT', 'Invalid QR code format'),
+      );
     }
 
     if (qrData.type === 'LOAN_SEND') {
@@ -538,7 +587,9 @@ export class LoansService {
     } else if (qrData.type === 'LOAN_RETURN') {
       return this.confirmReturn(qrData.code, userId, userWarehouseIds);
     } else {
-      throw new BadRequestException('Unknown QR code type');
+      throw new BadRequestException(
+        apiError('UNKNOWN_QR_TYPE', 'Unknown QR code type'),
+      );
     }
   }
 
@@ -578,13 +629,20 @@ export class LoansService {
         (current.status !== 'SENT' && current.status !== 'OVERDUE')
       ) {
         throw new BadRequestException(
-          `Cannot confirm receipt. Loan is in ${current?.status ?? 'unknown'} status. Only SENT or OVERDUE loans can be confirmed.`,
+          apiError(
+            'LOAN_RECEIPT_INVALID_STATUS',
+            `Cannot confirm receipt. Loan is in ${current?.status ?? 'unknown'} status. Only SENT or OVERDUE loans can be confirmed.`,
+            { status: current?.status ?? 'unknown' },
+          ),
         );
       }
       // Guard: OVERDUE from RECEIVED — prevent overwriting existing receipt data
       if (current.status === 'OVERDUE' && current.receivedAt) {
         throw new BadRequestException(
-          'This loan was already received. Use manual confirm return to confirm the return instead.',
+          apiError(
+            'LOAN_ALREADY_RECEIVED',
+            'This loan was already received. Use manual confirm return to confirm the return instead.',
+          ),
         );
       }
       previousStatus = current.status;
@@ -644,13 +702,20 @@ export class LoansService {
         (current.status !== 'RETURN_PENDING' && current.status !== 'OVERDUE')
       ) {
         throw new BadRequestException(
-          `Cannot confirm return. Loan is in ${current?.status ?? 'unknown'} status. Only RETURN_PENDING or OVERDUE loans can be confirmed.`,
+          apiError(
+            'LOAN_RETURN_CONFIRM_INVALID_STATUS',
+            `Cannot confirm return. Loan is in ${current?.status ?? 'unknown'} status. Only RETURN_PENDING or OVERDUE loans can be confirmed.`,
+            { status: current?.status ?? 'unknown' },
+          ),
         );
       }
       // Guard: OVERDUE from SENT (never received) — prevent confirming return without receipt
       if (current.status === 'OVERDUE' && !current.receivedAt) {
         throw new BadRequestException(
-          'This loan was never received. Use manual confirm receipt first.',
+          apiError(
+            'LOAN_NEVER_RECEIVED',
+            'This loan was never received. Use manual confirm receipt first.',
+          ),
         );
       }
       previousStatus = current.status;
@@ -844,7 +909,9 @@ export class LoansService {
     }
 
     if (loan.status === 'RETURNED') {
-      throw new BadRequestException('Loan is already returned');
+      throw new BadRequestException(
+        apiError('LOAN_ALREADY_RETURNED', 'Loan is already returned'),
+      );
     }
 
     const returnDate = returnLoanDto?.returnDate
@@ -889,7 +956,11 @@ export class LoansService {
         current.status === 'CANCELLED'
       ) {
         throw new BadRequestException(
-          `Cannot cancel loan in ${current?.status ?? 'unknown'} status`,
+          apiError(
+            'LOAN_NOT_CANCELLABLE',
+            `Cannot cancel loan in ${current?.status ?? 'unknown'} status`,
+            { status: current?.status ?? 'unknown' },
+          ),
         );
       }
       previousStatus = current.status;

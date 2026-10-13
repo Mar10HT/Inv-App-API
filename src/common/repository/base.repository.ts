@@ -12,6 +12,7 @@ import {
   parsePagination,
   buildPaginationMeta,
 } from '../dto';
+import { apiError } from '../errors/api-error';
 
 export interface BaseRepositoryOptions {
   modelName: string;
@@ -135,7 +136,11 @@ export abstract class BaseRepository<
         error.code === 'P2002'
       ) {
         throw new ConflictException(
-          `${this.options.modelName} with this value already exists`,
+          apiError(
+            'RECORD_ALREADY_EXISTS',
+            `${this.options.modelName} with this value already exists`,
+            { model: this.options.modelName },
+          ),
         );
       }
       throw error;
@@ -227,7 +232,11 @@ export abstract class BaseRepository<
       if (error instanceof Prisma.PrismaClientKnownRequestError) {
         if (error.code === 'P2002')
           throw new ConflictException(
-            `${this.options.modelName} with this value already exists`,
+            apiError(
+              'RECORD_ALREADY_EXISTS',
+              `${this.options.modelName} with this value already exists`,
+              { model: this.options.modelName },
+            ),
           );
         if (error.code === 'P2025')
           throw new NotFoundException(

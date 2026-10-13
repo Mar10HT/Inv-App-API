@@ -16,6 +16,7 @@ import {
   buildPaginationMeta,
 } from '../common/dto';
 import { warehouseFilter } from '../common/warehouse-access/warehouse-filter.util';
+import { apiError } from '../common/errors/api-error';
 
 @Injectable()
 export class WarehousesService {
@@ -37,7 +38,10 @@ export class WarehousesService {
       where: { id: managerId },
       select: { id: true },
     });
-    if (!user) throw new BadRequestException('Manager user not found');
+    if (!user)
+      throw new BadRequestException(
+        apiError('MANAGER_USER_NOT_FOUND', 'Manager user not found'),
+      );
   }
 
   async create(
@@ -75,7 +79,12 @@ export class WarehousesService {
         error instanceof Prisma.PrismaClientKnownRequestError &&
         error.code === 'P2002'
       ) {
-        throw new ConflictException('Warehouse with this value already exists');
+        throw new ConflictException(
+          apiError(
+            'WAREHOUSE_ALREADY_EXISTS',
+            'Warehouse with this value already exists',
+          ),
+        );
       }
       throw error;
     }
@@ -193,7 +202,10 @@ export class WarehousesService {
       if (error instanceof Prisma.PrismaClientKnownRequestError) {
         if (error.code === 'P2002')
           throw new ConflictException(
-            'Warehouse with this value already exists',
+            apiError(
+              'WAREHOUSE_ALREADY_EXISTS',
+              'Warehouse with this value already exists',
+            ),
           );
         if (error.code === 'P2025')
           throw new NotFoundException(`Warehouse with ID ${id} not found`);

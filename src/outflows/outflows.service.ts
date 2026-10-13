@@ -22,6 +22,7 @@ import {
 } from '../common/dto';
 import { warehouseFilter } from '../common/warehouse-access/warehouse-filter.util';
 import { StockLevelService } from '../alerts/stock-level.service';
+import { apiError } from '../common/errors/api-error';
 
 interface OutflowItemSeed {
   inventoryItemId: string;
@@ -96,13 +97,18 @@ export class OutflowsService {
     }
 
     if (!dto.items?.length) {
-      throw new BadRequestException('At least one item is required');
+      throw new BadRequestException(
+        apiError('ITEMS_REQUIRED', 'At least one item is required'),
+      );
     }
 
     const ids = dto.items.map((i) => i.inventoryItemId);
     if (new Set(ids).size !== ids.length) {
       throw new BadRequestException(
-        'Duplicate inventory item in outflow payload',
+        apiError(
+          'DUPLICATE_INVENTORY_ITEM',
+          'Duplicate inventory item in outflow payload',
+        ),
       );
     }
 
@@ -132,7 +138,11 @@ export class OutflowsService {
       }
       if (item.warehouseId !== dto.warehouseId) {
         throw new BadRequestException(
-          `Item ${line.inventoryItemId} does not belong to the selected warehouse`,
+          apiError(
+            'ITEM_NOT_IN_WAREHOUSE',
+            `Item ${line.inventoryItemId} does not belong to the selected warehouse`,
+            { item: line.inventoryItemId },
+          ),
         );
       }
     }
@@ -178,12 +188,24 @@ export class OutflowsService {
         const current = currentMap.get(line.inventoryItemId);
         if (!current) {
           throw new BadRequestException(
-            `Item ${line.inventoryItemId} is no longer available`,
+            apiError(
+              'ITEM_NO_LONGER_AVAILABLE',
+              `Item ${line.inventoryItemId} is no longer available`,
+              { item: line.inventoryItemId },
+            ),
           );
         }
         if (current.quantity < line.quantity) {
           throw new BadRequestException(
-            `Insufficient quantity for item ${current.name}. Available: ${current.quantity}, Requested: ${line.quantity}`,
+            apiError(
+              'INSUFFICIENT_STOCK',
+              `Insufficient quantity for item ${current.name}. Available: ${current.quantity}, Requested: ${line.quantity}`,
+              {
+                item: current.name,
+                available: current.quantity,
+                requested: line.quantity,
+              },
+            ),
           );
         }
       }
@@ -301,7 +323,11 @@ export class OutflowsService {
       }
       if (current.status !== OutflowStatus.ACTIVE) {
         throw new BadRequestException(
-          `Cannot cancel outflow in ${current.status} status`,
+          apiError(
+            'OUTFLOW_NOT_CANCELLABLE',
+            `Cannot cancel outflow in ${current.status} status`,
+            { status: current.status },
+          ),
         );
       }
 

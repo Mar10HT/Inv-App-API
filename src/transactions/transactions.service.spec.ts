@@ -151,14 +151,19 @@ describe('TransactionsService', () => {
       ]);
       prisma.transaction.create.mockResolvedValue(mockTransaction);
 
-      await expect(
-        service.create({
-          type: 'OUT',
-          sourceWarehouseId: 'warehouse-123',
-          userId: 'user-123',
-          items: [{ inventoryItemId: 'item-123', quantity: 10 }],
-        }),
-      ).rejects.toThrow(BadRequestException);
+      const result = service.create({
+        type: 'OUT',
+        sourceWarehouseId: 'warehouse-123',
+        userId: 'user-123',
+        items: [{ inventoryItemId: 'item-123', quantity: 10 }],
+      });
+      await expect(result).rejects.toThrow(BadRequestException);
+      await expect(result).rejects.toMatchObject({
+        response: {
+          code: 'INSUFFICIENT_STOCK',
+          params: { available: 5, requested: 10 },
+        },
+      });
     });
 
     it('should throw NotFoundException if inventory item does not exist', async () => {
@@ -329,9 +334,11 @@ describe('TransactionsService', () => {
     it('refuses to delete an entry whose stock was already used, instead of going negative', async () => {
       prisma.transaction.findUnique.mockResolvedValue(withLine('IN', 4));
 
-      await expect(service.remove('transaction-123')).rejects.toThrow(
-        BadRequestException,
-      );
+      const result = service.remove('transaction-123');
+      await expect(result).rejects.toThrow(BadRequestException);
+      await expect(result).rejects.toMatchObject({
+        response: { code: 'TRANSACTION_UNDO_BELOW_ZERO' },
+      });
       // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(prisma.transaction.delete).not.toHaveBeenCalled();
     });

@@ -13,6 +13,20 @@ import * as Sentry from '@sentry/node';
 interface HttpExceptionBody {
   message?: string | string[];
   error?: string;
+  code?: unknown;
+  params?: unknown;
+}
+
+// "BAD_REQUEST" -> "Bad Request", used when an exception body built with
+// apiError() carries no `error` label of its own.
+function reasonPhrase(status: number): string {
+  const key = HttpStatus[status] as string | undefined;
+  if (!key) return 'Error';
+  return key
+    .toLowerCase()
+    .split('_')
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ');
 }
 
 @Catch()
@@ -27,6 +41,10 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     let status = HttpStatus.INTERNAL_SERVER_ERROR;
     let message = 'Internal server error';
     let error = 'Internal Server Error';
+    // Machine-readable error code + interpolation params (see
+    // common/errors/api-error.ts). Only set for exceptions built with apiError().
+    let code: string | undefined;
+    let params: Record<string, unknown> | undefined;
 
     if (exception instanceof HttpException) {
       status = exception.getStatus();
@@ -35,7 +53,13 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       if (typeof exceptionResponse === 'object') {
         const body = exceptionResponse as HttpExceptionBody;
         message = body.message || exception.message;
-        error = body.error || 'Error';
+        error = body.error || (body.code ? reasonPhrase(status) : 'Error');
+        if (typeof body.code === 'string') {
+          code = body.code;
+          if (body.params && typeof body.params === 'object') {
+            params = body.params as Record<string, unknown>;
+          }
+        }
       } else {
         message = exceptionResponse;
       }
@@ -71,6 +95,8 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       statusCode: status,
       error,
       message: Array.isArray(message) ? message : [message],
+      ...(code ? { code } : {}),
+      ...(params ? { params } : {}),
       timestamp: new Date().toISOString(),
       path: request.url,
     });

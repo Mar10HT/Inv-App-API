@@ -164,15 +164,17 @@ describe('InventoryService', () => {
       prisma.warehouse.findUnique.mockResolvedValue(mockWarehouse);
       prisma.inventoryItem.findUnique.mockResolvedValue(mockInventoryItem);
 
-      await expect(
-        service.create({
-          name: 'Test Item',
-          quantity: 10,
-          category: 'Electronics',
-          warehouseId: 'warehouse-123',
-          sku: 'SKU-001',
-        }),
-      ).rejects.toThrow(ConflictException);
+      const result = service.create({
+        name: 'Test Item',
+        quantity: 10,
+        category: 'Electronics',
+        warehouseId: 'warehouse-123',
+        sku: 'SKU-001',
+      });
+      await expect(result).rejects.toThrow(ConflictException);
+      await expect(result).rejects.toMatchObject({
+        response: { code: 'SKU_ALREADY_EXISTS', params: { sku: 'SKU-001' } },
+      });
     });
 
     it('should throw BadRequestException if UNIQUE item has quantity > 1', async () => {
