@@ -334,6 +334,23 @@ describe('InventoryService', () => {
       expect(result.name).toBe('Updated Item');
     });
 
+    it('expands a date-only expirationDate to a full ISO datetime for Prisma', async () => {
+      prisma.inventoryItem.findUnique.mockResolvedValue(mockInventoryItem);
+      prisma.inventoryItem.update.mockResolvedValue(mockInventoryItem);
+
+      await service.update('item-123', { expirationDate: '2027-01-15' });
+
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(prisma.inventoryItem.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+          data: expect.objectContaining({
+            expirationDate: '2027-01-15T00:00:00.000Z',
+          }),
+        }),
+      );
+    });
+
     it('should throw ConflictException if updating to existing SKU', async () => {
       prisma.inventoryItem.findUnique.mockResolvedValue(mockInventoryItem);
       prisma.inventoryItem.findFirst.mockResolvedValue({

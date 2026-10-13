@@ -31,6 +31,7 @@ import { EventsService } from '../events/events.service';
 import { SearchService } from '../common/search/search.service';
 import { warehouseFilter } from '../common/warehouse-access/warehouse-filter.util';
 import { computeInventoryStatus } from './inventory-status';
+import { toIsoDateTime } from '../common/utils/date.util';
 import type { CellValue } from 'exceljs';
 import { StockLevelService } from '../alerts/stock-level.service';
 
@@ -148,6 +149,9 @@ export class InventoryService {
     const item = await this.prisma.inventoryItem.create({
       data: {
         ...createInventoryDto,
+        ...(createInventoryDto.expirationDate && {
+          expirationDate: toIsoDateTime(createInventoryDto.expirationDate),
+        }),
         itemType,
         status,
         ...(itemType === ItemType.UNIQUE && createInventoryDto.assignedToUserId
@@ -397,6 +401,9 @@ export class InventoryService {
       where: { id },
       data: {
         ...updateInventoryDto,
+        ...(updateInventoryDto.expirationDate && {
+          expirationDate: toIsoDateTime(updateInventoryDto.expirationDate),
+        }),
         ...(status && { status }),
       },
       include: {

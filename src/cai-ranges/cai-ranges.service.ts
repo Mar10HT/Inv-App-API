@@ -5,6 +5,7 @@ import { AuditService } from '../audit/audit.service';
 import { BaseRepository, BaseRepositoryOptions } from '../common/repository';
 import { CreateCaiRangeDto } from './dto/create-cai-range.dto';
 import { UpdateCaiRangeDto } from './dto/update-cai-range.dto';
+import { toIsoDateTime } from '../common/utils/date.util';
 
 @Injectable()
 export class CaiRangesService extends BaseRepository<
@@ -51,6 +52,7 @@ export class CaiRangesService extends BaseRepository<
     }
     const data: CreateCaiRangeDto & { currentNumber: number } = {
       ...dto,
+      expiresAt: toIsoDateTime(dto.expiresAt),
       currentNumber: dto.rangeStart,
     };
     return super.create(data, userId);
@@ -65,6 +67,10 @@ export class CaiRangesService extends BaseRepository<
     if (dto.isActive) {
       await this.deactivateOthers(id);
     }
-    return super.update(id, dto, userId);
+    return super.update(
+      id,
+      dto.expiresAt ? { ...dto, expiresAt: toIsoDateTime(dto.expiresAt) } : dto,
+      userId,
+    );
   }
 }

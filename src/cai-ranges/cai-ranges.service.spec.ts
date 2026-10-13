@@ -77,6 +77,27 @@ describe('CaiRangesService', () => {
       });
     });
 
+    it('expands a date-only expiresAt to a full ISO datetime for Prisma', async () => {
+      prisma.caiRange.create.mockResolvedValue(mockRange);
+
+      await service.create({
+        cai: mockRange.cai,
+        establishmentCode: '001',
+        emissionPointCode: '001',
+        rangeStart: 1,
+        rangeEnd: 1000,
+        expiresAt: '2027-06-30',
+      });
+
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(prisma.caiRange.create).toHaveBeenCalledWith({
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        data: expect.objectContaining({
+          expiresAt: '2027-06-30T00:00:00.000Z',
+        }),
+      });
+    });
+
     it('rejects rangeEnd <= rangeStart without touching the database', async () => {
       await expect(
         service.create({
@@ -157,6 +178,20 @@ describe('CaiRangesService', () => {
 
       // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(prisma.caiRange.update).not.toHaveBeenCalled();
+    });
+
+    it('expands a date-only expiresAt to a full ISO datetime for Prisma', async () => {
+      prisma.caiRange.findUnique.mockResolvedValue(mockRange);
+      prisma.caiRange.update.mockResolvedValue(mockRange);
+
+      await service.update(mockRange.id, { expiresAt: '2027-06-30' });
+
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(prisma.caiRange.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: { expiresAt: '2027-06-30T00:00:00.000Z' },
+        }),
+      );
     });
 
     it('throws NotFoundException if the range does not exist', async () => {
