@@ -260,6 +260,7 @@ export class StockTakeService {
           status: StockTakeStatus.COMPLETED,
           completedById,
           completedAt: new Date(),
+          adjustmentsApplied: applyChanges,
         },
         include: {
           warehouse: true,

@@ -523,6 +523,9 @@ model StockTake {
   status        StockTakeStatus @default(IN_PROGRESS)
   startedAt     DateTime        @default(now())
   completedAt   DateTime?
+  // Whether completing it overwrote quantities with the counted ones. False
+  // for stock takes completed before this field existed (unknown).
+  adjustmentsApplied Boolean     @default(false)
   startedById   String
   completedById String?
   notes         String?
@@ -885,6 +888,10 @@ model Sale {
   createdById         String
   cancelledById       String?
   cancelledAt         DateTime?
+  // When the sale became ACTIVE and stock left the warehouse: creation for a
+  // direct sale, confirmation for a quotation. Null on sales from before this
+  // field existed (their createdAt is used instead) and on DRAFTs.
+  confirmedAt         DateTime?
   cancellationReason  String?
   // SAR-authorized invoice number (see CaiRange) or, when no CAI range is
   // active, a simple "V-0001" correlative. Null while DRAFT — a quotation

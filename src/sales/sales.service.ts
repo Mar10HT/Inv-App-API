@@ -409,6 +409,7 @@ export class SalesService {
           taxAmount: args.taxAmount,
           status: SaleStatus.ACTIVE,
           number,
+          confirmedAt: new Date(),
           notes: args.notes,
           createdById: args.createdById,
           items: { create: itemsData },
@@ -748,6 +749,7 @@ export class SalesService {
         data: {
           status: SaleStatus.ACTIVE,
           number,
+          confirmedAt: new Date(),
           totalAmount,
           taxAmount,
           items: {
