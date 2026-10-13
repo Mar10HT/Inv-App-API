@@ -68,6 +68,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       status = prismaError.status;
       message = prismaError.message;
       error = prismaError.error;
+      code = prismaError.code;
     } else if (exception instanceof Error) {
       message = exception.message;
 
@@ -106,6 +107,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     status: number;
     message: string;
     error: string;
+    code?: string;
   } {
     switch (error.code) {
       case 'P2002':
@@ -113,6 +115,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
           status: HttpStatus.CONFLICT,
           message: 'A record with this value already exists',
           error: 'Conflict',
+          code: 'RECORD_ALREADY_EXISTS',
         };
       case 'P2025':
         return {
@@ -126,6 +129,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
           message:
             'Foreign key constraint failed — related record does not exist',
           error: 'Bad Request',
+          code: 'RELATED_RECORD_NOT_FOUND',
         };
       case 'P2014':
         return {
@@ -133,24 +137,28 @@ export class GlobalExceptionFilter implements ExceptionFilter {
           message:
             'The change you are trying to make would violate a required relation',
           error: 'Bad Request',
+          code: 'REQUIRED_RELATION_VIOLATION',
         };
       case 'P2000':
         return {
           status: HttpStatus.BAD_REQUEST,
           message: 'Input value is too long for the field',
           error: 'Bad Request',
+          code: 'VALUE_TOO_LONG',
         };
       case 'P2006':
         return {
           status: HttpStatus.BAD_REQUEST,
           message: 'Invalid value provided for a field',
           error: 'Bad Request',
+          code: 'INVALID_FIELD_VALUE',
         };
       case 'P2011':
         return {
           status: HttpStatus.BAD_REQUEST,
           message: 'A required field is missing a value',
           error: 'Bad Request',
+          code: 'REQUIRED_FIELD_MISSING',
         };
       case 'P2028':
         return {

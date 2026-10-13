@@ -142,6 +142,17 @@ describe('GlobalExceptionFilter', () => {
     );
   });
 
+  it('adds a code to user-facing Prisma errors', () => {
+    filter.catch(prismaError('P2002', 'Unique constraint'), mockHost);
+
+    expect(mockResponse.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        statusCode: 409,
+        code: 'RECORD_ALREADY_EXISTS',
+      }),
+    );
+  });
+
   it('handles Prisma P2025 (record not found) as 404', () => {
     const exception = prismaError('P2025', 'Not found');
 
