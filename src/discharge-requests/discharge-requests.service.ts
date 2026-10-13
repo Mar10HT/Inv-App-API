@@ -15,6 +15,7 @@ import {
   Prisma,
 } from '@prisma/client';
 import { warehouseFilter } from '../common/warehouse-access/warehouse-filter.util';
+import { StockLevelService } from '../alerts/stock-level.service';
 
 @Injectable()
 export class DischargeRequestsService {
@@ -22,6 +23,7 @@ export class DischargeRequestsService {
     private prisma: PrismaService,
     private auditService: AuditService,
     private qrService: QrService,
+    private readonly stockLevelService: StockLevelService,
   ) {}
 
   private readonly includeLight = {
@@ -343,6 +345,7 @@ export class DischargeRequestsService {
       });
     }
 
+    this.stockLevelService.scheduleRefresh();
     return updated;
   }
 

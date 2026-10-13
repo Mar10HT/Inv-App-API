@@ -15,12 +15,14 @@ import {
   parsePagination,
   buildPaginationMeta,
 } from '../common/dto';
+import { StockLevelService } from '../alerts/stock-level.service';
 
 @Injectable()
 export class StockTakeService {
   constructor(
     private prisma: PrismaService,
     private auditService: AuditService,
+    private readonly stockLevelService: StockLevelService,
   ) {}
 
   async create(dto: CreateStockTakeDto, startedById: string) {
@@ -285,6 +287,7 @@ export class StockTakeService {
       changes: { status: 'COMPLETED', changesApplied: applyChanges },
     });
 
+    this.stockLevelService.scheduleRefresh();
     return updated;
   }
 

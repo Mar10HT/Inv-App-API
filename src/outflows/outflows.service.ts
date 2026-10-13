@@ -21,6 +21,7 @@ import {
   parseSortOrder,
 } from '../common/dto';
 import { warehouseFilter } from '../common/warehouse-access/warehouse-filter.util';
+import { StockLevelService } from '../alerts/stock-level.service';
 
 interface OutflowItemSeed {
   inventoryItemId: string;
@@ -46,6 +47,7 @@ export class OutflowsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditService: AuditService,
+    private readonly stockLevelService: StockLevelService,
   ) {}
 
   private readonly includeLight = {
@@ -234,6 +236,7 @@ export class OutflowsService {
       },
     });
 
+    this.stockLevelService.scheduleRefresh();
     return outflow;
   }
 
@@ -336,6 +339,7 @@ export class OutflowsService {
       },
     });
 
+    this.stockLevelService.scheduleRefresh();
     return updated;
   }
 

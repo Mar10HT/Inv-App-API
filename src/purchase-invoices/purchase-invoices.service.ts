@@ -26,6 +26,7 @@ import {
 } from '../common/dto';
 import { warehouseFilter } from '../common/warehouse-access/warehouse-filter.util';
 import { attachBalances } from '../common/balance/balance.util';
+import { StockLevelService } from '../alerts/stock-level.service';
 
 // Round to 2 decimals to avoid floating point noise accumulating in totals.
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -58,6 +59,7 @@ export class PurchaseInvoicesService {
     private readonly prisma: PrismaService,
     private readonly auditService: AuditService,
     private readonly purchaseNumbering: PurchaseNumberingService,
+    private readonly stockLevelService: StockLevelService,
   ) {}
 
   /**
@@ -352,6 +354,7 @@ export class PurchaseInvoicesService {
       },
     });
 
+    this.stockLevelService.scheduleRefresh();
     return invoice;
   }
 
@@ -520,6 +523,7 @@ export class PurchaseInvoicesService {
       },
     });
 
+    this.stockLevelService.scheduleRefresh();
     return updated;
   }
 

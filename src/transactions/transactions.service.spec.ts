@@ -10,6 +10,7 @@ import { mockDeep, type DeepMockProxy } from 'jest-mock-extended';
 import { TransactionsService } from './transactions.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { EventsService } from '../events/events.service';
+import { StockLevelService } from '../alerts/stock-level.service';
 
 const prismaError = (code: string) =>
   new Prisma.PrismaClientKnownRequestError('test error', {
@@ -72,6 +73,10 @@ describe('TransactionsService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         TransactionsService,
+        {
+          provide: StockLevelService,
+          useValue: { scheduleRefresh: jest.fn() },
+        },
         { provide: PrismaService, useValue: prisma },
         { provide: EventsService, useValue: mockEventsService },
       ],

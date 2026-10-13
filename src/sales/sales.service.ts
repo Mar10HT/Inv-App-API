@@ -27,6 +27,7 @@ import {
   parseSortOrder,
 } from '../common/dto';
 import { warehouseFilter } from '../common/warehouse-access/warehouse-filter.util';
+import { StockLevelService } from '../alerts/stock-level.service';
 
 // Round to 2 decimals to avoid floating point noise accumulating in totals.
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -68,6 +69,7 @@ export class SalesService {
     private readonly auditService: AuditService,
     private readonly saleNumbering: SaleNumberingService,
     private readonly permissionsService: PermissionsService,
+    private readonly stockLevelService: StockLevelService,
   ) {}
 
   /**
@@ -406,6 +408,7 @@ export class SalesService {
       },
     });
 
+    this.stockLevelService.scheduleRefresh();
     return sale;
   }
 
@@ -718,6 +721,7 @@ export class SalesService {
       },
     });
 
+    this.stockLevelService.scheduleRefresh();
     return updated;
   }
 
@@ -792,6 +796,7 @@ export class SalesService {
       },
     });
 
+    this.stockLevelService.scheduleRefresh();
     return updated;
   }
 

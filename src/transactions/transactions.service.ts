@@ -20,12 +20,14 @@ import {
 } from '../common/dto';
 import { EventsService } from '../events/events.service';
 import { warehouseFilterMultiField } from '../common/warehouse-access/warehouse-filter.util';
+import { StockLevelService } from '../alerts/stock-level.service';
 
 @Injectable()
 export class TransactionsService {
   constructor(
     private prisma: PrismaService,
     private eventsService: EventsService,
+    private readonly stockLevelService: StockLevelService,
   ) {}
 
   async create(createTransactionDto: CreateTransactionDto) {
@@ -77,6 +79,7 @@ export class TransactionsService {
     this.eventsService.emitTransactionChange('created', result.id);
     this.eventsService.emitInventoryChange('updated');
 
+    this.stockLevelService.scheduleRefresh();
     return result;
   }
 

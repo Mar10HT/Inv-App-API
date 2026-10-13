@@ -18,6 +18,7 @@ import {
   type InventoryItem,
   type Warehouse,
 } from '@prisma/client';
+import { StockLevelService } from '../alerts/stock-level.service';
 
 describe('InventoryService', () => {
   let service: InventoryService;
@@ -94,6 +95,10 @@ describe('InventoryService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         InventoryService,
+        {
+          provide: StockLevelService,
+          useValue: { scheduleRefresh: jest.fn() },
+        },
         { provide: PrismaService, useValue: prisma },
         { provide: AuditService, useValue: auditService },
         { provide: CACHE_MANAGER, useValue: mockCacheManager },

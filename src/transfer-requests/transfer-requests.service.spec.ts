@@ -15,6 +15,7 @@ import {
   type InventoryItem,
 } from '@prisma/client';
 import { mockDeep, type DeepMockProxy } from 'jest-mock-extended';
+import { StockLevelService } from '../alerts/stock-level.service';
 
 describe('TransferRequestsService', () => {
   let service: TransferRequestsService;
@@ -124,6 +125,10 @@ describe('TransferRequestsService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         TransferRequestsService,
+        {
+          provide: StockLevelService,
+          useValue: { scheduleRefresh: jest.fn() },
+        },
         { provide: PrismaService, useValue: prisma },
         { provide: AuditService, useValue: mockAuditService },
         { provide: QrService, useValue: mockQrService },

@@ -18,6 +18,7 @@ import { PurchaseInvoicesService } from './purchase-invoices.service';
 import { PurchaseNumberingService } from './purchase-numbering.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
+import { StockLevelService } from '../alerts/stock-level.service';
 
 describe('PurchaseInvoicesService', () => {
   let service: PurchaseInvoicesService;
@@ -92,6 +93,10 @@ describe('PurchaseInvoicesService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         PurchaseInvoicesService,
+        {
+          provide: StockLevelService,
+          useValue: { scheduleRefresh: jest.fn() },
+        },
         { provide: PrismaService, useValue: prisma },
         {
           provide: AuditService,

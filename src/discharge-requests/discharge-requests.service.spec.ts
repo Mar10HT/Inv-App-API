@@ -12,6 +12,7 @@ import {
   type Outflow,
 } from '@prisma/client';
 import { mockDeep, type DeepMockProxy } from 'jest-mock-extended';
+import { StockLevelService } from '../alerts/stock-level.service';
 
 describe('DischargeRequestsService', () => {
   let service: DischargeRequestsService;
@@ -105,6 +106,10 @@ describe('DischargeRequestsService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         DischargeRequestsService,
+        {
+          provide: StockLevelService,
+          useValue: { scheduleRefresh: jest.fn() },
+        },
         { provide: PrismaService, useValue: prisma },
         { provide: AuditService, useValue: mockAuditService },
         { provide: QrService, useValue: mockQrService },

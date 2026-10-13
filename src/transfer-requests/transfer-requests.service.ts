@@ -15,6 +15,7 @@ import {
   buildPaginationMeta,
 } from '../common/dto';
 import { warehouseFilterMultiField } from '../common/warehouse-access/warehouse-filter.util';
+import { StockLevelService } from '../alerts/stock-level.service';
 
 @Injectable()
 export class TransferRequestsService {
@@ -22,6 +23,7 @@ export class TransferRequestsService {
     private prisma: PrismaService,
     private auditService: AuditService,
     private qrService: QrService,
+    private readonly stockLevelService: StockLevelService,
   ) {}
 
   private readonly includeLight = {
@@ -393,6 +395,7 @@ export class TransferRequestsService {
       },
     });
 
+    this.stockLevelService.scheduleRefresh();
     return updated;
   }
 
@@ -552,6 +555,7 @@ export class TransferRequestsService {
       },
     });
 
+    this.stockLevelService.scheduleRefresh();
     return updated;
   }
 

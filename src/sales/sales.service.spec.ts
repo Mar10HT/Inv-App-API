@@ -18,12 +18,14 @@ import { SaleNumberingService } from './sale-numbering.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { PermissionsService } from '../permissions/permissions.service';
+import { StockLevelService } from '../alerts/stock-level.service';
 
 describe('SalesService', () => {
   let service: SalesService;
   let prisma: DeepMockProxy<PrismaService>;
   let saleNumbering: { assignNumber: jest.Mock };
   let permissions: { getPermissionsForUser: jest.Mock };
+  let stockLevel: { scheduleRefresh: jest.Mock };
 
   // Fixtures deliberately only populate the fields each test actually reads;
   // cast once here (rather than at each mockResolvedValue call site) now that
@@ -94,9 +96,12 @@ describe('SalesService', () => {
       getPermissionsForUser: jest.fn().mockResolvedValue(['sales:cancel']),
     };
 
+    stockLevel = { scheduleRefresh: jest.fn() };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         SalesService,
+        { provide: StockLevelService, useValue: stockLevel },
         { provide: PrismaService, useValue: prisma },
         {
           provide: AuditService,
@@ -154,6 +159,8 @@ describe('SalesService', () => {
         where: { id: 'item-1' },
         data: { quantity: { decrement: 2 } },
       });
+      // Stock moved: statuses and alerts must be re-evaluated.
+      expect(stockLevel.scheduleRefresh).toHaveBeenCalledTimes(1);
     });
 
     it('creates a DRAFT quotation with asDraft:true, skipping the stock check/decrement and numbering entirely', async () => {
@@ -589,6 +596,7 @@ describe('SalesService', () => {
         where: { id: 'item-1' },
         data: { quantity: { increment: 2 } },
       });
+      expect(stockLevel.scheduleRefresh).toHaveBeenCalledTimes(1);
     });
 
     it('throws BadRequestException when sale is already CANCELLED', async () => {
