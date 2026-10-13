@@ -22,6 +22,7 @@ import { EventsService } from '../events/events.service';
 import { warehouseFilterMultiField } from '../common/warehouse-access/warehouse-filter.util';
 import { StockLevelService } from '../alerts/stock-level.service';
 import { computeInventoryStatus } from '../inventory/inventory-status';
+import { apiError } from '../common/errors/api-error';
 
 @Injectable()
 export class TransactionsService {
@@ -222,7 +223,15 @@ export class TransactionsService {
         if (type === TransactionType.IN) {
           if (line.inventoryItem.quantity < line.quantity) {
             throw new BadRequestException(
-              `Cannot delete this entry: undoing it would take ${line.inventoryItem.name} below zero. Available: ${line.inventoryItem.quantity}, to remove: ${line.quantity}`,
+              apiError(
+                'TRANSACTION_UNDO_BELOW_ZERO',
+                `Cannot delete this entry: undoing it would take ${line.inventoryItem.name} below zero. Available: ${line.inventoryItem.quantity}, to remove: ${line.quantity}`,
+                {
+                  item: line.inventoryItem.name,
+                  available: line.inventoryItem.quantity,
+                  toRemove: line.quantity,
+                },
+              ),
             );
           }
           await tx.inventoryItem.update({
@@ -253,13 +262,19 @@ export class TransactionsService {
 
     if (type === TransactionType.IN && !destinationWarehouseId) {
       throw new BadRequestException(
-        'IN transactions require destinationWarehouseId',
+        apiError(
+          'IN_TRANSACTION_REQUIRES_DESTINATION',
+          'IN transactions require destinationWarehouseId',
+        ),
       );
     }
 
     if (type === TransactionType.OUT && !sourceWarehouseId) {
       throw new BadRequestException(
-        'OUT transactions require sourceWarehouseId',
+        apiError(
+          'OUT_TRANSACTION_REQUIRES_SOURCE',
+          'OUT transactions require sourceWarehouseId',
+        ),
       );
     }
 
@@ -268,7 +283,10 @@ export class TransactionsService {
       (!sourceWarehouseId || !destinationWarehouseId)
     ) {
       throw new BadRequestException(
-        'TRANSFER transactions require both sourceWarehouseId and destinationWarehouseId',
+        apiError(
+          'TRANSFER_TRANSACTION_REQUIRES_WAREHOUSES',
+          'TRANSFER transactions require both sourceWarehouseId and destinationWarehouseId',
+        ),
       );
     }
   }
@@ -316,7 +334,15 @@ export class TransactionsService {
         // undone exactly when the transaction is deleted.
         if (item.quantity > currentItem.quantity) {
           throw new BadRequestException(
-            `Insufficient quantity for item ${currentItem.name}. Available: ${currentItem.quantity}, Requested: ${item.quantity}`,
+            apiError(
+              'INSUFFICIENT_STOCK',
+              `Insufficient quantity for item ${currentItem.name}. Available: ${currentItem.quantity}, Requested: ${item.quantity}`,
+              {
+                item: currentItem.name,
+                available: currentItem.quantity,
+                requested: item.quantity,
+              },
+            ),
           );
         }
         newQuantity -= item.quantity;

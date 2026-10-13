@@ -27,6 +27,7 @@ import {
 import { warehouseFilter } from '../common/warehouse-access/warehouse-filter.util';
 import { attachBalances } from '../common/balance/balance.util';
 import { StockLevelService } from '../alerts/stock-level.service';
+import { apiError } from '../common/errors/api-error';
 
 // Round to 2 decimals to avoid floating point noise accumulating in totals.
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -130,7 +131,9 @@ export class PurchaseInvoicesService {
     }
 
     if (!dto.items?.length) {
-      throw new BadRequestException('At least one item is required');
+      throw new BadRequestException(
+        apiError('ITEMS_REQUIRED', 'At least one item is required'),
+      );
     }
 
     const bulkLines = dto.items.filter((i) => i.kind === ItemType.BULK);
@@ -139,14 +142,20 @@ export class PurchaseInvoicesService {
     const bulkIds = bulkLines.map((i) => i.inventoryItemId as string);
     if (new Set(bulkIds).size !== bulkIds.length) {
       throw new BadRequestException(
-        'Duplicate inventory item in purchase payload',
+        apiError(
+          'DUPLICATE_INVENTORY_ITEM',
+          'Duplicate inventory item in purchase payload',
+        ),
       );
     }
 
     const serviceTags = uniqueLines.map((i) => i.serviceTag as string);
     if (new Set(serviceTags).size !== serviceTags.length) {
       throw new BadRequestException(
-        'Duplicate service tag in purchase payload',
+        apiError(
+          'DUPLICATE_SERVICE_TAG',
+          'Duplicate service tag in purchase payload',
+        ),
       );
     }
 
@@ -160,7 +169,11 @@ export class PurchaseInvoicesService {
     });
     if (existingInvoice) {
       throw new ConflictException(
-        `An invoice "${dto.invoiceNumber}" already exists for this supplier`,
+        apiError(
+          'PURCHASE_INVOICE_ALREADY_EXISTS',
+          `An invoice "${dto.invoiceNumber}" already exists for this supplier`,
+          { invoiceNumber: dto.invoiceNumber },
+        ),
       );
     }
 
@@ -190,14 +203,22 @@ export class PurchaseInvoicesService {
       }
       if (item.warehouseId !== dto.warehouseId) {
         throw new BadRequestException(
-          `Item ${line.inventoryItemId} does not belong to the selected warehouse`,
+          apiError(
+            'ITEM_NOT_IN_WAREHOUSE',
+            `Item ${line.inventoryItemId} does not belong to the selected warehouse`,
+            { item: line.inventoryItemId as string },
+          ),
         );
       }
       // A UNIQUE item's quantity is always exactly 1 — topping it up through
       // a BULK line would silently break that invariant.
       if (item.itemType !== ItemType.BULK) {
         throw new BadRequestException(
-          `Item ${line.inventoryItemId} is a serialized (UNIQUE) item and cannot be purchased as a BULK line`,
+          apiError(
+            'UNIQUE_ITEM_NOT_BULK_PURCHASABLE',
+            `Item ${line.inventoryItemId} is a serialized (UNIQUE) item and cannot be purchased as a BULK line`,
+            { item: line.inventoryItemId as string },
+          ),
         );
       }
     }
@@ -246,7 +267,11 @@ export class PurchaseInvoicesService {
           const current = currentItemMap.get(seed.inventoryItemId);
           if (!current) {
             throw new BadRequestException(
-              `Item ${seed.inventoryItemId} is no longer available`,
+              apiError(
+                'ITEM_NO_LONGER_AVAILABLE',
+                `Item ${seed.inventoryItemId} is no longer available`,
+                { item: seed.inventoryItemId },
+              ),
             );
           }
           // Re-check inside the transaction: itemType can change between the
@@ -255,7 +280,11 @@ export class PurchaseInvoicesService {
           // mutation that would otherwise corrupt the UNIQUE quantity=1 invariant.
           if (current.itemType !== ItemType.BULK) {
             throw new BadRequestException(
-              `Item ${seed.inventoryItemId} is a serialized (UNIQUE) item and cannot be purchased as a BULK line`,
+              apiError(
+                'UNIQUE_ITEM_NOT_BULK_PURCHASABLE',
+                `Item ${seed.inventoryItemId} is a serialized (UNIQUE) item and cannot be purchased as a BULK line`,
+                { item: seed.inventoryItemId },
+              ),
             );
           }
         }
@@ -469,7 +498,11 @@ export class PurchaseInvoicesService {
       }
       if (current.status !== PurchaseInvoiceStatus.ACTIVE) {
         throw new BadRequestException(
-          `Cannot cancel purchase invoice in ${current.status} status`,
+          apiError(
+            'PURCHASE_INVOICE_NOT_CANCELLABLE',
+            `Cannot cancel purchase invoice in ${current.status} status`,
+            { status: current.status },
+          ),
         );
       }
 
@@ -478,14 +511,21 @@ export class PurchaseInvoicesService {
       );
       if (hasUniqueLine) {
         throw new BadRequestException(
-          'This purchase includes serialized units. Delete them individually from Inventory if this was a data-entry mistake; cancelling a purchase with serialized lines is not supported.',
+          apiError(
+            'PURCHASE_INVOICE_HAS_SERIALIZED_ITEMS',
+            'This purchase includes serialized units. Delete them individually from Inventory if this was a data-entry mistake; cancelling a purchase with serialized lines is not supported.',
+          ),
         );
       }
 
       for (const item of current.items) {
         if (item.inventoryItem.quantity < item.quantity) {
           throw new BadRequestException(
-            `Cannot cancel: stock for ${item.inventoryItem.name} has already left via a later sale, outflow, or transfer`,
+            apiError(
+              'PURCHASE_INVOICE_STOCK_ALREADY_USED',
+              `Cannot cancel: stock for ${item.inventoryItem.name} has already left via a later sale, outflow, or transfer`,
+              { item: item.inventoryItem.name },
+            ),
           );
         }
       }

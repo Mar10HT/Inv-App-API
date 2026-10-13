@@ -20,6 +20,7 @@ import {
   parseSortOrder,
 } from '../common/dto';
 import * as bcrypt from 'bcryptjs';
+import { apiError } from '../common/errors/api-error';
 
 @Injectable()
 export class UsersService {
@@ -63,7 +64,12 @@ export class UsersService {
         select: { id: true },
       });
       if (existingActive) {
-        throw new ConflictException('User with this email already exists');
+        throw new ConflictException(
+          apiError(
+            'EMAIL_ALREADY_EXISTS',
+            'User with this email already exists',
+          ),
+        );
       }
 
       // Hash password before storing
@@ -77,7 +83,11 @@ export class UsersService {
           select: { id: true },
         });
         if (!roleExists)
-          throw new BadRequestException(`Role '${roleId}' not found`);
+          throw new BadRequestException(
+            apiError('ROLE_NOT_FOUND', `Role '${roleId}' not found`, {
+              roleId,
+            }),
+          );
       }
 
       const user = await this.prisma.user.create({
@@ -111,7 +121,12 @@ export class UsersService {
         error instanceof Prisma.PrismaClientKnownRequestError &&
         error.code === 'P2002'
       ) {
-        throw new ConflictException('User with this email already exists');
+        throw new ConflictException(
+          apiError(
+            'EMAIL_ALREADY_EXISTS',
+            'User with this email already exists',
+          ),
+        );
       }
       throw error;
     }
@@ -159,7 +174,10 @@ export class UsersService {
   async update(id: string, updateUserDto: UpdateUserDto, actorUserId?: string) {
     if (updateUserDto.role === 'SYSTEM_ADMIN') {
       throw new BadRequestException(
-        'Cannot assign SYSTEM_ADMIN role through this endpoint',
+        apiError(
+          'SYSTEM_ADMIN_ROLE_NOT_ASSIGNABLE',
+          'Cannot assign SYSTEM_ADMIN role through this endpoint',
+        ),
       );
     }
 
@@ -170,11 +188,18 @@ export class UsersService {
       });
       if (!targetRole)
         throw new BadRequestException(
-          `Role '${updateUserDto.roleId}' not found`,
+          apiError(
+            'ROLE_NOT_FOUND',
+            `Role '${updateUserDto.roleId}' not found`,
+            { roleId: updateUserDto.roleId },
+          ),
         );
       if (targetRole.name === 'SYSTEM_ADMIN') {
         throw new BadRequestException(
-          'Cannot assign SYSTEM_ADMIN role through this endpoint',
+          apiError(
+            'SYSTEM_ADMIN_ROLE_NOT_ASSIGNABLE',
+            'Cannot assign SYSTEM_ADMIN role through this endpoint',
+          ),
         );
       }
     }
@@ -216,7 +241,12 @@ export class UsersService {
     } catch (error: unknown) {
       if (error instanceof Prisma.PrismaClientKnownRequestError) {
         if (error.code === 'P2002')
-          throw new ConflictException('User with this email already exists');
+          throw new ConflictException(
+            apiError(
+              'EMAIL_ALREADY_EXISTS',
+              'User with this email already exists',
+            ),
+          );
         if (error.code === 'P2025')
           throw new NotFoundException(`User with ID ${id} not found`);
       }
@@ -265,7 +295,9 @@ export class UsersService {
     }
 
     if (!user.deletedAt) {
-      throw new ConflictException('User is not deleted');
+      throw new ConflictException(
+        apiError('USER_NOT_DELETED', 'User is not deleted'),
+      );
     }
 
     const restored = await this.prisma.user.update({

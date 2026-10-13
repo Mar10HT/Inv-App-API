@@ -16,6 +16,7 @@ import {
 } from '@prisma/client';
 import { warehouseFilter } from '../common/warehouse-access/warehouse-filter.util';
 import { StockLevelService } from '../alerts/stock-level.service';
+import { apiError } from '../common/errors/api-error';
 
 @Injectable()
 export class DischargeRequestsService {
@@ -67,7 +68,15 @@ export class DischargeRequestsService {
 
         if (inventoryItem.quantity < item.quantity) {
           throw new BadRequestException(
-            `Insufficient quantity for item ${inventoryItem.name}. Available: ${inventoryItem.quantity}, Requested: ${item.quantity}`,
+            apiError(
+              'INSUFFICIENT_STOCK',
+              `Insufficient quantity for item ${inventoryItem.name}. Available: ${inventoryItem.quantity}, Requested: ${item.quantity}`,
+              {
+                item: inventoryItem.name,
+                available: inventoryItem.quantity,
+                requested: item.quantity,
+              },
+            ),
           );
         }
 
@@ -227,7 +236,11 @@ export class DischargeRequestsService {
 
     if (request.status !== DischargeRequestStatus.PENDING) {
       throw new BadRequestException(
-        `Discharge request is not pending. Current status: ${request.status}`,
+        apiError(
+          'DISCHARGE_REQUEST_NOT_PENDING',
+          `Discharge request is not pending. Current status: ${request.status}`,
+          { status: request.status },
+        ),
       );
     }
 
@@ -256,12 +269,24 @@ export class DischargeRequestsService {
         const requestItem = request.items[i];
         if (!inventoryItem) {
           throw new BadRequestException(
-            `Item ${requestItem.inventoryItem.name} is no longer available`,
+            apiError(
+              'ITEM_NO_LONGER_AVAILABLE',
+              `Item ${requestItem.inventoryItem.name} is no longer available`,
+              { item: requestItem.inventoryItem.name },
+            ),
           );
         }
         if (inventoryItem.quantity < requestItem.quantity) {
           throw new BadRequestException(
-            `Insufficient quantity for item ${requestItem.inventoryItem.name}. Available: ${inventoryItem.quantity}, Requested: ${requestItem.quantity}`,
+            apiError(
+              'INSUFFICIENT_STOCK',
+              `Insufficient quantity for item ${requestItem.inventoryItem.name}. Available: ${inventoryItem.quantity}, Requested: ${requestItem.quantity}`,
+              {
+                item: requestItem.inventoryItem.name,
+                available: inventoryItem.quantity,
+                requested: requestItem.quantity,
+              },
+            ),
           );
         }
       }
@@ -357,7 +382,11 @@ export class DischargeRequestsService {
 
     if (request.status !== DischargeRequestStatus.PENDING) {
       throw new BadRequestException(
-        `Discharge request is not pending. Current status: ${request.status}`,
+        apiError(
+          'DISCHARGE_REQUEST_NOT_PENDING',
+          `Discharge request is not pending. Current status: ${request.status}`,
+          { status: request.status },
+        ),
       );
     }
 
@@ -369,7 +398,11 @@ export class DischargeRequestsService {
       }
       if (current.status !== DischargeRequestStatus.PENDING) {
         throw new BadRequestException(
-          `Discharge request is not pending. Current status: ${current.status}`,
+          apiError(
+            'DISCHARGE_REQUEST_NOT_PENDING',
+            `Discharge request is not pending. Current status: ${current.status}`,
+            { status: current.status },
+          ),
         );
       }
 

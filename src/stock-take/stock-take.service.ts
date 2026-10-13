@@ -16,6 +16,7 @@ import {
   buildPaginationMeta,
 } from '../common/dto';
 import { StockLevelService } from '../alerts/stock-level.service';
+import { apiError } from '../common/errors/api-error';
 
 @Injectable()
 export class StockTakeService {
@@ -47,7 +48,11 @@ export class StockTakeService {
 
     if (existing) {
       throw new BadRequestException(
-        `There is already an in-progress stock take for this warehouse (ID: ${existing.id})`,
+        apiError(
+          'STOCK_TAKE_ALREADY_IN_PROGRESS',
+          `There is already an in-progress stock take for this warehouse (ID: ${existing.id})`,
+          { id: existing.id },
+        ),
       );
     }
 
@@ -153,7 +158,10 @@ export class StockTakeService {
 
     if (stockTake.status !== StockTakeStatus.IN_PROGRESS) {
       throw new BadRequestException(
-        'Cannot update items on a completed or cancelled stock take',
+        apiError(
+          'STOCK_TAKE_NOT_EDITABLE',
+          'Cannot update items on a completed or cancelled stock take',
+        ),
       );
     }
 
@@ -210,7 +218,9 @@ export class StockTakeService {
     const stockTake = await this.findOne(id);
 
     if (stockTake.status !== StockTakeStatus.IN_PROGRESS) {
-      throw new BadRequestException('Stock take is not in progress');
+      throw new BadRequestException(
+        apiError('STOCK_TAKE_NOT_IN_PROGRESS', 'Stock take is not in progress'),
+      );
     }
 
     // Check if all items have been counted
@@ -219,7 +229,11 @@ export class StockTakeService {
     );
     if (uncountedItems.length > 0) {
       throw new BadRequestException(
-        `${uncountedItems.length} items have not been counted yet`,
+        apiError(
+          'STOCK_TAKE_ITEMS_NOT_COUNTED',
+          `${uncountedItems.length} items have not been counted yet`,
+          { count: uncountedItems.length },
+        ),
       );
     }
 
@@ -295,7 +309,12 @@ export class StockTakeService {
     const stockTake = await this.findOne(id);
 
     if (stockTake.status === StockTakeStatus.COMPLETED) {
-      throw new BadRequestException('Cannot cancel a completed stock take');
+      throw new BadRequestException(
+        apiError(
+          'STOCK_TAKE_ALREADY_COMPLETED',
+          'Cannot cancel a completed stock take',
+        ),
+      );
     }
 
     const updated = await this.prisma.stockTake.update({

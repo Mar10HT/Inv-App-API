@@ -29,6 +29,7 @@ import {
 import { warehouseFilter } from '../common/warehouse-access/warehouse-filter.util';
 import { StockLevelService } from '../alerts/stock-level.service';
 import { DocumentNumberingService } from '../common/numbering/document-numbering.service';
+import { apiError } from '../common/errors/api-error';
 
 // Round to 2 decimals to avoid floating point noise accumulating in totals.
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -148,7 +149,11 @@ export class SalesService {
 
     if (projected > client.creditLimit) {
       throw new BadRequestException(
-        `This sale would exceed the client's credit limit (${client.creditLimit}). Outstanding + this sale: ${projected}`,
+        apiError(
+          'CREDIT_LIMIT_EXCEEDED',
+          `This sale would exceed the client's credit limit (${client.creditLimit}). Outstanding + this sale: ${projected}`,
+          { creditLimit: client.creditLimit, projected },
+        ),
       );
     }
   }
@@ -201,12 +206,19 @@ export class SalesService {
     }
 
     if (!dto.items?.length) {
-      throw new BadRequestException('At least one item is required');
+      throw new BadRequestException(
+        apiError('ITEMS_REQUIRED', 'At least one item is required'),
+      );
     }
 
     const ids = dto.items.map((i) => i.inventoryItemId);
     if (new Set(ids).size !== ids.length) {
-      throw new BadRequestException('Duplicate inventory item in sale payload');
+      throw new BadRequestException(
+        apiError(
+          'DUPLICATE_INVENTORY_ITEM',
+          'Duplicate inventory item in sale payload',
+        ),
+      );
     }
 
     // Snapshot name/serviceTag at sale time so PDFs and reports survive item
@@ -234,7 +246,11 @@ export class SalesService {
       }
       if (item.warehouseId !== dto.warehouseId) {
         throw new BadRequestException(
-          `Item ${line.inventoryItemId} does not belong to the selected warehouse`,
+          apiError(
+            'ITEM_NOT_IN_WAREHOUSE',
+            `Item ${line.inventoryItemId} does not belong to the selected warehouse`,
+            { item: line.inventoryItemId },
+          ),
         );
       }
     }
@@ -347,12 +363,24 @@ export class SalesService {
         const current = currentMap.get(line.inventoryItemId);
         if (!current) {
           throw new BadRequestException(
-            `Item ${line.inventoryItemId} is no longer available`,
+            apiError(
+              'ITEM_NO_LONGER_AVAILABLE',
+              `Item ${line.inventoryItemId} is no longer available`,
+              { item: line.inventoryItemId },
+            ),
           );
         }
         if (current.quantity < line.quantity) {
           throw new BadRequestException(
-            `Insufficient quantity for item ${current.name}. Available: ${current.quantity}, Requested: ${line.quantity}`,
+            apiError(
+              'INSUFFICIENT_STOCK',
+              `Insufficient quantity for item ${current.name}. Available: ${current.quantity}, Requested: ${line.quantity}`,
+              {
+                item: current.name,
+                available: current.quantity,
+                requested: line.quantity,
+              },
+            ),
           );
         }
       }
@@ -500,7 +528,11 @@ export class SalesService {
       }
       if (current.status !== SaleStatus.DRAFT) {
         throw new BadRequestException(
-          `Cannot edit a sale in ${current.status} status`,
+          apiError(
+            'SALE_NOT_EDITABLE',
+            `Cannot edit a sale in ${current.status} status`,
+            { status: current.status },
+          ),
         );
       }
 
@@ -514,7 +546,10 @@ export class SalesService {
         const ids = dto.items.map((i) => i.inventoryItemId);
         if (new Set(ids).size !== ids.length) {
           throw new BadRequestException(
-            'Duplicate inventory item in sale payload',
+            apiError(
+              'DUPLICATE_INVENTORY_ITEM',
+              'Duplicate inventory item in sale payload',
+            ),
           );
         }
         const items = await tx.inventoryItem.findMany({
@@ -529,7 +564,11 @@ export class SalesService {
           const item = itemMap.get(line.inventoryItemId);
           if (item && item.warehouseId !== targetWarehouseId) {
             throw new BadRequestException(
-              `Item ${line.inventoryItemId} does not belong to the selected warehouse`,
+              apiError(
+                'ITEM_NOT_IN_WAREHOUSE',
+                `Item ${line.inventoryItemId} does not belong to the selected warehouse`,
+                { item: line.inventoryItemId },
+              ),
             );
           }
         }
@@ -637,7 +676,11 @@ export class SalesService {
       // the status.
       if (current.status !== SaleStatus.DRAFT) {
         throw new BadRequestException(
-          `Cannot confirm sale in ${current.status} status`,
+          apiError(
+            'SALE_NOT_CONFIRMABLE',
+            `Cannot confirm sale in ${current.status} status`,
+            { status: current.status },
+          ),
         );
       }
 
@@ -667,12 +710,24 @@ export class SalesService {
         const item = currentMap.get(line.inventoryItemId);
         if (!item) {
           throw new BadRequestException(
-            `Item ${line.inventoryItemId} is no longer available`,
+            apiError(
+              'ITEM_NO_LONGER_AVAILABLE',
+              `Item ${line.inventoryItemId} is no longer available`,
+              { item: line.inventoryItemId },
+            ),
           );
         }
         if (item.quantity < line.quantity) {
           throw new BadRequestException(
-            `Insufficient quantity for item ${item.name}. Available: ${item.quantity}, Requested: ${line.quantity}`,
+            apiError(
+              'INSUFFICIENT_STOCK',
+              `Insufficient quantity for item ${item.name}. Available: ${item.quantity}, Requested: ${line.quantity}`,
+              {
+                item: item.name,
+                available: item.quantity,
+                requested: line.quantity,
+              },
+            ),
           );
         }
       }
@@ -741,7 +796,11 @@ export class SalesService {
       }
       if (current.status === SaleStatus.CANCELLED) {
         throw new BadRequestException(
-          `Cannot cancel sale in ${current.status} status`,
+          apiError(
+            'SALE_NOT_CANCELLABLE',
+            `Cannot cancel sale in ${current.status} status`,
+            { status: current.status },
+          ),
         );
       }
 

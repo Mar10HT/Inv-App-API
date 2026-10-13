@@ -13,6 +13,20 @@ import * as Sentry from '@sentry/node';
 interface HttpExceptionBody {
   message?: string | string[];
   error?: string;
+  code?: unknown;
+  params?: unknown;
+}
+
+// "BAD_REQUEST" -> "Bad Request", used when an exception body built with
+// apiError() carries no `error` label of its own.
+function reasonPhrase(status: number): string {
+  const key = HttpStatus[status] as string | undefined;
+  if (!key) return 'Error';
+  return key
+    .toLowerCase()
+    .split('_')
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ');
 }
 
 @Catch()
@@ -27,6 +41,10 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     let status = HttpStatus.INTERNAL_SERVER_ERROR;
     let message = 'Internal server error';
     let error = 'Internal Server Error';
+    // Machine-readable error code + interpolation params (see
+    // common/errors/api-error.ts). Only set for exceptions built with apiError().
+    let code: string | undefined;
+    let params: Record<string, unknown> | undefined;
 
     if (exception instanceof HttpException) {
       status = exception.getStatus();
@@ -35,7 +53,13 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       if (typeof exceptionResponse === 'object') {
         const body = exceptionResponse as HttpExceptionBody;
         message = body.message || exception.message;
-        error = body.error || 'Error';
+        error = body.error || (body.code ? reasonPhrase(status) : 'Error');
+        if (typeof body.code === 'string') {
+          code = body.code;
+          if (body.params && typeof body.params === 'object') {
+            params = body.params as Record<string, unknown>;
+          }
+        }
       } else {
         message = exceptionResponse;
       }
@@ -44,6 +68,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       status = prismaError.status;
       message = prismaError.message;
       error = prismaError.error;
+      code = prismaError.code;
     } else if (exception instanceof Error) {
       message = exception.message;
 
@@ -71,6 +96,8 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       statusCode: status,
       error,
       message: Array.isArray(message) ? message : [message],
+      ...(code ? { code } : {}),
+      ...(params ? { params } : {}),
       timestamp: new Date().toISOString(),
       path: request.url,
     });
@@ -80,6 +107,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     status: number;
     message: string;
     error: string;
+    code?: string;
   } {
     switch (error.code) {
       case 'P2002':
@@ -87,6 +115,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
           status: HttpStatus.CONFLICT,
           message: 'A record with this value already exists',
           error: 'Conflict',
+          code: 'RECORD_ALREADY_EXISTS',
         };
       case 'P2025':
         return {
@@ -100,6 +129,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
           message:
             'Foreign key constraint failed — related record does not exist',
           error: 'Bad Request',
+          code: 'RELATED_RECORD_NOT_FOUND',
         };
       case 'P2014':
         return {
@@ -107,24 +137,28 @@ export class GlobalExceptionFilter implements ExceptionFilter {
           message:
             'The change you are trying to make would violate a required relation',
           error: 'Bad Request',
+          code: 'REQUIRED_RELATION_VIOLATION',
         };
       case 'P2000':
         return {
           status: HttpStatus.BAD_REQUEST,
           message: 'Input value is too long for the field',
           error: 'Bad Request',
+          code: 'VALUE_TOO_LONG',
         };
       case 'P2006':
         return {
           status: HttpStatus.BAD_REQUEST,
           message: 'Invalid value provided for a field',
           error: 'Bad Request',
+          code: 'INVALID_FIELD_VALUE',
         };
       case 'P2011':
         return {
           status: HttpStatus.BAD_REQUEST,
           message: 'A required field is missing a value',
           error: 'Bad Request',
+          code: 'REQUIRED_FIELD_MISSING',
         };
       case 'P2028':
         return {

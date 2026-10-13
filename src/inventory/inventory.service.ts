@@ -34,6 +34,7 @@ import { computeInventoryStatus } from './inventory-status';
 import { toIsoDateTime } from '../common/utils/date.util';
 import type { CellValue } from 'exceljs';
 import { StockLevelService } from '../alerts/stock-level.service';
+import { apiError } from '../common/errors/api-error';
 
 @Injectable()
 export class InventoryService {
@@ -90,12 +91,18 @@ export class InventoryService {
         createInventoryDto.quantity !== 1
       ) {
         throw new BadRequestException(
-          'UNIQUE items must have quantity of 0 or 1',
+          apiError(
+            'UNIQUE_ITEM_INVALID_QUANTITY',
+            'UNIQUE items must have quantity of 0 or 1',
+          ),
         );
       }
       if (!createInventoryDto.serviceTag && !createInventoryDto.serialNumber) {
         throw new BadRequestException(
-          'UNIQUE items must have either serviceTag or serialNumber',
+          apiError(
+            'UNIQUE_ITEM_IDENTIFIER_REQUIRED',
+            'UNIQUE items must have either serviceTag or serialNumber',
+          ),
         );
       }
     }
@@ -104,11 +111,19 @@ export class InventoryService {
     if (itemType === ItemType.BULK) {
       if (createInventoryDto.serviceTag || createInventoryDto.serialNumber) {
         throw new BadRequestException(
-          'BULK items cannot have serviceTag or serialNumber',
+          apiError(
+            'BULK_ITEM_IDENTIFIERS_NOT_ALLOWED',
+            'BULK items cannot have serviceTag or serialNumber',
+          ),
         );
       }
       if (createInventoryDto.assignedToUserId) {
-        throw new BadRequestException('BULK items cannot be assigned to users');
+        throw new BadRequestException(
+          apiError(
+            'BULK_ITEM_NOT_ASSIGNABLE',
+            'BULK items cannot be assigned to users',
+          ),
+        );
       }
     }
 
@@ -119,7 +134,11 @@ export class InventoryService {
       });
       if (existing) {
         throw new ConflictException(
-          `Item with SKU ${createInventoryDto.sku} already exists`,
+          apiError(
+            'SKU_ALREADY_EXISTS',
+            `Item with SKU ${createInventoryDto.sku} already exists`,
+            { sku: createInventoryDto.sku },
+          ),
         );
       }
     }
@@ -131,7 +150,11 @@ export class InventoryService {
       });
       if (existing) {
         throw new ConflictException(
-          `Item with service tag ${createInventoryDto.serviceTag} already exists`,
+          apiError(
+            'SERVICE_TAG_ALREADY_EXISTS',
+            `Item with service tag ${createInventoryDto.serviceTag} already exists`,
+            { serviceTag: createInventoryDto.serviceTag },
+          ),
         );
       }
     }
@@ -367,7 +390,11 @@ export class InventoryService {
       });
       if (existing) {
         throw new ConflictException(
-          `Item with SKU ${updateInventoryDto.sku} already exists`,
+          apiError(
+            'SKU_ALREADY_EXISTS',
+            `Item with SKU ${updateInventoryDto.sku} already exists`,
+            { sku: updateInventoryDto.sku },
+          ),
         );
       }
     }
@@ -486,7 +513,9 @@ export class InventoryService {
     }
 
     if (!item.deletedAt) {
-      throw new BadRequestException('Item is not deleted');
+      throw new BadRequestException(
+        apiError('ITEM_NOT_DELETED', 'Item is not deleted'),
+      );
     }
 
     const restoredItem = await this.prisma.inventoryItem.update({
@@ -1275,7 +1304,9 @@ export class InventoryService {
 
     const worksheet = workbook.worksheets[0];
     if (!worksheet) {
-      throw new BadRequestException('Excel file has no worksheets');
+      throw new BadRequestException(
+        apiError('EXCEL_NO_WORKSHEETS', 'Excel file has no worksheets'),
+      );
     }
 
     // Pre-load warehouses and suppliers for name-based lookup

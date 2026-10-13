@@ -19,6 +19,7 @@ import { randomBytes } from 'crypto';
 import { UserRole } from '@prisma/client';
 import { WarehouseAccessService } from '../common/warehouse-access/warehouse-access.service';
 import { AuditService } from '../audit/audit.service';
+import { apiError } from '../common/errors/api-error';
 
 @Injectable()
 export class AuthService {
@@ -311,15 +312,21 @@ export class AuthService {
     });
 
     if (!resetToken) {
-      throw new BadRequestException('Invalid or expired reset token');
+      throw new BadRequestException(
+        apiError('RESET_TOKEN_INVALID', 'Invalid or expired reset token'),
+      );
     }
 
     if (resetToken.used) {
-      throw new BadRequestException('This reset token has already been used');
+      throw new BadRequestException(
+        apiError('RESET_TOKEN_USED', 'This reset token has already been used'),
+      );
     }
 
     if (resetToken.expiresAt < new Date()) {
-      throw new BadRequestException('Reset token has expired');
+      throw new BadRequestException(
+        apiError('RESET_TOKEN_EXPIRED', 'Reset token has expired'),
+      );
     }
 
     // Hash password before the transaction to keep the transaction short
@@ -441,7 +448,9 @@ export class AuthService {
     const existingUser = await this.usersService.findByEmail(registerDto.email);
 
     if (existingUser) {
-      throw new ConflictException('User with this email already exists');
+      throw new ConflictException(
+        apiError('EMAIL_ALREADY_EXISTS', 'User with this email already exists'),
+      );
     }
 
     // Create user with default USER role
@@ -476,7 +485,9 @@ export class AuthService {
         updateProfileDto.email,
       );
       if (existingUser && existingUser.id !== userId) {
-        throw new ConflictException('Email is already in use');
+        throw new ConflictException(
+          apiError('EMAIL_ALREADY_EXISTS', 'Email is already in use'),
+        );
       }
     }
 
@@ -511,7 +522,9 @@ export class AuthService {
     );
 
     if (!isCurrentPasswordValid) {
-      throw new BadRequestException('Current password is incorrect');
+      throw new BadRequestException(
+        apiError('CURRENT_PASSWORD_INCORRECT', 'Current password is incorrect'),
+      );
     }
 
     // Check that new password is different from current
@@ -522,7 +535,10 @@ export class AuthService {
 
     if (isSamePassword) {
       throw new BadRequestException(
-        'New password must be different from current password',
+        apiError(
+          'NEW_PASSWORD_SAME_AS_CURRENT',
+          'New password must be different from current password',
+        ),
       );
     }
 

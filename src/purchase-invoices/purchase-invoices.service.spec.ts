@@ -244,9 +244,11 @@ describe('PurchaseInvoicesService', () => {
     it('throws ConflictException when the supplier + invoice number already exists', async () => {
       prisma.purchaseInvoice.findUnique.mockResolvedValue(mockInvoice);
 
-      await expect(service.create(baseDto(), 'user-1')).rejects.toThrow(
-        ConflictException,
-      );
+      const result = service.create(baseDto(), 'user-1');
+      await expect(result).rejects.toThrow(ConflictException);
+      await expect(result).rejects.toMatchObject({
+        response: { code: 'PURCHASE_INVOICE_ALREADY_EXISTS' },
+      });
       // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(prisma.purchaseInvoice.create).not.toHaveBeenCalled();
     });

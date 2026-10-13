@@ -6,6 +6,7 @@ import { BaseRepository, BaseRepositoryOptions } from '../common/repository';
 import { CreateCaiRangeDto } from './dto/create-cai-range.dto';
 import { UpdateCaiRangeDto } from './dto/update-cai-range.dto';
 import { toIsoDateTime } from '../common/utils/date.util';
+import { apiError } from '../common/errors/api-error';
 
 @Injectable()
 export class CaiRangesService extends BaseRepository<
@@ -28,7 +29,12 @@ export class CaiRangesService extends BaseRepository<
       rangeEnd !== undefined &&
       rangeEnd <= rangeStart
     ) {
-      throw new BadRequestException('rangeEnd must be greater than rangeStart');
+      throw new BadRequestException(
+        apiError(
+          'CAI_RANGE_INVALID',
+          'rangeEnd must be greater than rangeStart',
+        ),
+      );
     }
   }
 

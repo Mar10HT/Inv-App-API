@@ -17,6 +17,7 @@ import {
 import { warehouseFilterMultiField } from '../common/warehouse-access/warehouse-filter.util';
 import { StockLevelService } from '../alerts/stock-level.service';
 import { DocumentNumberingService } from '../common/numbering/document-numbering.service';
+import { apiError } from '../common/errors/api-error';
 
 @Injectable()
 export class TransferRequestsService {
@@ -59,7 +60,10 @@ export class TransferRequestsService {
   async create(dto: CreateTransferRequestDto, requestedById: string) {
     if (dto.sourceWarehouseId === dto.destinationWarehouseId) {
       throw new BadRequestException(
-        'Source and destination warehouses must be different',
+        apiError(
+          'SAME_SOURCE_AND_DESTINATION',
+          'Source and destination warehouses must be different',
+        ),
       );
     }
 
@@ -79,10 +83,17 @@ export class TransferRequestsService {
 
     // Validate both warehouses are active
     if (!sourceWarehouse.isActive) {
-      throw new BadRequestException('Source warehouse is inactive');
+      throw new BadRequestException(
+        apiError('SOURCE_WAREHOUSE_INACTIVE', 'Source warehouse is inactive'),
+      );
     }
     if (!destWarehouse.isActive) {
-      throw new BadRequestException('Destination warehouse is inactive');
+      throw new BadRequestException(
+        apiError(
+          'DESTINATION_WAREHOUSE_INACTIVE',
+          'Destination warehouse is inactive',
+        ),
+      );
     }
 
     // Batch-fetch all requested items in one query to avoid N+1
@@ -101,13 +112,25 @@ export class TransferRequestsService {
 
       if (inventoryItem.warehouseId !== dto.sourceWarehouseId) {
         throw new BadRequestException(
-          `Item ${inventoryItem.name} does not belong to source warehouse`,
+          apiError(
+            'ITEM_NOT_IN_SOURCE_WAREHOUSE',
+            `Item ${inventoryItem.name} does not belong to source warehouse`,
+            { item: inventoryItem.name },
+          ),
         );
       }
 
       if (inventoryItem.quantity < item.quantity) {
         throw new BadRequestException(
-          `Insufficient quantity for item ${inventoryItem.name}. Available: ${inventoryItem.quantity}, Requested: ${item.quantity}`,
+          apiError(
+            'INSUFFICIENT_STOCK',
+            `Insufficient quantity for item ${inventoryItem.name}. Available: ${inventoryItem.quantity}, Requested: ${item.quantity}`,
+            {
+              item: inventoryItem.name,
+              available: inventoryItem.quantity,
+              requested: item.quantity,
+            },
+          ),
         );
       }
     }
@@ -236,7 +259,11 @@ export class TransferRequestsService {
       });
       if (!current || current.status !== RequestStatus.PENDING) {
         throw new BadRequestException(
-          `Transfer request is not pending. Current status: ${current?.status ?? 'unknown'}`,
+          apiError(
+            'TRANSFER_NOT_PENDING',
+            `Transfer request is not pending. Current status: ${current?.status ?? 'unknown'}`,
+            { status: current?.status ?? 'unknown' },
+          ),
         );
       }
 
@@ -246,7 +273,11 @@ export class TransferRequestsService {
         });
         if (!inventoryItem || inventoryItem.quantity < item.quantity) {
           throw new BadRequestException(
-            `Insufficient quantity for item ${item.inventoryItem.name}. Transfer cannot be approved.`,
+            apiError(
+              'INSUFFICIENT_STOCK_FOR_APPROVAL',
+              `Insufficient quantity for item ${item.inventoryItem.name}. Transfer cannot be approved.`,
+              { item: item.inventoryItem.name },
+            ),
           );
         }
       }
@@ -300,7 +331,11 @@ export class TransferRequestsService {
 
     if (request.status !== RequestStatus.APPROVED) {
       throw new BadRequestException(
-        `Cannot send transfer in ${request.status} status. Only APPROVED transfers can be sent.`,
+        apiError(
+          'TRANSFER_NOT_APPROVED',
+          `Cannot send transfer in ${request.status} status. Only APPROVED transfers can be sent.`,
+          { status: request.status },
+        ),
       );
     }
 
@@ -378,7 +413,11 @@ export class TransferRequestsService {
       });
       if (!current || current.status !== RequestStatus.SENT) {
         throw new BadRequestException(
-          `Cannot confirm receipt. Transfer is in ${current?.status ?? 'unknown'} status.`,
+          apiError(
+            'TRANSFER_RECEIPT_INVALID_STATUS',
+            `Cannot confirm receipt. Transfer is in ${current?.status ?? 'unknown'} status.`,
+            { status: current?.status ?? 'unknown' },
+          ),
         );
       }
       return this.applyInventoryTransfer(tx, request, userId);
@@ -412,7 +451,10 @@ export class TransferRequestsService {
 
     if (!request.sendQrCode) {
       throw new BadRequestException(
-        'QR code not generated. Send the transfer first.',
+        apiError(
+          'TRANSFER_QR_NOT_GENERATED',
+          'QR code not generated. Send the transfer first.',
+        ),
       );
     }
 
@@ -436,11 +478,15 @@ export class TransferRequestsService {
     const qrData = this.qrService.parseQrData(scannedData);
 
     if (!qrData) {
-      throw new BadRequestException('Invalid QR code format');
+      throw new BadRequestException(
+        apiError('INVALID_QR_FORMAT', 'Invalid QR code format'),
+      );
     }
 
     if (qrData.type !== 'TRANSFER') {
-      throw new BadRequestException('This QR code is not for a transfer');
+      throw new BadRequestException(
+        apiError('QR_NOT_FOR_TRANSFER', 'This QR code is not for a transfer'),
+      );
     }
 
     return this.confirmReceipt(qrData.code, userId, userWarehouseIds);
@@ -473,7 +519,11 @@ export class TransferRequestsService {
       });
       if (!current || current.status !== RequestStatus.PENDING) {
         throw new BadRequestException(
-          `Transfer request is not pending. Current status: ${current?.status ?? 'unknown'}`,
+          apiError(
+            'TRANSFER_NOT_PENDING',
+            `Transfer request is not pending. Current status: ${current?.status ?? 'unknown'}`,
+            { status: current?.status ?? 'unknown' },
+          ),
         );
       }
 
@@ -538,7 +588,11 @@ export class TransferRequestsService {
       });
       if (!current || current.status !== RequestStatus.SENT) {
         throw new BadRequestException(
-          `Transfer request must be in SENT status to confirm receipt. Current status: ${current?.status ?? 'unknown'}`,
+          apiError(
+            'TRANSFER_RECEIPT_INVALID_STATUS',
+            `Transfer request must be in SENT status to confirm receipt. Current status: ${current?.status ?? 'unknown'}`,
+            { status: current?.status ?? 'unknown' },
+          ),
         );
       }
       return this.applyInventoryTransfer(tx, request, completedById);
@@ -600,7 +654,15 @@ export class TransferRequestsService {
       });
       if (!currentItem || currentItem.quantity < item.quantity) {
         throw new BadRequestException(
-          `Insufficient quantity for item: ${item.inventoryItem.name}. Available: ${currentItem?.quantity ?? 0}, Required: ${item.quantity}`,
+          apiError(
+            'INSUFFICIENT_STOCK',
+            `Insufficient quantity for item: ${item.inventoryItem.name}. Available: ${currentItem?.quantity ?? 0}, Required: ${item.quantity}`,
+            {
+              item: item.inventoryItem.name,
+              available: currentItem?.quantity ?? 0,
+              requested: item.quantity,
+            },
+          ),
         );
       }
     }
@@ -696,7 +758,11 @@ export class TransferRequestsService {
         current.status === RequestStatus.CANCELLED
       ) {
         throw new BadRequestException(
-          `Cannot cancel a transfer request in ${current?.status ?? 'unknown'} status`,
+          apiError(
+            'TRANSFER_NOT_CANCELLABLE',
+            `Cannot cancel a transfer request in ${current?.status ?? 'unknown'} status`,
+            { status: current?.status ?? 'unknown' },
+          ),
         );
       }
       previousStatus = current.status;
