@@ -5,6 +5,7 @@ import {
   INITIAL_ROLES,
   ROLE_PERMISSIONS,
 } from '../common/constants';
+import { removeDuplicateRoles } from './remove-duplicate-roles';
 
 @Injectable()
 export class PermissionsSeedService {
@@ -20,6 +21,7 @@ export class PermissionsSeedService {
    *  2. Upsert 5 initial Role records (isSystem = true)
    *  3. Sync RolePermission assignments per the matrix
    *  4. Migrate existing users: map User.role (enum) → User.roleId
+   *  5. Delete lowercase copies of the system roles left by old seeds
    */
   async run(): Promise<SeedResult> {
     this.logger.log('Starting RBAC permissions seed...');
@@ -28,6 +30,10 @@ export class PermissionsSeedService {
     const rolesSeeded = await this.seedRoles();
     await this.syncRolePermissions();
     const usersLinked = await this.migrateUserRoles();
+    const duplicates = await removeDuplicateRoles(this.prisma);
+    if (duplicates.length > 0) {
+      this.logger.log(`Removed duplicate roles: ${duplicates.join(', ')}`);
+    }
 
     this.logger.log('RBAC seed complete.');
 
