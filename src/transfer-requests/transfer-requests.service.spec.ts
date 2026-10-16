@@ -95,6 +95,12 @@ describe('TransferRequestsService', () => {
 
   beforeEach(async () => {
     prisma = mockDeep<PrismaService>();
+    // takeStock: the conditional decrement finds the units by default
+    prisma.inventoryItem.updateMany.mockResolvedValue({ count: 1 });
+    // No payments on the document unless a test says otherwise
+    prisma.payment.aggregate.mockResolvedValue({
+      _sum: { amount: null },
+    } as never);
 
     // inventoryItem tx mock — standalone, used for confirmReceipt / complete flows
     prisma.inventoryItem.update.mockResolvedValue(mockInventoryItem);

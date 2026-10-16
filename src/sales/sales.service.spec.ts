@@ -83,6 +83,12 @@ describe('SalesService', () => {
 
   beforeEach(async () => {
     prisma = mockDeep<PrismaService>();
+    // takeStock: the conditional decrement finds the units by default
+    prisma.inventoryItem.updateMany.mockResolvedValue({ count: 1 });
+    // No payments on the document unless a test says otherwise
+    prisma.payment.aggregate.mockResolvedValue({
+      _sum: { amount: null },
+    } as never);
     prisma.$transaction.mockImplementation(((
       cb: (tx: DeepMockProxy<PrismaService>) => unknown,
     ) => cb(prisma)) as never);
@@ -162,8 +168,8 @@ describe('SalesService', () => {
         }),
       );
       // eslint-disable-next-line @typescript-eslint/unbound-method
-      expect(prisma.inventoryItem.update).toHaveBeenCalledWith({
-        where: { id: 'item-1' },
+      expect(prisma.inventoryItem.updateMany).toHaveBeenCalledWith({
+        where: { id: 'item-1', deletedAt: null, quantity: { gte: 2 } },
         data: { quantity: { decrement: 2 } },
       });
       // Stock moved: statuses and alerts must be re-evaluated.
@@ -507,8 +513,8 @@ describe('SalesService', () => {
       expect(result.number).toBe('001-001-01-00000001');
       expect(saleNumbering.assignNumber).toHaveBeenCalledTimes(1);
       // eslint-disable-next-line @typescript-eslint/unbound-method
-      expect(prisma.inventoryItem.update).toHaveBeenCalledWith({
-        where: { id: 'item-1' },
+      expect(prisma.inventoryItem.updateMany).toHaveBeenCalledWith({
+        where: { id: 'item-1', deletedAt: null, quantity: { gte: 2 } },
         data: { quantity: { decrement: 2 } },
       });
     });

@@ -30,6 +30,8 @@ import { warehouseFilter } from '../common/warehouse-access/warehouse-filter.uti
 import { StockLevelService } from '../alerts/stock-level.service';
 import { DocumentNumberingService } from '../common/numbering/document-numbering.service';
 import { apiError } from '../common/errors/api-error';
+import { lockForUpdate } from '../common/locking';
+import { takeStock } from '../inventory/stock.util';
 
 // Round to 2 decimals to avoid floating point noise accumulating in totals.
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -385,14 +387,11 @@ export class SalesService {
         }
       }
 
-      await Promise.all(
-        args.items.map((line) =>
-          tx.inventoryItem.update({
-            where: { id: line.inventoryItemId },
-            data: { quantity: { decrement: line.quantity } },
-          }),
-        ),
-      );
+      // The check above gives the friendly error; takeStock is what makes
+      // two concurrent sales unable to take the same last units.
+      for (const line of args.items) {
+        await takeStock(tx, line.inventoryItemId, line.quantity);
+      }
 
       const { number } = await this.saleNumbering.assignNumber(tx);
 
@@ -665,6 +664,9 @@ export class SalesService {
     await this.findOne(id, userWarehouseIds);
 
     const updated = await this.prisma.$transaction(async (tx) => {
+      // Guards against a double confirm: a second concurrent request waits
+      // on this lock, then reads ACTIVE and 400s below.
+      await lockForUpdate(tx, 'sales', id);
       const current = await tx.sale.findUnique({
         where: { id },
         include: { items: true },
@@ -672,9 +674,6 @@ export class SalesService {
       if (!current) {
         throw new NotFoundException('Sale not found');
       }
-      // Also guards against a double-confirm race: a second concurrent
-      // request simply 400s here once the first one has already flipped
-      // the status.
       if (current.status !== SaleStatus.DRAFT) {
         throw new BadRequestException(
           apiError(
@@ -733,14 +732,9 @@ export class SalesService {
         }
       }
 
-      await Promise.all(
-        current.items.map((line) =>
-          tx.inventoryItem.update({
-            where: { id: line.inventoryItemId },
-            data: { quantity: { decrement: line.quantity } },
-          }),
-        ),
-      );
+      for (const line of current.items) {
+        await takeStock(tx, line.inventoryItemId, line.quantity);
+      }
 
       const { number } = await this.saleNumbering.assignNumber(tx);
 
@@ -789,6 +783,9 @@ export class SalesService {
     await this.findOne(id, userWarehouseIds);
 
     const updated = await this.prisma.$transaction(async (tx) => {
+      // A concurrent cancel waits here, then reads CANCELLED and 400s:
+      // stock is restored once.
+      await lockForUpdate(tx, 'sales', id);
       const current = await tx.sale.findUnique({
         where: { id },
         include: { items: true },
@@ -817,6 +814,23 @@ export class SalesService {
           await this.permissionsService.getPermissionsForUser(userId);
         if (!perms.includes('*') && !perms.includes('sales:cancel')) {
           throw new ForbiddenException('Access denied');
+        }
+
+        // Money already received has to be returned first, on record:
+        // cancelling the payments is what documents the refund.
+        const paid = await tx.payment.aggregate({
+          where: { saleId: id, status: PaymentStatus.ACTIVE },
+          _sum: { amount: true },
+        });
+        const paidAmount = round2(paid._sum.amount ?? 0);
+        if (paidAmount > 0) {
+          throw new BadRequestException(
+            apiError(
+              'SALE_HAS_ACTIVE_PAYMENTS',
+              `Cannot cancel a sale with ${paidAmount.toFixed(2)} ${current.currency} in active payments; cancel the payments first`,
+              { amount: paidAmount.toFixed(2), currency: current.currency },
+            ),
+          );
         }
 
         // Restore stock for each item

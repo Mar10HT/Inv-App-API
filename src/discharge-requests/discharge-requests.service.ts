@@ -17,6 +17,9 @@ import {
 import { warehouseFilter } from '../common/warehouse-access/warehouse-filter.util';
 import { StockLevelService } from '../alerts/stock-level.service';
 import { apiError } from '../common/errors/api-error';
+import { lockForUpdate } from '../common/locking';
+import { takeStock } from '../inventory/stock.util';
+import { DocumentNumberingService } from '../common/numbering/document-numbering.service';
 
 @Injectable()
 export class DischargeRequestsService {
@@ -25,6 +28,7 @@ export class DischargeRequestsService {
     private auditService: AuditService,
     private qrService: QrService,
     private readonly stockLevelService: StockLevelService,
+    private readonly documentNumbering: DocumentNumberingService,
   ) {}
 
   private readonly includeLight = {
@@ -247,6 +251,23 @@ export class DischargeRequestsService {
     // Validate and decrement inventory in a single transaction to prevent race conditions
     let createdOutflowId: string | null = null;
     const updated = await this.prisma.$transaction(async (tx) => {
+      // Lock and re-check: a concurrent completion waits here, then sees
+      // COMPLETED, so stock leaves once
+      await lockForUpdate(tx, 'discharge_requests', id);
+      const fresh = await tx.dischargeRequest.findUnique({
+        where: { id },
+        select: { status: true },
+      });
+      if (fresh?.status !== DischargeRequestStatus.PENDING) {
+        throw new BadRequestException(
+          apiError(
+            'DISCHARGE_REQUEST_NOT_PENDING',
+            `Discharge request is not pending. Current status: ${fresh?.status ?? 'unknown'}`,
+            { status: fresh?.status ?? 'unknown' },
+          ),
+        );
+      }
+
       // Validate all items exist, are not soft-deleted, and have sufficient quantity
       const inventoryItems = await Promise.all(
         request.items.map((item) =>
@@ -291,26 +312,26 @@ export class DischargeRequestsService {
         }
       }
 
-      // Decrement all inventory quantities in parallel
-      await Promise.all(
-        request.items.map((item) =>
-          tx.inventoryItem.update({
-            where: { id: item.inventoryItemId },
-            data: { quantity: { decrement: item.quantity } },
-          }),
-        ),
-      );
+      // takeStock keeps a concurrent sale/outflow from taking the same units
+      for (const item of request.items) {
+        await takeStock(tx, item.inventoryItemId, item.quantity);
+      }
 
       // Approved discharges are recorded as outflows (CONSUMED) so they show up
       // in the Salidas module alongside manually-created write-offs. The stock
       // was already decremented above, so we don't go through OutflowsService.
       const outflow = await tx.outflow.create({
         data: {
-          name: `Discharge: ${request.requesterName}`,
+          number: await this.documentNumbering.assignNumber(tx, 'OUTFLOW'),
           warehouseId: request.warehouseId,
           reason: OutflowReason.CONSUMED,
           status: OutflowStatus.ACTIVE,
-          notes: request.justification ?? null,
+          notes: [
+            `Baja solicitada por ${request.requesterName}`,
+            request.justification,
+          ]
+            .filter(Boolean)
+            .join('\n'),
           createdById: resolvedById,
           items: {
             create: request.items.map((item, i) => {

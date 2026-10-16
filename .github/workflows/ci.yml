@@ -16,6 +16,22 @@ jobs:
       # schema.prisma now declares postgresql (dev moved off SQLite), so this
       # needs the matching protocol even though nothing here dials out to it.
       DATABASE_URL: "postgresql://ci:ci@localhost:5432/ci"
+    # A real database for the integration tests (row locks and conditional
+    # updates can't be checked against a mocked Prisma).
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v4
 
@@ -37,6 +53,11 @@ jobs:
 
       - name: Unit tests
         run: bun run test
+
+      - name: Integration tests (PostgreSQL)
+        run: |
+          bunx prisma db push --schema=./prisma/schema.prisma --skip-generate
+          bun run test:integration
 
       - name: Build
         run: bun run build

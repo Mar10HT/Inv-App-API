@@ -13,6 +13,7 @@ import {
   Prisma,
   type PurchaseInvoice,
   type PurchaseInvoiceItem,
+  PaymentStatus,
 } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
@@ -28,6 +29,8 @@ import { warehouseFilter } from '../common/warehouse-access/warehouse-filter.uti
 import { attachBalances } from '../common/balance/balance.util';
 import { StockLevelService } from '../alerts/stock-level.service';
 import { apiError } from '../common/errors/api-error';
+import { lockForUpdate } from '../common/locking';
+import { takeStock } from '../inventory/stock.util';
 
 // Round to 2 decimals to avoid floating point noise accumulating in totals.
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -481,6 +484,9 @@ export class PurchaseInvoicesService {
     await this.findOne(id, userWarehouseIds);
 
     const updated = await this.prisma.$transaction(async (tx) => {
+      // A concurrent cancel waits here, then reads CANCELLED and 400s:
+      // stock is taken back once.
+      await lockForUpdate(tx, 'purchase_invoices', id);
       const current = await tx.purchaseInvoice.findUnique({
         where: { id },
         include: {
@@ -518,26 +524,35 @@ export class PurchaseInvoicesService {
         );
       }
 
-      for (const item of current.items) {
-        if (item.inventoryItem.quantity < item.quantity) {
-          throw new BadRequestException(
-            apiError(
-              'PURCHASE_INVOICE_STOCK_ALREADY_USED',
-              `Cannot cancel: stock for ${item.inventoryItem.name} has already left via a later sale, outflow, or transfer`,
-              { item: item.inventoryItem.name },
-            ),
-          );
-        }
+      // Payments made to the supplier have to be reversed first, on record.
+      const paid = await tx.payment.aggregate({
+        where: { purchaseInvoiceId: id, status: PaymentStatus.ACTIVE },
+        _sum: { amount: true },
+      });
+      const paidAmount = Math.round((paid._sum.amount ?? 0) * 100) / 100;
+      if (paidAmount > 0) {
+        throw new BadRequestException(
+          apiError(
+            'PURCHASE_INVOICE_HAS_ACTIVE_PAYMENTS',
+            `Cannot cancel a purchase with ${paidAmount.toFixed(2)} ${current.currency} in active payments; cancel the payments first`,
+            { amount: paidAmount.toFixed(2), currency: current.currency },
+          ),
+        );
       }
 
-      await Promise.all(
-        current.items.map((item) =>
-          tx.inventoryItem.update({
-            where: { id: item.inventoryItemId },
-            data: { quantity: { decrement: item.quantity } },
-          }),
-        ),
-      );
+      const stockAlreadyUsed = (name: string) =>
+        new BadRequestException(
+          apiError(
+            'PURCHASE_INVOICE_STOCK_ALREADY_USED',
+            `Cannot cancel: stock for ${name} has already left via a later sale, outflow, or transfer`,
+            { item: name },
+          ),
+        );
+      for (const item of current.items) {
+        await takeStock(tx, item.inventoryItemId, item.quantity, (short) =>
+          stockAlreadyUsed(short.name),
+        );
+      }
 
       return tx.purchaseInvoice.update({
         where: { id },

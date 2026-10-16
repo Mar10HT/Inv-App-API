@@ -21,8 +21,9 @@ import {
 import { EventsService } from '../events/events.service';
 import { warehouseFilterMultiField } from '../common/warehouse-access/warehouse-filter.util';
 import { StockLevelService } from '../alerts/stock-level.service';
-import { computeInventoryStatus } from '../inventory/inventory-status';
 import { apiError } from '../common/errors/api-error';
+import { lockForUpdate } from '../common/locking';
+import { takeStock } from '../inventory/stock.util';
 
 @Injectable()
 export class TransactionsService {
@@ -208,6 +209,8 @@ export class TransactionsService {
 
   async remove(id: string) {
     await this.prisma.$transaction(async (tx) => {
+      // A concurrent delete waits here, then finds nothing: undone once
+      await lockForUpdate(tx, 'transactions', id);
       const transaction = await tx.transaction.findUnique({
         where: { id },
         include: { items: { include: { inventoryItem: true } } },
@@ -221,23 +224,23 @@ export class TransactionsService {
       const type = transaction.type as TransactionType;
       for (const line of transaction.items) {
         if (type === TransactionType.IN) {
-          if (line.inventoryItem.quantity < line.quantity) {
-            throw new BadRequestException(
-              apiError(
-                'TRANSACTION_UNDO_BELOW_ZERO',
-                `Cannot delete this entry: undoing it would take ${line.inventoryItem.name} below zero. Available: ${line.inventoryItem.quantity}, to remove: ${line.quantity}`,
-                {
-                  item: line.inventoryItem.name,
-                  available: line.inventoryItem.quantity,
-                  toRemove: line.quantity,
-                },
+          await takeStock(
+            tx,
+            line.inventoryItemId,
+            line.quantity,
+            (item) =>
+              new BadRequestException(
+                apiError(
+                  'TRANSACTION_UNDO_BELOW_ZERO',
+                  `Cannot delete this entry: undoing it would take ${item.name} below zero. Available: ${item.quantity}, to remove: ${line.quantity}`,
+                  {
+                    item: item.name,
+                    available: item.quantity,
+                    toRemove: line.quantity,
+                  },
+                ),
               ),
-            );
-          }
-          await tx.inventoryItem.update({
-            where: { id: line.inventoryItemId },
-            data: { quantity: { decrement: line.quantity } },
-          });
+          );
         } else if (type === TransactionType.OUT) {
           await tx.inventoryItem.update({
             where: { id: line.inventoryItemId },
@@ -319,48 +322,23 @@ export class TransactionsService {
     });
     const itemMap = new Map(fetchedItems.map((fi) => [fi.id, fi]));
 
+    // Relative updates only: writing back a quantity computed from the read
+    // above would erase any sale or outflow committed in between. Statuses
+    // follow through StockLevelService (create() schedules a refresh).
     for (const item of items) {
-      const currentItem = itemMap.get(item.inventoryItemId);
+      if (!itemMap.has(item.inventoryItemId)) continue;
 
-      if (!currentItem) continue;
-
-      let newQuantity = currentItem.quantity;
-
-      // Update quantity based on transaction type
       if (type === TransactionType.IN) {
-        newQuantity += item.quantity;
+        await tx.inventoryItem.update({
+          where: { id: item.inventoryItemId },
+          data: { quantity: { increment: item.quantity } },
+        });
       } else if (type === TransactionType.OUT) {
-        // Reject instead of clamping at zero: a clamped OUT could not be
+        // Rejects instead of clamping at zero: a clamped OUT could not be
         // undone exactly when the transaction is deleted.
-        if (item.quantity > currentItem.quantity) {
-          throw new BadRequestException(
-            apiError(
-              'INSUFFICIENT_STOCK',
-              `Insufficient quantity for item ${currentItem.name}. Available: ${currentItem.quantity}, Requested: ${item.quantity}`,
-              {
-                item: currentItem.name,
-                available: currentItem.quantity,
-                requested: item.quantity,
-              },
-            ),
-          );
-        }
-        newQuantity -= item.quantity;
+        await takeStock(tx, item.inventoryItemId, item.quantity);
       }
       // TRANSFER doesn't change total quantity, just location
-
-      const newStatus = computeInventoryStatus({
-        ...currentItem,
-        quantity: newQuantity,
-      });
-
-      await tx.inventoryItem.update({
-        where: { id: item.inventoryItemId },
-        data: {
-          quantity: newQuantity,
-          status: newStatus,
-        },
-      });
     }
   }
 }

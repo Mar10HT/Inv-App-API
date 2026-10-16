@@ -24,6 +24,8 @@ import { warehouseFilter } from '../common/warehouse-access/warehouse-filter.uti
 import { StockLevelService } from '../alerts/stock-level.service';
 import { DocumentNumberingService } from '../common/numbering/document-numbering.service';
 import { apiError } from '../common/errors/api-error';
+import { lockForUpdate } from '../common/locking';
+import { takeStock } from '../inventory/stock.util';
 
 interface OutflowItemSeed {
   inventoryItemId: string;
@@ -210,14 +212,11 @@ export class OutflowsService {
         }
       }
 
-      await Promise.all(
-        args.items.map((line) =>
-          tx.inventoryItem.update({
-            where: { id: line.inventoryItemId },
-            data: { quantity: { decrement: line.quantity } },
-          }),
-        ),
-      );
+      // The check above gives the friendly error; takeStock is what keeps two
+      // concurrent outflows/sales from taking the same last units.
+      for (const line of args.items) {
+        await takeStock(tx, line.inventoryItemId, line.quantity);
+      }
 
       return tx.outflow.create({
         data: {
@@ -315,6 +314,8 @@ export class OutflowsService {
     await this.findOne(id, userWarehouseIds);
 
     const updated = await this.prisma.$transaction(async (tx) => {
+      // A concurrent cancel waits here, then reads CANCELLED: stock is restored once
+      await lockForUpdate(tx, 'outflows', id);
       const current = await tx.outflow.findUnique({
         where: { id },
         include: { items: true },

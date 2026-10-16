@@ -18,6 +18,8 @@ import { warehouseFilterMultiField } from '../common/warehouse-access/warehouse-
 import { StockLevelService } from '../alerts/stock-level.service';
 import { DocumentNumberingService } from '../common/numbering/document-numbering.service';
 import { apiError } from '../common/errors/api-error';
+import { lockForUpdate } from '../common/locking';
+import { takeStock } from '../inventory/stock.util';
 
 @Injectable()
 export class TransferRequestsService {
@@ -253,6 +255,7 @@ export class TransferRequestsService {
 
     // Wrap status check, quantity validation, and update in a single transaction to prevent TOCTOU races
     const updated = await this.prisma.$transaction(async (tx) => {
+      await lockForUpdate(tx, 'transfer_requests', id);
       const current = await tx.transferRequest.findUnique({
         where: { id },
         include: { items: { include: { inventoryItem: true } } },
@@ -406,7 +409,9 @@ export class TransferRequestsService {
     // NOTE [M3]: Promise.all inside $transaction is safe on SQLite (dev) but can cause
     // serialization conflicts on PostgreSQL under high concurrency. See comments in complete().
     const updated = await this.prisma.$transaction(async (tx) => {
-      // Re-check status inside the transaction to prevent double-confirmation under concurrency
+      // Lock, then re-check the status: a concurrent confirmation waits here
+      // and then sees COMPLETED, so stock moves once
+      await lockForUpdate(tx, 'transfer_requests', request.id);
       const current = await tx.transferRequest.findUnique({
         where: { id: request.id },
         select: { status: true },
@@ -513,6 +518,7 @@ export class TransferRequestsService {
 
     // Wrap status check and update in a single transaction to prevent TOCTOU races
     const updated = await this.prisma.$transaction(async (tx) => {
+      await lockForUpdate(tx, 'transfer_requests', id);
       const current = await tx.transferRequest.findUnique({
         where: { id },
         select: { status: true },
@@ -581,7 +587,9 @@ export class TransferRequestsService {
     // issue in production, switch to sequential awaits or add a Serializable isolation
     // level (requires PostgreSQL — cannot be set in dev SQLite schema).
     const updated = await this.prisma.$transaction(async (tx) => {
-      // Re-check status inside the transaction to prevent double-confirmation under concurrency
+      // Lock, then re-check the status: a concurrent confirmation waits here
+      // and then sees COMPLETED, so stock moves once
+      await lockForUpdate(tx, 'transfer_requests', id);
       const current = await tx.transferRequest.findUnique({
         where: { id },
         select: { status: true },
@@ -646,35 +654,10 @@ export class TransferRequestsService {
     },
     receivedById: string,
   ) {
-    // Re-validate quantities inside the transaction to prevent negative stock
-    // in case another operation decremented inventory since the request was approved.
+    // Take the units from the source atomically (takeStock): a concurrent
+    // sale or transfer of the same units can't leave the stock negative.
     for (const item of request.items) {
-      const currentItem = await tx.inventoryItem.findUnique({
-        where: { id: item.inventoryItemId },
-      });
-      if (!currentItem || currentItem.quantity < item.quantity) {
-        throw new BadRequestException(
-          apiError(
-            'INSUFFICIENT_STOCK',
-            `Insufficient quantity for item: ${item.inventoryItem.name}. Available: ${currentItem?.quantity ?? 0}, Required: ${item.quantity}`,
-            {
-              item: item.inventoryItem.name,
-              available: currentItem?.quantity ?? 0,
-              requested: item.quantity,
-            },
-          ),
-        );
-      }
-    }
-
-    // Decrement source quantities sequentially — same reason as destination below:
-    // parallel decrements on the same item under READ COMMITTED (PostgreSQL default)
-    // can produce negative stock if two transactions read before either writes.
-    for (const item of request.items) {
-      await tx.inventoryItem.update({
-        where: { id: item.inventoryItemId },
-        data: { quantity: { decrement: item.quantity } },
-      });
+      await takeStock(tx, item.inventoryItemId, item.quantity);
     }
 
     // Find and update/create destination items sequentially to prevent concurrent transactions
@@ -747,6 +730,7 @@ export class TransferRequestsService {
 
     // Wrap status check and update in a single transaction to prevent TOCTOU races
     const updated = await this.prisma.$transaction(async (tx) => {
+      await lockForUpdate(tx, 'transfer_requests', id);
       const current = await tx.transferRequest.findUnique({
         where: { id },
         select: { status: true },

@@ -69,6 +69,12 @@ describe('OutflowsService', () => {
 
   beforeEach(async () => {
     prisma = mockDeep<PrismaService>();
+    // takeStock: the conditional decrement finds the units by default
+    prisma.inventoryItem.updateMany.mockResolvedValue({ count: 1 });
+    // No payments on the document unless a test says otherwise
+    prisma.payment.aggregate.mockResolvedValue({
+      _sum: { amount: null },
+    } as never);
     prisma.$transaction.mockImplementation(((
       cb: (tx: DeepMockProxy<PrismaService>) => unknown,
     ) => cb(prisma)) as never);
@@ -118,8 +124,8 @@ describe('OutflowsService', () => {
       // at runtime, but their static type doesn't carry that through cleanly
       // enough for this rule to recognize them as safe to reference unbound.
       // eslint-disable-next-line @typescript-eslint/unbound-method
-      expect(prisma.inventoryItem.update).toHaveBeenCalledWith({
-        where: { id: 'item-1' },
+      expect(prisma.inventoryItem.updateMany).toHaveBeenCalledWith({
+        where: { id: 'item-1', deletedAt: null, quantity: { gte: 2 } },
         data: { quantity: { decrement: 2 } },
       });
     });

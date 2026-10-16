@@ -61,6 +61,12 @@ describe('TransactionsService', () => {
 
   beforeEach(async () => {
     prisma = mockDeep<PrismaService>();
+    // takeStock: the conditional decrement finds the units by default
+    prisma.inventoryItem.updateMany.mockResolvedValue({ count: 1 });
+    // No payments on the document unless a test says otherwise
+    prisma.payment.aggregate.mockResolvedValue({
+      _sum: { amount: null },
+    } as never);
     stockLevel = { scheduleRefresh: jest.fn() };
     prisma.inventoryItem.findMany.mockResolvedValue([mockInventoryItem]);
     prisma.$transaction.mockImplementation(((
@@ -149,6 +155,13 @@ describe('TransactionsService', () => {
       prisma.inventoryItem.findMany.mockResolvedValue([
         { ...mockInventoryItem, quantity: 5 },
       ]);
+      // The conditional decrement finds fewer units than asked for
+      prisma.inventoryItem.updateMany.mockResolvedValue({ count: 0 });
+      prisma.inventoryItem.findFirst.mockResolvedValue({
+        id: 'item-123',
+        name: 'Test Item',
+        quantity: 5,
+      } as never);
       prisma.transaction.create.mockResolvedValue(mockTransaction);
 
       const result = service.create({
@@ -298,8 +311,8 @@ describe('TransactionsService', () => {
       await service.remove('transaction-123');
 
       // eslint-disable-next-line @typescript-eslint/unbound-method
-      expect(prisma.inventoryItem.update).toHaveBeenCalledWith({
-        where: { id: 'item-123' },
+      expect(prisma.inventoryItem.updateMany).toHaveBeenCalledWith({
+        where: { id: 'item-123', deletedAt: null, quantity: { gte: 10 } },
         data: { quantity: { decrement: 10 } },
       });
       // eslint-disable-next-line @typescript-eslint/unbound-method
@@ -333,6 +346,13 @@ describe('TransactionsService', () => {
 
     it('refuses to delete an entry whose stock was already used, instead of going negative', async () => {
       prisma.transaction.findUnique.mockResolvedValue(withLine('IN', 4));
+      // The conditional decrement finds fewer units than asked for
+      prisma.inventoryItem.updateMany.mockResolvedValue({ count: 0 });
+      prisma.inventoryItem.findFirst.mockResolvedValue({
+        id: 'item-123',
+        name: 'Test Item',
+        quantity: 4,
+      } as never);
 
       const result = service.remove('transaction-123');
       await expect(result).rejects.toThrow(BadRequestException);
