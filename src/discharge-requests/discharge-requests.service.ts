@@ -14,7 +14,10 @@ import {
   OutflowStatus,
   Prisma,
 } from '@prisma/client';
-import { warehouseFilter } from '../common/warehouse-access/warehouse-filter.util';
+import {
+  warehouseFilter,
+  selectedWarehouseFilter,
+} from '../common/warehouse-access/warehouse-filter.util';
 import { StockLevelService } from '../alerts/stock-level.service';
 import { apiError } from '../common/errors/api-error';
 import { lockForUpdate } from '../common/locking';
@@ -189,9 +192,8 @@ export class DischargeRequestsService {
     const skip = (page - 1) * limit;
 
     const where: Prisma.DischargeRequestWhereInput = {
-      ...warehouseFilter(warehouseIds),
+      ...selectedWarehouseFilter(warehouseIds, filters.warehouseId),
       ...(filters.status ? { status: filters.status } : {}),
-      ...(filters.warehouseId ? { warehouseId: filters.warehouseId } : {}),
     };
 
     const [requests, total] = await Promise.all([

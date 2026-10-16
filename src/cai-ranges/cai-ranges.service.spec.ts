@@ -77,7 +77,7 @@ describe('CaiRangesService', () => {
       });
     });
 
-    it('expands a date-only expiresAt to a full ISO datetime for Prisma', async () => {
+    it('reads a date-only expiresAt as the end of that day in Honduras', async () => {
       prisma.caiRange.create.mockResolvedValue(mockRange);
 
       await service.create({
@@ -93,7 +93,7 @@ describe('CaiRangesService', () => {
       expect(prisma.caiRange.create).toHaveBeenCalledWith({
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         data: expect.objectContaining({
-          expiresAt: '2027-06-30T00:00:00.000Z',
+          expiresAt: '2027-07-01T05:59:59.999Z',
         }),
       });
     });
@@ -172,6 +172,7 @@ describe('CaiRangesService', () => {
     });
 
     it('rejects rangeEnd <= rangeStart when both are provided together', async () => {
+      prisma.caiRange.findUnique.mockResolvedValue(mockRange);
       await expect(
         service.update(mockRange.id, { rangeStart: 500, rangeEnd: 100 }),
       ).rejects.toThrow(BadRequestException);
@@ -180,7 +181,77 @@ describe('CaiRangesService', () => {
       expect(prisma.caiRange.update).not.toHaveBeenCalled();
     });
 
-    it('expands a date-only expiresAt to a full ISO datetime for Prisma', async () => {
+    it('checks a lone rangeEnd against the stored rangeStart', async () => {
+      prisma.caiRange.findUnique.mockResolvedValue({
+        ...mockRange,
+        rangeStart: 500,
+        currentNumber: 500,
+      });
+
+      await expect(
+        service.update(mockRange.id, { rangeEnd: 100 }),
+      ).rejects.toMatchObject({ response: { code: 'CAI_RANGE_INVALID' } });
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(prisma.caiRange.update).not.toHaveBeenCalled();
+    });
+
+    it('rejects a rangeEnd below the last number already issued', async () => {
+      prisma.caiRange.findUnique.mockResolvedValue({
+        ...mockRange,
+        currentNumber: 51,
+      });
+
+      await expect(
+        service.update(mockRange.id, { rangeEnd: 49 }),
+      ).rejects.toMatchObject({
+        response: {
+          code: 'CAI_RANGE_BELOW_ISSUED',
+          params: { lastIssued: 50 },
+        },
+      });
+    });
+
+    it('lets rangeEnd stop exactly at the last number issued', async () => {
+      prisma.caiRange.findUnique.mockResolvedValue({
+        ...mockRange,
+        currentNumber: 51,
+      });
+      prisma.caiRange.update.mockResolvedValue(mockRange);
+
+      await service.update(mockRange.id, { rangeEnd: 50 });
+
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(prisma.caiRange.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: { rangeEnd: 50 } }),
+      );
+    });
+
+    it('rejects moving rangeStart once numbers were issued', async () => {
+      prisma.caiRange.findUnique.mockResolvedValue({
+        ...mockRange,
+        currentNumber: 2,
+      });
+
+      await expect(
+        service.update(mockRange.id, { rangeStart: 10 }),
+      ).rejects.toMatchObject({ response: { code: 'CAI_RANGE_IN_USE' } });
+    });
+
+    it('moves the next number along with rangeStart while nothing was issued', async () => {
+      prisma.caiRange.findUnique.mockResolvedValue(mockRange);
+      prisma.caiRange.update.mockResolvedValue(mockRange);
+
+      await service.update(mockRange.id, { rangeStart: 10 });
+
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(prisma.caiRange.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: { rangeStart: 10, currentNumber: 10 },
+        }),
+      );
+    });
+
+    it('reads a date-only expiresAt as the end of that day in Honduras', async () => {
       prisma.caiRange.findUnique.mockResolvedValue(mockRange);
       prisma.caiRange.update.mockResolvedValue(mockRange);
 
@@ -189,7 +260,7 @@ describe('CaiRangesService', () => {
       // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(prisma.caiRange.update).toHaveBeenCalledWith(
         expect.objectContaining({
-          data: { expiresAt: '2027-06-30T00:00:00.000Z' },
+          data: { expiresAt: '2027-07-01T05:59:59.999Z' },
         }),
       );
     });

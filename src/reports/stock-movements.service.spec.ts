@@ -25,7 +25,6 @@ describe('StockMovementsService', () => {
       prisma.outflow,
       prisma.transferRequest,
       prisma.stockTake,
-      prisma.dischargeRequest,
     ]) {
       (model.findMany as jest.Mock).mockResolvedValue([]);
     }
@@ -181,7 +180,7 @@ describe('StockMovementsService', () => {
     ]);
   });
 
-  it('only asks for stock takes whose counts were applied, and only completed transfers and discharges', async () => {
+  it('only asks for stock takes whose counts were applied, and only completed transfers', async () => {
     await service.findAll(null);
 
     // eslint-disable-next-line @typescript-eslint/unbound-method
@@ -196,10 +195,17 @@ describe('StockMovementsService', () => {
         where: expect.objectContaining({ status: 'COMPLETED' }) as unknown,
       }),
     );
+  });
+
+  it('leaves out quotations that were cancelled before being confirmed', async () => {
+    await service.findAll(null);
+
     // eslint-disable-next-line @typescript-eslint/unbound-method
-    expect(prisma.dischargeRequest.findMany).toHaveBeenCalledWith(
+    expect(prisma.sale.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: expect.objectContaining({ status: 'COMPLETED' }) as unknown,
+        where: expect.objectContaining({
+          NOT: { confirmedAt: null, quoteNumber: { not: null } },
+        }) as unknown,
       }),
     );
   });
@@ -231,13 +237,16 @@ describe('StockMovementsService', () => {
         items: [line(2)],
       },
     ] as never);
-    prisma.dischargeRequest.findMany.mockResolvedValue([
+    prisma.outflow.findMany.mockResolvedValue([
       {
-        id: 'd1',
-        resolvedAt: day(3),
-        updatedAt: day(3),
+        id: 'o1',
+        number: 'SAL-0001',
+        notes: null,
+        createdAt: day(3),
+        cancelledAt: null,
         warehouse: wh('a'),
-        resolvedBy: ana,
+        createdBy: ana,
+        cancelledBy: null,
         items: [line(1)],
       },
     ] as never);
@@ -246,7 +255,7 @@ describe('StockMovementsService', () => {
 
     expect(movements.map((m) => m.id)).toEqual([
       'TRANSFER:tr1',
-      'DISCHARGE:d1',
+      'OUTFLOW:o1',
       'TRANSACTION:t1',
     ]);
   });

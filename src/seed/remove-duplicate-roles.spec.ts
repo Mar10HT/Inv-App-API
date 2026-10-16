@@ -35,10 +35,12 @@ describe('removeDuplicateRoles', () => {
     });
   });
 
-  it('keeps custom roles and copies whose system role does not exist yet', async () => {
+  it('keeps custom roles, including ones only differing in case, and copies whose system role does not exist yet', async () => {
     const prisma = setup([
       { id: 'c', name: 'CAJERO' },
       { id: 'v', name: 'viewer' },
+      { id: 'sys-user', name: 'USER' },
+      { id: 'mine', name: 'User' },
     ]);
 
     const deleted = await removeDuplicateRoles(prisma as never);

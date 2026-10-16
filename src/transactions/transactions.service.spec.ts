@@ -305,6 +305,27 @@ describe('TransactionsService', () => {
         ],
       }) as unknown as Transaction;
 
+    it('refuses to undo a transaction from a warehouse the user cannot see', async () => {
+      prisma.transaction.findUnique.mockResolvedValue(withLine('IN', 100));
+
+      await expect(
+        service.remove('transaction-123', ['other-warehouse']),
+      ).rejects.toThrow(NotFoundException);
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(prisma.inventoryItem.updateMany).not.toHaveBeenCalled();
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(prisma.transaction.delete).not.toHaveBeenCalled();
+    });
+
+    it('lets a user undo a transaction into one of their warehouses', async () => {
+      prisma.transaction.findUnique.mockResolvedValue(withLine('IN', 100));
+
+      await service.remove('transaction-123', ['warehouse-123']);
+
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(prisma.transaction.delete).toHaveBeenCalled();
+    });
+
     it('takes an entry (IN) back out of stock before deleting it', async () => {
       prisma.transaction.findUnique.mockResolvedValue(withLine('IN', 100));
 

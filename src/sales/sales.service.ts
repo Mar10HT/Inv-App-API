@@ -26,7 +26,10 @@ import {
   buildPaginationMeta,
   parseSortOrder,
 } from '../common/dto';
-import { warehouseFilter } from '../common/warehouse-access/warehouse-filter.util';
+import {
+  warehouseFilter,
+  selectedWarehouseFilter,
+} from '../common/warehouse-access/warehouse-filter.util';
 import { StockLevelService } from '../alerts/stock-level.service';
 import { DocumentNumberingService } from '../common/numbering/document-numbering.service';
 import { apiError } from '../common/errors/api-error';
@@ -110,6 +113,7 @@ export class SalesService {
       clientId: string | null;
       paymentCondition: PaymentCondition;
       amount: number;
+      currency: string;
       excludeSaleId?: string;
     },
   ): Promise<void> {
@@ -118,17 +122,37 @@ export class SalesService {
     }
 
     const [client] = await tx.$queryRaw<
-      { id: string; creditLimit: number | null }[]
+      {
+        id: string;
+        creditLimit: number | null;
+        creditLimitCurrency: string;
+      }[]
     >(Prisma.sql`
-      SELECT "id","creditLimit" FROM "clients" WHERE "id" = ${args.clientId} FOR UPDATE
+      SELECT "id","creditLimit","creditLimitCurrency" FROM "clients" WHERE "id" = ${args.clientId} FOR UPDATE
     `);
     if (client?.creditLimit == null) return;
+
+    // HNL and USD can't be added up: the limit only covers sales in its own
+    // currency, and a credit sale in another one is refused while it's set.
+    if (args.currency !== client.creditLimitCurrency) {
+      throw new BadRequestException(
+        apiError(
+          'CREDIT_LIMIT_CURRENCY_MISMATCH',
+          `This client's credit limit is in ${client.creditLimitCurrency}; a credit sale in ${args.currency} can't be checked against it`,
+          {
+            limitCurrency: client.creditLimitCurrency,
+            saleCurrency: args.currency,
+          },
+        ),
+      );
+    }
 
     const openSales = await tx.sale.findMany({
       where: {
         clientId: args.clientId,
         status: SaleStatus.ACTIVE,
         paymentCondition: PaymentCondition.CREDIT,
+        currency: client.creditLimitCurrency,
         ...(args.excludeSaleId ? { id: { not: args.excludeSaleId } } : {}),
       },
       select: { id: true, totalAmount: true, taxAmount: true },
@@ -153,8 +177,12 @@ export class SalesService {
       throw new BadRequestException(
         apiError(
           'CREDIT_LIMIT_EXCEEDED',
-          `This sale would exceed the client's credit limit (${client.creditLimit}). Outstanding + this sale: ${projected}`,
-          { creditLimit: client.creditLimit, projected },
+          `This sale would exceed the client's credit limit (${client.creditLimit} ${client.creditLimitCurrency}). Outstanding + this sale: ${projected}`,
+          {
+            creditLimit: client.creditLimit,
+            projected,
+            currency: client.creditLimitCurrency,
+          },
         ),
       );
     }
@@ -353,6 +381,7 @@ export class SalesService {
         clientId: args.clientId ?? null,
         paymentCondition: args.paymentCondition,
         amount: round2(args.totalAmount + args.taxAmount),
+        currency: args.currency,
       });
 
       const currentItems = await tx.inventoryItem.findMany({
@@ -440,12 +469,14 @@ export class SalesService {
   }
 
   async findAll(filters: FilterSaleDto, userWarehouseIds?: string[] | null) {
-    const wFilter = warehouseFilter(userWarehouseIds);
+    const wFilter = selectedWarehouseFilter(
+      userWarehouseIds,
+      filters.warehouseId,
+    );
     const where: Prisma.SaleWhereInput = {
       ...wFilter,
       ...(filters.status ? { status: filters.status } : {}),
       ...(filters.customerType ? { customerType: filters.customerType } : {}),
-      ...(filters.warehouseId ? { warehouseId: filters.warehouseId } : {}),
     };
 
     const { page, limit, skip } = parsePagination(filters);
@@ -518,7 +549,18 @@ export class SalesService {
   ): Promise<Sale & { items: SaleItem[] }> {
     await this.findOne(id, userWarehouseIds);
 
+    // Moving a quotation to another warehouse needs access to that one too
+    if (
+      dto.warehouseId &&
+      userWarehouseIds != null &&
+      !userWarehouseIds.includes(dto.warehouseId)
+    ) {
+      throw new ForbiddenException('You do not have access to this warehouse');
+    }
+
     const updated = await this.prisma.$transaction(async (tx) => {
+      // Serializes an edit with a concurrent confirm of the same quotation
+      await lockForUpdate(tx, 'sales', id);
       const current = await tx.sale.findUnique({
         where: { id },
         include: { items: true },
@@ -587,6 +629,26 @@ export class SalesService {
           };
         });
       } else {
+        // Same lines in a new warehouse: they have to be stocked there too,
+        // or confirming would take units from the old warehouse
+        if (targetWarehouseId !== current.warehouseId) {
+          const items = await tx.inventoryItem.findMany({
+            where: { id: { in: current.items.map((i) => i.inventoryItemId) } },
+            select: { id: true, warehouseId: true },
+          });
+          const elsewhere = items.find(
+            (i) => i.warehouseId !== targetWarehouseId,
+          );
+          if (elsewhere) {
+            throw new BadRequestException(
+              apiError(
+                'ITEM_NOT_IN_WAREHOUSE',
+                `Item ${elsewhere.id} does not belong to the selected warehouse`,
+                { item: elsewhere.id },
+              ),
+            );
+          }
+        }
         lineSeeds = current.items.map((item) => ({
           inventoryItemId: item.inventoryItemId,
           quantity: item.quantity,
@@ -614,6 +676,13 @@ export class SalesService {
               ? dto.customerName?.trim() || null
               : current.customerName,
           customerType: dto.customerType ?? current.customerType,
+          // Absent keeps the current value; null (sent by the form when it is
+          // cleared, e.g. switching to a walk-in customer) removes it
+          clientId:
+            dto.clientId !== undefined
+              ? dto.clientId || null
+              : current.clientId,
+          paymentCondition: dto.paymentCondition ?? current.paymentCondition,
           currency: targetCurrency,
           notes: dto.notes !== undefined ? (dto.notes ?? null) : current.notes,
           taxPercent: targetTaxPercent,
@@ -696,6 +765,7 @@ export class SalesService {
         clientId: current.clientId,
         paymentCondition: current.paymentCondition,
         amount: round2(totalAmount + taxAmount),
+        currency: current.currency,
         excludeSaleId: current.id,
       });
 

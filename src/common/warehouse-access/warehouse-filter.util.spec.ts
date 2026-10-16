@@ -1,4 +1,6 @@
+import { ForbiddenException } from '@nestjs/common';
 import {
+  selectedWarehouseFilter,
   warehouseFilter,
   warehouseFilterMultiField,
 } from './warehouse-filter.util';
@@ -68,5 +70,32 @@ describe('warehouseFilterMultiField', () => {
     expect(result).toEqual({
       OR: [{ warehouseId: { in: ['wh-1'] } }],
     });
+  });
+});
+
+describe('selectedWarehouseFilter', () => {
+  it('narrows the access list to the warehouse picked in the filter', () => {
+    expect(selectedWarehouseFilter(['w1', 'w2'], 'w2')).toEqual({
+      warehouseId: { in: ['w2'] },
+    });
+  });
+
+  it('keeps the whole access list when nothing is picked', () => {
+    expect(selectedWarehouseFilter(['w1', 'w2'])).toEqual({
+      warehouseId: { in: ['w1', 'w2'] },
+    });
+  });
+
+  it('refuses a picked warehouse outside the access list', () => {
+    expect(() => selectedWarehouseFilter(['w1'], 'w2')).toThrow(
+      ForbiddenException,
+    );
+  });
+
+  it('lets an unrestricted user pick any warehouse', () => {
+    expect(selectedWarehouseFilter(null, 'w9')).toEqual({
+      warehouseId: { in: ['w9'] },
+    });
+    expect(selectedWarehouseFilter(undefined)).toEqual({});
   });
 });

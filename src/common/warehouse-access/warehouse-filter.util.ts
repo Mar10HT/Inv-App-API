@@ -1,3 +1,5 @@
+import { ForbiddenException } from '@nestjs/common';
+
 /**
  * Generates Prisma where clause for warehouse-based filtering.
  * Returns empty object if warehouseIds is null (unrestricted access).
@@ -44,4 +46,24 @@ export function resolveWarehouseScope(
     throw new Error('FORBIDDEN_WAREHOUSE');
   }
   return [selectedWarehouseId];
+}
+
+/**
+ * warehouseFilter for the warehouses a user can see, narrowed to the one they
+ * picked in a list filter. Spreading `{ warehouseId: picked }` after
+ * warehouseFilter() would replace the access restriction instead of narrowing
+ * it, so a user limited to W1 could list W2 by asking for it; a warehouse
+ * outside their access is refused here instead.
+ */
+export function selectedWarehouseFilter(
+  userWarehouseIds: string[] | null | undefined,
+  selectedWarehouseId?: string | null,
+): Record<string, any> {
+  try {
+    return warehouseFilter(
+      resolveWarehouseScope(userWarehouseIds ?? null, selectedWarehouseId),
+    );
+  } catch {
+    throw new ForbiddenException('You do not have access to this warehouse');
+  }
 }

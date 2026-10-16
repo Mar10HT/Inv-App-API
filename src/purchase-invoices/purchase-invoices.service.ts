@@ -25,7 +25,10 @@ import {
   buildPaginationMeta,
   parseSortOrder,
 } from '../common/dto';
-import { warehouseFilter } from '../common/warehouse-access/warehouse-filter.util';
+import {
+  warehouseFilter,
+  selectedWarehouseFilter,
+} from '../common/warehouse-access/warehouse-filter.util';
 import { attachBalances } from '../common/balance/balance.util';
 import { StockLevelService } from '../alerts/stock-level.service';
 import { apiError } from '../common/errors/api-error';
@@ -394,11 +397,13 @@ export class PurchaseInvoicesService {
     filters: FilterPurchaseInvoiceDto,
     userWarehouseIds?: string[] | null,
   ) {
-    const wFilter = warehouseFilter(userWarehouseIds);
+    const wFilter = selectedWarehouseFilter(
+      userWarehouseIds,
+      filters.warehouseId,
+    );
     const where: Prisma.PurchaseInvoiceWhereInput = {
       ...wFilter,
       ...(filters.status ? { status: filters.status } : {}),
-      ...(filters.warehouseId ? { warehouseId: filters.warehouseId } : {}),
       ...(filters.supplierId ? { supplierId: filters.supplierId } : {}),
     };
 

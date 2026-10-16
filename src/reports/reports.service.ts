@@ -5,6 +5,7 @@ import { FilterInventoryDto } from '../inventory/dto/filter-inventory.dto';
 import {
   warehouseFilter,
   warehouseFilterMultiField,
+  selectedWarehouseFilter,
 } from '../common/warehouse-access/warehouse-filter.util';
 import type ExcelJSType from 'exceljs';
 
@@ -350,10 +351,9 @@ export class ReportsService {
 
     const where: Prisma.InventoryItemWhereInput = {
       deletedAt: null,
-      ...warehouseFilter(warehouseIds),
+      ...selectedWarehouseFilter(warehouseIds, filters?.warehouseId),
       ...(filters?.category ? { category: filters.category } : {}),
       ...(filters?.status ? { status: filters.status } : {}),
-      ...(filters?.warehouseId ? { warehouseId: filters.warehouseId } : {}),
     };
 
     const items = await this.prisma.inventoryItem.findMany({

@@ -1,6 +1,15 @@
 import type { PrismaClient } from '@prisma/client';
 import { INITIAL_ROLES } from '../common/constants';
 
+// The exact names scripts/seed-data.ts used. Only these are copies; a role an
+// admin named "User" or "Viewer" on purpose is theirs and stays.
+const LEGACY_SEED_NAMES = new Set([
+  'warehouse_manager',
+  'user',
+  'viewer',
+  'external',
+]);
+
 type RolesClient = Pick<PrismaClient, 'role' | 'user' | 'userWarehouse'>;
 
 /**
@@ -24,7 +33,7 @@ export async function removeDuplicateRoles(
 
   const deleted: string[] = [];
   for (const role of roles) {
-    if (canonicalNames.has(role.name)) continue;
+    if (!LEGACY_SEED_NAMES.has(role.name)) continue;
     const canonical = canonicalByName.get(role.name.toUpperCase());
     if (!canonical) continue;
 

@@ -17,8 +17,10 @@ import type { AuthenticatedUser } from '../auth/interfaces/auth-user.interface';
 export class FiscalConfigController {
   constructor(private readonly fiscalConfigService: FiscalConfigService) {}
 
+  // Whoever writes sales or purchases needs the default tax rate to prefill
+  // the form, so reading it isn't limited to the settings screen.
   @Get()
-  @Permissions('settings:view')
+  @Permissions('settings:view', 'sales:create', 'purchases:create')
   get() {
     return this.fiscalConfigService.get();
   }

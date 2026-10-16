@@ -1176,6 +1176,10 @@ model Client {
   // Credit limit (Phase 5): only CREDIT sales with an outstanding balance
   // count toward it. Null means unrestricted credit.
   creditLimit      Float?
+  // Currency the credit limit is in. Only CREDIT sales in this currency count
+  // toward it; a CREDIT sale in another currency is refused while a limit is
+  // set (amounts in HNL and USD can't be added up).
+  creditLimitCurrency Currency     @default(HNL)
   isActive         Boolean          @default(true)
   createdAt        DateTime         @default(now())
   updatedAt        DateTime         @updatedAt

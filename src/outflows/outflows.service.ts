@@ -20,7 +20,10 @@ import {
   buildPaginationMeta,
   parseSortOrder,
 } from '../common/dto';
-import { warehouseFilter } from '../common/warehouse-access/warehouse-filter.util';
+import {
+  warehouseFilter,
+  selectedWarehouseFilter,
+} from '../common/warehouse-access/warehouse-filter.util';
 import { StockLevelService } from '../alerts/stock-level.service';
 import { DocumentNumberingService } from '../common/numbering/document-numbering.service';
 import { apiError } from '../common/errors/api-error';
@@ -265,12 +268,14 @@ export class OutflowsService {
   async findAll(filters: FilterOutflowDto, userWarehouseIds?: string[] | null) {
     const { page, limit, skip } = parsePagination(filters);
 
-    const wFilter = warehouseFilter(userWarehouseIds);
+    const wFilter = selectedWarehouseFilter(
+      userWarehouseIds,
+      filters.warehouseId,
+    );
     const where: Prisma.OutflowWhereInput = {
       ...wFilter,
       ...(filters.status ? { status: filters.status } : {}),
       ...(filters.reason ? { reason: filters.reason } : {}),
-      ...(filters.warehouseId ? { warehouseId: filters.warehouseId } : {}),
     };
 
     const [data, total] = await Promise.all([

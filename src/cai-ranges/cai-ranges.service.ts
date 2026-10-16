@@ -5,7 +5,7 @@ import { AuditService } from '../audit/audit.service';
 import { BaseRepository, BaseRepositoryOptions } from '../common/repository';
 import { CreateCaiRangeDto } from './dto/create-cai-range.dto';
 import { UpdateCaiRangeDto } from './dto/update-cai-range.dto';
-import { toIsoDateTime } from '../common/utils/date.util';
+import { toEndOfBusinessDay } from '../common/utils/date.util';
 import { apiError } from '../common/errors/api-error';
 
 @Injectable()
@@ -58,7 +58,7 @@ export class CaiRangesService extends BaseRepository<
     }
     const data: CreateCaiRangeDto & { currentNumber: number } = {
       ...dto,
-      expiresAt: toIsoDateTime(dto.expiresAt),
+      expiresAt: toEndOfBusinessDay(dto.expiresAt),
       currentNumber: dto.rangeStart,
     };
     return super.create(data, userId);
@@ -69,13 +69,44 @@ export class CaiRangesService extends BaseRepository<
     dto: UpdateCaiRangeDto,
     userId?: string,
   ): Promise<CaiRange> {
-    this.assertValidRange(dto.rangeStart, dto.rangeEnd);
+    const current = await this.findOne(id);
+    const rangeStart = dto.rangeStart ?? current.rangeStart;
+    const rangeEnd = dto.rangeEnd ?? current.rangeEnd;
+    this.assertValidRange(rangeStart, rangeEnd);
+    // currentNumber is the next number to issue, so everything below it is
+    // already printed on a sale: the start can't move once one was issued,
+    // and the end can't drop below the last one issued.
+    const issued = current.currentNumber > current.rangeStart;
+    if (issued && rangeStart !== current.rangeStart) {
+      throw new BadRequestException(
+        apiError(
+          'CAI_RANGE_IN_USE',
+          'rangeStart cannot change once numbers were issued',
+        ),
+      );
+    }
+    if (rangeEnd < current.currentNumber - 1) {
+      throw new BadRequestException(
+        apiError(
+          'CAI_RANGE_BELOW_ISSUED',
+          'rangeEnd cannot be below the last issued number',
+          { lastIssued: current.currentNumber - 1 },
+        ),
+      );
+    }
     if (dto.isActive) {
       await this.deactivateOthers(id);
     }
     return super.update(
       id,
-      dto.expiresAt ? { ...dto, expiresAt: toIsoDateTime(dto.expiresAt) } : dto,
+      {
+        ...dto,
+        ...(dto.expiresAt && {
+          expiresAt: toEndOfBusinessDay(dto.expiresAt),
+        }),
+        ...(!issued &&
+          dto.rangeStart !== undefined && { currentNumber: dto.rangeStart }),
+      },
       userId,
     );
   }

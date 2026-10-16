@@ -146,7 +146,32 @@ export class TransactionsService {
     });
   }
 
-  async findOne(id: string) {
+  /**
+   * A transaction belongs to the warehouses it moved stock between. One the
+   * user can't see is reported as missing rather than forbidden, so ids from
+   * other warehouses can't be probed.
+   */
+  private assertVisible(
+    transaction: {
+      id: string;
+      sourceWarehouseId: string | null;
+      destinationWarehouseId: string | null;
+    },
+    warehouseIds: string[] | null | undefined,
+  ): void {
+    if (warehouseIds == null) return;
+    const visible = [
+      transaction.sourceWarehouseId,
+      transaction.destinationWarehouseId,
+    ].some((w) => w != null && warehouseIds.includes(w));
+    if (!visible) {
+      throw new NotFoundException(
+        `Transaction with ID ${transaction.id} not found`,
+      );
+    }
+  }
+
+  async findOne(id: string, warehouseIds?: string[] | null) {
     const transaction = await this.prisma.transaction.findUnique({
       where: { id },
       include: {
@@ -170,11 +195,17 @@ export class TransactionsService {
     if (!transaction) {
       throw new NotFoundException(`Transaction with ID ${id} not found`);
     }
+    this.assertVisible(transaction, warehouseIds);
 
     return transaction;
   }
 
-  async update(id: string, updateTransactionDto: UpdateTransactionDto) {
+  async update(
+    id: string,
+    updateTransactionDto: UpdateTransactionDto,
+    warehouseIds?: string[] | null,
+  ) {
+    if (warehouseIds != null) await this.findOne(id, warehouseIds);
     try {
       return await this.prisma.transaction.update({
         where: { id },
@@ -207,7 +238,7 @@ export class TransactionsService {
     }
   }
 
-  async remove(id: string) {
+  async remove(id: string, warehouseIds?: string[] | null) {
     await this.prisma.$transaction(async (tx) => {
       // A concurrent delete waits here, then finds nothing: undone once
       await lockForUpdate(tx, 'transactions', id);
@@ -218,6 +249,7 @@ export class TransactionsService {
       if (!transaction) {
         throw new NotFoundException(`Transaction with ID ${id} not found`);
       }
+      this.assertVisible(transaction, warehouseIds);
 
       // Deleting undoes the stock movement the transaction made, so the
       // inventory stays consistent. A TRANSFER never changed quantities.

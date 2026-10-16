@@ -1,10 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import {
-  DischargeRequestStatus,
-  RequestStatus,
-  SaleStatus,
-  StockTakeStatus,
-} from '@prisma/client';
+import { RequestStatus, SaleStatus, StockTakeStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 
 export type MovementType = 'IN' | 'OUT' | 'TRANSFER';
@@ -14,8 +9,7 @@ export type MovementOrigin =
   | 'PURCHASE'
   | 'OUTFLOW'
   | 'TRANSFER'
-  | 'STOCK_TAKE'
-  | 'DISCHARGE';
+  | 'STOCK_TAKE';
 
 interface WarehouseRef {
   id: string;
@@ -78,12 +72,13 @@ const between = (
 /**
  * Every stock movement in the system, read from the documents that cause
  * them, so Reports' Transactions and Trends tabs show sales, purchases,
- * outflows, transfers, stock takes and discharges next to the manual
- * transactions instead of the manual ones only. Nothing is copied into the
- * transactions table, so there is a single source of truth per movement.
+ * outflows, transfers and stock takes next to the manual transactions
+ * instead of the manual ones only. Nothing is copied into the transactions
+ * table, so there is a single source of truth per movement.
  *
- * Loans are left out on purpose: lending an item doesn't change any
- * warehouse's quantity.
+ * Left out on purpose: loans (lending an item doesn't change any
+ * warehouse's quantity) and discharge requests (completing one creates an
+ * outflow, which is listed already).
  */
 @Injectable()
 export class StockMovementsService {
@@ -100,89 +95,79 @@ export class StockMovementsService {
         }
       : {};
 
-    const [
-      transactions,
-      sales,
-      purchases,
-      outflows,
-      transfers,
-      stockTakes,
-      discharges,
-    ] = await Promise.all([
-      this.prisma.transaction.findMany({
-        where: pair,
-        include: {
-          sourceWarehouse: warehouseSelect,
-          destinationWarehouse: warehouseSelect,
-          user: userSelect,
-          items: linesSelect,
-        },
-      }),
-      this.prisma.sale.findMany({
-        where: { ...single, status: { not: SaleStatus.DRAFT } },
-        include: {
-          warehouse: warehouseSelect,
-          createdBy: userSelect,
-          cancelledBy: userSelect,
-          items: linesSelect,
-        },
-      }),
-      this.prisma.purchaseInvoice.findMany({
-        where: single,
-        include: {
-          warehouse: warehouseSelect,
-          createdBy: userSelect,
-          cancelledBy: userSelect,
-          items: linesSelect,
-        },
-      }),
-      this.prisma.outflow.findMany({
-        where: single,
-        include: {
-          warehouse: warehouseSelect,
-          createdBy: userSelect,
-          cancelledBy: userSelect,
-          items: linesSelect,
-        },
-      }),
-      this.prisma.transferRequest.findMany({
-        where: { ...pair, status: RequestStatus.COMPLETED },
-        include: {
-          sourceWarehouse: warehouseSelect,
-          destinationWarehouse: warehouseSelect,
-          receivedBy: userSelect,
-          requestedBy: userSelect,
-          items: linesSelect,
-        },
-      }),
-      this.prisma.stockTake.findMany({
-        where: {
-          ...single,
-          status: StockTakeStatus.COMPLETED,
-          adjustmentsApplied: true,
-        },
-        include: {
-          warehouse: warehouseSelect,
-          completedBy: userSelect,
-          items: {
-            select: {
-              itemId: true,
-              expectedQty: true,
-              countedQty: true,
-              item: itemSelect,
+    const [transactions, sales, purchases, outflows, transfers, stockTakes] =
+      await Promise.all([
+        this.prisma.transaction.findMany({
+          where: pair,
+          include: {
+            sourceWarehouse: warehouseSelect,
+            destinationWarehouse: warehouseSelect,
+            user: userSelect,
+            items: linesSelect,
+          },
+        }),
+        this.prisma.sale.findMany({
+          where: {
+            ...single,
+            status: { not: SaleStatus.DRAFT },
+            // A quotation cancelled before it was confirmed never moved stock
+            NOT: { confirmedAt: null, quoteNumber: { not: null } },
+          },
+          include: {
+            warehouse: warehouseSelect,
+            createdBy: userSelect,
+            cancelledBy: userSelect,
+            items: linesSelect,
+          },
+        }),
+        this.prisma.purchaseInvoice.findMany({
+          where: single,
+          include: {
+            warehouse: warehouseSelect,
+            createdBy: userSelect,
+            cancelledBy: userSelect,
+            items: linesSelect,
+          },
+        }),
+        this.prisma.outflow.findMany({
+          where: single,
+          include: {
+            warehouse: warehouseSelect,
+            createdBy: userSelect,
+            cancelledBy: userSelect,
+            items: linesSelect,
+          },
+        }),
+        this.prisma.transferRequest.findMany({
+          where: { ...pair, status: RequestStatus.COMPLETED },
+          include: {
+            sourceWarehouse: warehouseSelect,
+            destinationWarehouse: warehouseSelect,
+            receivedBy: userSelect,
+            requestedBy: userSelect,
+            items: linesSelect,
+          },
+        }),
+        this.prisma.stockTake.findMany({
+          where: {
+            ...single,
+            status: StockTakeStatus.COMPLETED,
+            adjustmentsApplied: true,
+          },
+          include: {
+            warehouse: warehouseSelect,
+            completedBy: userSelect,
+            items: {
+              select: {
+                itemId: true,
+                expectedQty: true,
+                countedQty: true,
+                item: itemSelect,
+              },
             },
           },
-        },
-      }),
-      this.prisma.dischargeRequest.findMany({
-        where: { ...single, status: DischargeRequestStatus.COMPLETED },
-        include: {
-          warehouse: warehouseSelect,
-          resolvedBy: userSelect,
-          items: linesSelect,
-        },
-      }),
-    ]);
+        }),
+      ]);
 
     const movements: StockMovement[] = [];
 
@@ -310,21 +295,6 @@ export class StockMovementsService {
       };
       side('IN');
       side('OUT');
-    }
-
-    for (const d of discharges) {
-      movements.push({
-        id: `DISCHARGE:${d.id}`,
-        date: d.resolvedAt ?? d.updatedAt,
-        type: 'OUT',
-        origin: 'DISCHARGE',
-        cancellation: false,
-        reference: null,
-        notes: d.notes,
-        ...between(d.warehouse, null),
-        user: d.resolvedBy,
-        items: d.items,
-      });
     }
 
     return movements.sort((a, b) => b.date.getTime() - a.date.getTime());

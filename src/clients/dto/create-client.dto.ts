@@ -8,7 +8,7 @@ import {
   Min,
   Matches,
 } from 'class-validator';
-import { PaymentCondition } from '@prisma/client';
+import { Currency, PaymentCondition } from '@prisma/client';
 
 export class CreateClientDto {
   @IsString()
@@ -35,6 +35,11 @@ export class CreateClientDto {
   @IsNumber()
   @Min(0)
   creditLimit?: number;
+
+  // Currency of creditLimit; only CREDIT sales in it count toward the limit
+  @IsOptional()
+  @IsEnum(Currency)
+  creditLimitCurrency?: Currency;
 
   @IsOptional()
   @IsBoolean()
