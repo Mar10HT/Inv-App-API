@@ -975,11 +975,14 @@ export class SalesService {
     const revenueRaw = await this.prisma.sale.groupBy({
       by: ['currency'],
       where: { status: SaleStatus.ACTIVE, ...wFilter },
-      _sum: { totalAmount: true },
+      _sum: { totalAmount: true, taxAmount: true },
     });
+    // Grand totals (with tax), the same amount the list and the PDF show
     const revenueByCurrency = revenueRaw.reduce<Record<string, number>>(
       (acc, row) => {
-        acc[row.currency] = round2(row._sum.totalAmount ?? 0);
+        acc[row.currency] = round2(
+          (row._sum.totalAmount ?? 0) + (row._sum.taxAmount ?? 0),
+        );
         return acc;
       },
       {},

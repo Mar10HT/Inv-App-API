@@ -875,7 +875,11 @@ describe('SalesService', () => {
           { customerType: CustomerType.WHOLESALE, _count: { _all: 5 } },
         ] as never)
         .mockResolvedValueOnce([
-          { currency: 'USD', _sum: { totalAmount: 1234.567 } },
+          {
+            currency: 'USD',
+            _sum: { totalAmount: 1234.567, taxAmount: 185.18 },
+          },
+          { currency: 'HNL', _sum: { totalAmount: 100, taxAmount: null } },
         ] as never);
 
       const result = await service.getStats();
@@ -888,7 +892,8 @@ describe('SalesService', () => {
         result.active + result.draft + result.cancelled,
       );
       expect(result.byCustomerType).toEqual({ RETAIL: 10, WHOLESALE: 5 });
-      expect(result.revenueByCurrency).toEqual({ USD: 1234.57 });
+      // Grand totals: subtotal plus tax, per currency
+      expect(result.revenueByCurrency).toEqual({ USD: 1419.75, HNL: 100 });
     });
   });
 });

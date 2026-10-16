@@ -565,13 +565,13 @@ describe('PurchaseInvoicesService', () => {
   });
 
   describe('getStats', () => {
-    it('returns counts', async () => {
+    it('returns counts and grand totals with tax per currency', async () => {
       prisma.purchaseInvoice.count
         .mockResolvedValueOnce(10)
         .mockResolvedValueOnce(8)
         .mockResolvedValueOnce(2);
       prisma.purchaseInvoice.groupBy.mockResolvedValue([
-        { currency: 'USD', _sum: { totalAmount: 500 } },
+        { currency: 'USD', _sum: { totalAmount: 500, taxAmount: 75 } },
       ] as never);
 
       const result = await service.getStats();
@@ -579,6 +579,7 @@ describe('PurchaseInvoicesService', () => {
       expect(result.total).toBe(10);
       expect(result.active).toBe(8);
       expect(result.cancelled).toBe(2);
+      expect(result.totalByCurrency).toEqual({ USD: 575 });
     });
   });
 });
