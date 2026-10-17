@@ -4,13 +4,15 @@ import {
   IsOptional,
   IsNumber,
   Min,
+  Max,
   IsArray,
   ArrayMinSize,
   ValidateNested,
   IsEnum,
+  IsBoolean,
 } from 'class-validator';
 import { Type } from 'class-transformer';
-import { CustomerType, Currency } from '@prisma/client';
+import { CustomerType, Currency, PaymentCondition } from '@prisma/client';
 
 export class SaleItemDto {
   @IsString()
@@ -29,9 +31,19 @@ export class SaleItemDto {
   @IsString()
   @IsOptional()
   notes?: string;
+
+  // Null/absent inherits the sale's effective taxPercent; an explicit value
+  // (including 0) overrides it for this line only.
+  @IsNumber()
+  @Min(0)
+  @Max(100)
+  @IsOptional()
+  taxPercent?: number;
 }
 
 export class CreateSaleDto {
+  // Deprecated and ignored: documents are numbered automatically now. Still
+  // accepted so a browser tab running the previous frontend doesn't get a 400.
   @IsString()
   @IsOptional()
   name?: string;
@@ -46,6 +58,18 @@ export class CreateSaleDto {
 
   @IsEnum(CustomerType)
   customerType: CustomerType;
+
+  // Optional link to a real Client (Phase 2/5). Absent keeps today's
+  // walk-in behavior — customerName above is unaffected either way.
+  @IsString()
+  @IsOptional()
+  clientId?: string;
+
+  // Suggested default is Client.paymentCondition (frontend-only prefill),
+  // always editable; absent defaults to CASH same as PurchaseInvoice.
+  @IsEnum(PaymentCondition)
+  @IsOptional()
+  paymentCondition?: PaymentCondition;
 
   // Single currency for the whole sale; stored as a plain string snapshot.
   // Validated against the same USD/HNL values the inventory uses.
@@ -62,4 +86,18 @@ export class CreateSaleDto {
   @IsString()
   @IsOptional()
   notes?: string;
+
+  // Suggested default is FiscalConfig.isvPercent but always editable per
+  // document; absent/null means no tax unless a line overrides it.
+  @IsNumber()
+  @Min(0)
+  @Max(100)
+  @IsOptional()
+  taxPercent?: number;
+
+  // true = create as a DRAFT quotation: no stock impact, no number assigned
+  // until confirmed. Absent/false is today's exact behavior (ACTIVE at once).
+  @IsBoolean()
+  @IsOptional()
+  asDraft?: boolean;
 }

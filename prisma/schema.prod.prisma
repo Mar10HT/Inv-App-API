@@ -61,6 +61,14 @@ model User {
   createdSales        Sale[]              @relation("CreatedSales")
   cancelledSales      Sale[]              @relation("CancelledSales")
 
+  // PurchaseInvoice relations
+  createdPurchaseInvoices   PurchaseInvoice[] @relation("CreatedPurchaseInvoices")
+  cancelledPurchaseInvoices PurchaseInvoice[] @relation("CancelledPurchaseInvoices")
+
+  // Payment relations
+  createdPayments   Payment[] @relation("CreatedPayments")
+  cancelledPayments Payment[] @relation("CancelledPayments")
+
   // Auth tokens relations
   refreshTokens       RefreshToken[]
   passwordResetTokens PasswordResetToken[]
@@ -121,6 +129,9 @@ model Warehouse {
 
   // Sale relations
   sales                   Sale[]
+
+  // PurchaseInvoice relations
+  purchaseInvoices        PurchaseInvoice[]
 
   scheduledReports        ScheduledReport[]
 
@@ -206,6 +217,7 @@ model InventoryItem {
   dischargeRequestItems  DischargeRequestItem[]
   outflowItems           OutflowItem[]
   saleItems              SaleItem[]
+  purchaseInvoiceItems   PurchaseInvoiceItem[]
 
   @@index([category])
   @@index([categoryId])
@@ -263,11 +275,15 @@ model Supplier {
   location    String
   phone       String?
   email       String?
+  code        String?  @unique // Nullable, no backfill required for existing suppliers
+  rtn         String?
+  isActive    Boolean?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
   // Relations
-  inventoryItems InventoryItem[]
+  inventoryItems   InventoryItem[]
+  purchaseInvoices PurchaseInvoice[]
 
   @@map("suppliers")
 }
@@ -332,6 +348,11 @@ model TransactionItem {
 // Loan model for tracking item loans between warehouses (multi-item)
 model Loan {
   id                     String     @id @default(cuid())
+  // Correlative assigned at creation, e.g. PRE-0001 (DocumentNumberingService).
+  number                 String?    @unique
+  // Deprecated: was a free-text "reference" typed by the user. Its content was
+  // moved into notes (prisma/migrate-document-numbers.sql); kept only so
+  // `prisma db push` never has to drop a column. Not read or written anymore.
   name                   String?
   sourceWarehouseId      String
   destinationWarehouseId String
@@ -431,6 +452,11 @@ enum AlertType {
 // Transfer Request model for approval workflow
 model TransferRequest {
   id                     String        @id @default(cuid())
+  // Correlative assigned at creation, e.g. TRA-0001 (DocumentNumberingService).
+  number                 String?       @unique
+  // Deprecated: was a free-text "reference" typed by the user. Its content was
+  // moved into notes (prisma/migrate-document-numbers.sql); kept only so
+  // `prisma db push` never has to drop a column. Not read or written anymore.
   name                   String?
   status                 RequestStatus @default(PENDING)
   sourceWarehouseId      String
@@ -497,6 +523,9 @@ model StockTake {
   status        StockTakeStatus @default(IN_PROGRESS)
   startedAt     DateTime        @default(now())
   completedAt   DateTime?
+  // Whether completing it overwrote quantities with the counted ones. False
+  // for stock takes completed before this field existed (unknown).
+  adjustmentsApplied Boolean     @default(false)
   startedById   String
   completedById String?
   notes         String?
@@ -639,6 +668,7 @@ enum ReportType {
   TRANSFERS
   STOCK_TAKES
   DISCHARGES
+  OUTFLOWS
 }
 
 enum ReportFrequency {
@@ -724,6 +754,11 @@ model RolePermission {
 
 model Outflow {
   id                  String         @id @default(cuid())
+  // Correlative assigned at creation, e.g. SAL-0001 (DocumentNumberingService).
+  number              String?        @unique
+  // Deprecated: was a free-text "reference" typed by the user. Its content was
+  // moved into notes (prisma/migrate-document-numbers.sql); kept only so
+  // `prisma db push` never has to drop a column. Not read or written anymore.
   name                String?
   warehouseId         String
   reason              OutflowReason
@@ -814,31 +849,73 @@ model PasswordResetToken {
 
 model Sale {
   id                  String       @id @default(cuid())
+  // Quotation correlative, e.g. COT-0001, assigned when a DRAFT is created.
+  // A sale created directly as ACTIVE has none; `number` below is its invoice
+  // number either way.
+  quoteNumber         String?      @unique
+  // Deprecated: was a free-text "reference" typed by the user. Its content was
+  // moved into notes (prisma/migrate-document-numbers.sql); kept only so
+  // `prisma db push` never has to drop a column. Not read or written anymore.
   name                String?
   warehouseId         String
+  // Free-text fallback, kept for a walk-in sale with no Client record. Not
+  // removed or made conditional by clientId — both can coexist.
   customerName        String?
   customerType        CustomerType @default(RETAIL)
+  // Optional link to a real Client (Phase 2). Null for a walk-in/anonymous
+  // sale — customerName above still covers that case.
+  clientId            String?
+  // Suggested default from Client.paymentCondition when a client is linked
+  // (frontend-only prefill, same pattern as unitPrice prefilled from the
+  // selected item), always editable. Only CREDIT sales with an outstanding
+  // balance count toward a client's credit limit (Phase 5).
+  paymentCondition    PaymentCondition @default(CASH)
   // A sale is single-currency: every line uses this currency and totalAmount
   // is computed against it. Defaults to USD.
   currency            String       @default("USD")
+  // Pre-tax sum of line totals. Keeps its pre-Phase-3 meaning unchanged so
+  // every existing consumer (PDF, stats, frontend) keeps working untouched;
+  // the grand total is totalAmount + taxAmount, computed at read time.
   totalAmount         Float        @default(0)
+  // Suggested default is FiscalConfig.isvPercent but always editable per
+  // document; null means no tax on this sale unless a line overrides it.
+  taxPercent          Float?
+  // Stored sum of each line's computed tax, same persisted-not-computed
+  // pattern as totalAmount/lineTotal.
+  taxAmount           Float?       @default(0)
   status              SaleStatus   @default(ACTIVE)
   notes               String?
   createdById         String
   cancelledById       String?
   cancelledAt         DateTime?
+  // When the sale became ACTIVE and stock left the warehouse: creation for a
+  // direct sale, confirmation for a quotation. Null on sales from before this
+  // field existed (their createdAt is used instead) and on DRAFTs.
+  confirmedAt         DateTime?
   cancellationReason  String?
+  // SAR-authorized invoice number (see CaiRange) or, when no CAI range is
+  // active, a simple "V-0001" correlative. Null while DRAFT — a quotation
+  // doesn't consume a real invoice number until confirmed, so it's never
+  // wasted on a quote that's discarded. Assigned exactly once, at
+  // convertToInvoice() time, and never reused even if the sale is later
+  // cancelled (a real unique constraint is correct here, unlike Client.code
+  // in Phase 2 — there's no soft-delete-and-reuse scenario for an invoice
+  // number).
+  number              String?      @unique
   createdAt           DateTime     @default(now())
   updatedAt           DateTime     @updatedAt
 
   warehouse   Warehouse  @relation(fields: [warehouseId], references: [id])
+  client      Client?    @relation(fields: [clientId], references: [id])
   createdBy   User       @relation("CreatedSales", fields: [createdById], references: [id])
   cancelledBy User?      @relation("CancelledSales", fields: [cancelledById], references: [id])
   items       SaleItem[]
+  payments    Payment[]
 
   @@index([warehouseId])
   @@index([status])
   @@index([customerType])
+  @@index([clientId])
   @@index([createdById])
   @@index([createdAt])
   @@map("sales")
@@ -851,6 +928,10 @@ model SaleItem {
   quantity        Int      @default(1)
   unitPrice       Float    // Entered manually at sale time
   lineTotal       Float    @default(0) // quantity * unitPrice, snapshot
+  // Null inherits the sale's effective taxPercent; an explicit value
+  // (including 0) overrides it for this line only.
+  taxPercent      Float?
+  taxAmount       Float?   @default(0)
   // Snapshots captured at sale time so receipts/reports survive item
   // renames, price changes, or hard-delete attempts.
   itemName        String?
@@ -876,6 +957,236 @@ enum CustomerType {
 }
 
 enum SaleStatus {
+  DRAFT     // Quotation; not yet confirmed, no stock impact, no number assigned
   ACTIVE    // Sale is recorded; stock has been decremented
-  CANCELLED // Sale was reverted; stock has been restored
+  CANCELLED // Sale was reverted; stock has been restored (if it was ever decremented)
+}
+
+// Single-row company fiscal configuration (no multi-tenant Organization model
+// exists yet; this app is single-tenant). Auto-created with defaults by
+// FiscalConfigService on first access.
+model FiscalConfig {
+  id          String   @id @default(cuid())
+  rtn         String? // Honduran tax ID, 14 digits, validated at the DTO layer
+  fiscalEmail String?
+  fiscalPhone String?
+  address     String?
+  currency    Currency @default(HNL)
+  isvPercent  Float    @default(15) // Honduras general ISV rate; suggested default, overridable per sale/line in a later phase
+  // Correlative used for Sale.number when no active CaiRange exists. Same
+  // get-or-create singleton as the rest of this model; locked via a raw
+  // SELECT ... FOR UPDATE at consumption time by SaleNumberingService.
+  fallbackSaleNumber Int @default(1)
+  // Correlative used for PurchaseInvoice.number. Kept separate from
+  // fallbackSaleNumber so the two sequences never interfere with each
+  // other; same locking mechanism, by PurchaseNumberingService.
+  nextPurchaseNumber Int @default(1)
+  // Correlatives for loans (PRE-), transfers (TRA-), outflows (SAL-) and
+  // quotations (COT-); same locking mechanism, by DocumentNumberingService.
+  nextLoanNumber     Int @default(1)
+  nextTransferNumber Int @default(1)
+  nextOutflowNumber  Int @default(1)
+  nextQuoteNumber    Int @default(1)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("fiscal_config")
+}
+
+// SAR-authorized invoice numbering range (Código de Autorización de
+// Impresión). Printed invoice numbers follow the fixed Honduran format
+// establishmentCode-emissionPointCode-documentTypeCode-correlativo, e.g.
+// 001-001-01-00000001. currentNumber is managed by the sales numbering
+// service introduced in a later phase; this phase only manages the ranges.
+model CaiRange {
+  id                String   @id @default(cuid())
+  cai               String
+  establishmentCode String // 3-digit code from the SAR authorization
+  emissionPointCode String // 3-digit code from the SAR authorization
+  documentTypeCode  String   @default("01") // 2-digit code; 01 = invoice
+  rangeStart        Int
+  rangeEnd          Int
+  currentNumber     Int
+  expiresAt         DateTime
+  isActive          Boolean  @default(false)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@map("cai_ranges")
+}
+
+// ============================================
+// Purchases (compras)
+// A purchase invoice ADDS stock — the mirror of Sale. For a BULK line it
+// just increments an existing InventoryItem's quantity. For a UNIQUE line
+// (Decision 9 of the approved plan) the invoice is the one moment a unit's
+// serial number gets captured: each unit becomes a brand-new InventoryItem,
+// linked to this invoice, so a later failure can be traced back to the
+// supplier/invoice it came in on. No CaiRange involvement here — that's
+// only for invoices you ISSUE, not ones you receive.
+// ============================================
+
+model PurchaseInvoice {
+  id                 String                @id @default(cuid())
+  // Internal Obsid correlative, e.g. COM-0001. Never user-editable.
+  number             String                @unique
+  // The supplier's own invoice number — stays user-typed because it has to
+  // match the real physical document. Unique per supplier so the same
+  // invoice can't be entered twice.
+  invoiceNumber      String
+  supplierId         String
+  warehouseId        String
+  status             PurchaseInvoiceStatus @default(ACTIVE)
+  currency           String                @default("USD")
+  // Pre-tax sum of line totals, same meaning as Sale.totalAmount.
+  totalAmount        Float                 @default(0)
+  taxPercent         Float?
+  taxAmount          Float?                @default(0)
+  // No `balance` field: computed on demand from totalAmount + taxAmount -
+  // SUM(payments.amount WHERE status = ACTIVE), see src/common/balance.
+  paymentCondition   PaymentCondition      @default(CASH)
+  notes              String?
+  createdById        String
+  cancelledById      String?
+  cancelledAt        DateTime?
+  cancellationReason String?
+  createdAt          DateTime              @default(now())
+  updatedAt          DateTime              @updatedAt
+
+  supplier    Supplier              @relation(fields: [supplierId], references: [id])
+  warehouse   Warehouse             @relation(fields: [warehouseId], references: [id])
+  createdBy   User                  @relation("CreatedPurchaseInvoices", fields: [createdById], references: [id])
+  cancelledBy User?                 @relation("CancelledPurchaseInvoices", fields: [cancelledById], references: [id])
+  items       PurchaseInvoiceItem[]
+  payments    Payment[]
+
+  @@unique([supplierId, invoiceNumber])
+  @@index([warehouseId])
+  @@index([supplierId])
+  @@index([status])
+  @@index([createdById])
+  @@index([createdAt])
+  @@map("purchase_invoices")
+}
+
+model PurchaseInvoiceItem {
+  id                String   @id @default(cuid())
+  purchaseInvoiceId String
+  // BULK line: the existing item being topped up. UNIQUE line: the item
+  // created for this specific physical unit (quantity always 1 then — one
+  // row per unit, not one row per product type with N serials nested).
+  inventoryItemId   String
+  quantity          Int      @default(1)
+  unitPrice         Float
+  lineTotal         Float    @default(0)
+  // Null inherits the invoice's taxPercent; an explicit value (including 0)
+  // overrides it for this line only — same mechanism as SaleItem.
+  taxPercent        Float?
+  taxAmount         Float?   @default(0)
+  // Snapshots captured at purchase time so the invoice survives item
+  // renames or hard-delete attempts.
+  itemName          String?
+  serviceTag        String?
+  currency          String?
+  notes             String?
+  createdAt         DateTime @default(now())
+
+  purchaseInvoice PurchaseInvoice @relation(fields: [purchaseInvoiceId], references: [id], onDelete: Cascade)
+  // Restrict: purchase history must not silently disappear if someone
+  // hard-deletes the underlying item.
+  inventoryItem   InventoryItem   @relation(fields: [inventoryItemId], references: [id], onDelete: Restrict)
+
+  @@index([purchaseInvoiceId])
+  @@index([inventoryItemId])
+  @@map("purchase_invoice_items")
+}
+
+enum PurchaseInvoiceStatus {
+  ACTIVE    // Invoice is recorded; stock has been added
+  CANCELLED // Invoice was reverted; stock has been restored (BULK-only invoices)
+}
+
+// Shared by Client and PurchaseInvoice.
+enum PaymentCondition {
+  CASH   // Contado
+  CREDIT // Crédito
+}
+
+// ============================================
+// Payments (abonos)
+// Linked to a Sale XOR a PurchaseInvoice — never both, never neither.
+// Enforced in PaymentsService, not the DB (this codebase has no
+// migration-based CHECK constraints, only db push; same precedent as the
+// BULK/UNIQUE discriminator on PurchaseInvoiceItem). Balance is never
+// stored: it's totalAmount + taxAmount - SUM(payment.amount WHERE status =
+// ACTIVE), computed on demand (see src/common/balance/balance.util.ts).
+// ============================================
+enum PaymentMethod {
+  CASH
+  BANK_TRANSFER
+  CHECK
+}
+
+enum PaymentStatus {
+  ACTIVE    // Payment is recorded; counts toward the document's balance
+  CANCELLED // Voided; stops counting toward the balance (no restore step needed — balance is derived)
+}
+
+model Payment {
+  id                 String        @id @default(cuid())
+  saleId             String?
+  purchaseInvoiceId  String?
+  amount             Float
+  method             PaymentMethod
+  reference          String? // Check number / bank transfer confirmation code
+  notes              String?
+  status             PaymentStatus @default(ACTIVE)
+  createdById        String
+  cancelledById      String?
+  cancelledAt        DateTime?
+  cancellationReason String?
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+
+  sale            Sale?            @relation(fields: [saleId], references: [id])
+  purchaseInvoice PurchaseInvoice? @relation(fields: [purchaseInvoiceId], references: [id])
+  createdBy       User             @relation("CreatedPayments", fields: [createdById], references: [id])
+  cancelledBy     User?            @relation("CancelledPayments", fields: [cancelledById], references: [id])
+
+  @@index([saleId])
+  @@index([purchaseInvoiceId])
+  @@index([status])
+  @@index([createdById])
+  @@index([createdAt])
+  @@map("payments")
+}
+
+// Customer the business sells to. Soft-deleted (not hard-deleted) so
+// Sale.clientId can safely keep pointing at it without losing history.
+model Client {
+  id               String           @id @default(cuid())
+  // Not @unique: a DB-level unique constraint would also cover soft-deleted
+  // rows, permanently blocking a code's reuse after deletion. Uniqueness
+  // among active clients is enforced in ClientsService instead.
+  code             String
+  name             String
+  rtn              String? // Honduran tax ID, 14 digits, validated at the DTO layer
+  phone            String?
+  paymentCondition PaymentCondition @default(CASH)
+  // Credit limit (Phase 5): only CREDIT sales with an outstanding balance
+  // count toward it. Null means unrestricted credit.
+  creditLimit      Float?
+  // Currency the credit limit is in. Only CREDIT sales in this currency count
+  // toward it; a CREDIT sale in another currency is refused while a limit is
+  // set (amounts in HNL and USD can't be added up).
+  creditLimitCurrency Currency     @default(HNL)
+  isActive         Boolean          @default(true)
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+  deletedAt        DateTime? // Soft delete
+
+  sales Sale[]
+
+  @@index([code])
+  @@map("clients")
 }

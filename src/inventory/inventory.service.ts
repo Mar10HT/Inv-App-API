@@ -30,7 +30,11 @@ import {
 import { EventsService } from '../events/events.service';
 import { SearchService } from '../common/search/search.service';
 import { warehouseFilter } from '../common/warehouse-access/warehouse-filter.util';
+import { computeInventoryStatus } from './inventory-status';
+import { toIsoDateTime } from '../common/utils/date.util';
 import type { CellValue } from 'exceljs';
+import { StockLevelService } from '../alerts/stock-level.service';
+import { apiError } from '../common/errors/api-error';
 
 @Injectable()
 export class InventoryService {
@@ -46,6 +50,7 @@ export class InventoryService {
     @Inject(CACHE_MANAGER) private cacheManager: Cache,
     private eventsService: EventsService,
     private searchService: SearchService,
+    private readonly stockLevelService: StockLevelService,
   ) {}
 
   async create(createInventoryDto: CreateInventoryDto): Promise<InventoryItem> {
@@ -86,12 +91,18 @@ export class InventoryService {
         createInventoryDto.quantity !== 1
       ) {
         throw new BadRequestException(
-          'UNIQUE items must have quantity of 0 or 1',
+          apiError(
+            'UNIQUE_ITEM_INVALID_QUANTITY',
+            'UNIQUE items must have quantity of 0 or 1',
+          ),
         );
       }
       if (!createInventoryDto.serviceTag && !createInventoryDto.serialNumber) {
         throw new BadRequestException(
-          'UNIQUE items must have either serviceTag or serialNumber',
+          apiError(
+            'UNIQUE_ITEM_IDENTIFIER_REQUIRED',
+            'UNIQUE items must have either serviceTag or serialNumber',
+          ),
         );
       }
     }
@@ -100,11 +111,19 @@ export class InventoryService {
     if (itemType === ItemType.BULK) {
       if (createInventoryDto.serviceTag || createInventoryDto.serialNumber) {
         throw new BadRequestException(
-          'BULK items cannot have serviceTag or serialNumber',
+          apiError(
+            'BULK_ITEM_IDENTIFIERS_NOT_ALLOWED',
+            'BULK items cannot have serviceTag or serialNumber',
+          ),
         );
       }
       if (createInventoryDto.assignedToUserId) {
-        throw new BadRequestException('BULK items cannot be assigned to users');
+        throw new BadRequestException(
+          apiError(
+            'BULK_ITEM_NOT_ASSIGNABLE',
+            'BULK items cannot be assigned to users',
+          ),
+        );
       }
     }
 
@@ -115,7 +134,11 @@ export class InventoryService {
       });
       if (existing) {
         throw new ConflictException(
-          `Item with SKU ${createInventoryDto.sku} already exists`,
+          apiError(
+            'SKU_ALREADY_EXISTS',
+            `Item with SKU ${createInventoryDto.sku} already exists`,
+            { sku: createInventoryDto.sku },
+          ),
         );
       }
     }
@@ -127,41 +150,31 @@ export class InventoryService {
       });
       if (existing) {
         throw new ConflictException(
-          `Item with service tag ${createInventoryDto.serviceTag} already exists`,
+          apiError(
+            'SERVICE_TAG_ALREADY_EXISTS',
+            `Item with service tag ${createInventoryDto.serviceTag} already exists`,
+            { serviceTag: createInventoryDto.serviceTag },
+          ),
         );
       }
     }
 
     // Auto-calculate status based on quantity and assignment
-    let status = createInventoryDto.status;
-    if (!status) {
-      // UNIQUE items: IN_USE if assigned, otherwise IN_STOCK (qty=1) or OUT_OF_STOCK (qty=0)
-      if (itemType === ItemType.UNIQUE) {
-        if (createInventoryDto.assignedToUserId) {
-          status = InventoryStatus.IN_USE;
-        } else {
-          status =
-            createInventoryDto.quantity === 1
-              ? InventoryStatus.IN_STOCK
-              : InventoryStatus.OUT_OF_STOCK;
-        }
-      }
-      // BULK items: IN_STOCK, LOW_STOCK, or OUT_OF_STOCK based on quantity and minQuantity
-      else {
-        const minQty = createInventoryDto.minQuantity || 10;
-        if (createInventoryDto.quantity === 0) {
-          status = InventoryStatus.OUT_OF_STOCK;
-        } else if (createInventoryDto.quantity <= minQty) {
-          status = InventoryStatus.LOW_STOCK;
-        } else {
-          status = InventoryStatus.IN_STOCK;
-        }
-      }
-    }
+    const status =
+      createInventoryDto.status ??
+      computeInventoryStatus({
+        itemType,
+        quantity: createInventoryDto.quantity,
+        minQuantity: createInventoryDto.minQuantity ?? 10,
+        assignedToUserId: createInventoryDto.assignedToUserId,
+      });
 
     const item = await this.prisma.inventoryItem.create({
       data: {
         ...createInventoryDto,
+        ...(createInventoryDto.expirationDate && {
+          expirationDate: toIsoDateTime(createInventoryDto.expirationDate),
+        }),
         itemType,
         status,
         ...(itemType === ItemType.UNIQUE && createInventoryDto.assignedToUserId
@@ -215,6 +228,7 @@ export class InventoryService {
     // Sync FTS index
     this.searchService.syncItem(item.id).catch(() => {});
 
+    this.stockLevelService.scheduleRefresh();
     return item;
   }
 
@@ -376,15 +390,20 @@ export class InventoryService {
       });
       if (existing) {
         throw new ConflictException(
-          `Item with SKU ${updateInventoryDto.sku} already exists`,
+          apiError(
+            'SKU_ALREADY_EXISTS',
+            `Item with SKU ${updateInventoryDto.sku} already exists`,
+            { sku: updateInventoryDto.sku },
+          ),
         );
       }
     }
 
-    // Auto-update status if quantity or assignment is being updated
+    // Auto-update status if quantity, minimum or assignment is being updated
     let status = updateInventoryDto.status;
     if (
       (updateInventoryDto.quantity !== undefined ||
+        updateInventoryDto.minQuantity !== undefined ||
         updateInventoryDto.assignedToUserId !== undefined) &&
       !status
     ) {
@@ -394,28 +413,24 @@ export class InventoryService {
       if (!item) {
         throw new NotFoundException('Inventory item not found');
       }
-      const quantity = updateInventoryDto.quantity ?? item.quantity;
-      const minQty = updateInventoryDto.minQuantity ?? item.minQuantity;
-      const assignedToUserId =
-        updateInventoryDto.assignedToUserId !== undefined
-          ? updateInventoryDto.assignedToUserId
-          : item.assignedToUserId;
-
-      if (item.itemType === ItemType.UNIQUE && assignedToUserId) {
-        status = InventoryStatus.IN_USE;
-      } else if (quantity === 0) {
-        status = InventoryStatus.OUT_OF_STOCK;
-      } else if (quantity <= minQty) {
-        status = InventoryStatus.LOW_STOCK;
-      } else {
-        status = InventoryStatus.IN_STOCK;
-      }
+      status = computeInventoryStatus({
+        itemType: item.itemType,
+        quantity: updateInventoryDto.quantity ?? item.quantity,
+        minQuantity: updateInventoryDto.minQuantity ?? item.minQuantity,
+        assignedToUserId:
+          updateInventoryDto.assignedToUserId !== undefined
+            ? updateInventoryDto.assignedToUserId
+            : item.assignedToUserId,
+      });
     }
 
     const updatedItem = await this.prisma.inventoryItem.update({
       where: { id },
       data: {
         ...updateInventoryDto,
+        ...(updateInventoryDto.expirationDate && {
+          expirationDate: toIsoDateTime(updateInventoryDto.expirationDate),
+        }),
         ...(status && { status }),
       },
       include: {
@@ -461,6 +476,7 @@ export class InventoryService {
     // Sync FTS index
     this.searchService.syncItem(id).catch(() => {});
 
+    this.stockLevelService.scheduleRefresh();
     return updatedItem;
   }
 
@@ -482,6 +498,8 @@ export class InventoryService {
 
     // Remove from FTS index
     this.searchService.removeItem(id).catch(() => {});
+
+    this.stockLevelService.scheduleRefresh();
   }
 
   async restore(id: string): Promise<InventoryItem> {
@@ -495,7 +513,9 @@ export class InventoryService {
     }
 
     if (!item.deletedAt) {
-      throw new BadRequestException('Item is not deleted');
+      throw new BadRequestException(
+        apiError('ITEM_NOT_DELETED', 'Item is not deleted'),
+      );
     }
 
     const restoredItem = await this.prisma.inventoryItem.update({
@@ -517,6 +537,7 @@ export class InventoryService {
     // Invalidate cache
     await this.invalidateCache();
 
+    this.stockLevelService.scheduleRefresh();
     return restoredItem;
   }
 
@@ -852,6 +873,7 @@ export class InventoryService {
       });
     }
 
+    this.stockLevelService.scheduleRefresh();
     return result;
   }
 
@@ -919,6 +941,7 @@ export class InventoryService {
       });
     }
 
+    this.stockLevelService.scheduleRefresh();
     return result;
   }
 
@@ -1024,6 +1047,7 @@ export class InventoryService {
       });
     }
 
+    this.stockLevelService.scheduleRefresh();
     return result;
   }
 
@@ -1054,6 +1078,7 @@ export class InventoryService {
     // Emit WebSocket event
     this.eventsService.emitInventoryChange('reset', undefined, { count });
 
+    this.stockLevelService.scheduleRefresh();
     return { deletedCount: count };
   }
 
@@ -1279,7 +1304,9 @@ export class InventoryService {
 
     const worksheet = workbook.worksheets[0];
     if (!worksheet) {
-      throw new BadRequestException('Excel file has no worksheets');
+      throw new BadRequestException(
+        apiError('EXCEL_NO_WORKSHEETS', 'Excel file has no worksheets'),
+      );
     }
 
     // Pre-load warehouses and suppliers for name-based lookup

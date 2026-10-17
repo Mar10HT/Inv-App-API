@@ -15,12 +15,16 @@ interface ReceiptItem {
   quantity: number;
   unitPrice: number | null;
   currency: string | null;
+  // Sale-specific: stored per-line tax (already resolved at save time —
+  // null taxPercent here just means "no explicit line override was stored",
+  // not "untaxed"; the amount is what was actually charged).
+  taxPercent?: number | null;
+  taxAmount?: number | null;
 }
 
 interface ReceiptContext {
-  documentType: 'loan' | 'transfer' | 'outflow' | 'sale';
+  documentType: 'loan' | 'transfer' | 'outflow' | 'sale' | 'purchase';
   id: string;
-  name: string | null;
   status: string;
   sourceWarehouse: string;
   destinationWarehouse: string;
@@ -35,6 +39,17 @@ interface ReceiptContext {
   // Sale-specific metadata
   customerName?: string | null;
   customerType?: string | null;
+  // Purchase-specific metadata
+  supplierName?: string | null;
+  supplierInvoiceNumber?: string | null;
+  // The document's own correlative: PRE-/TRA-/SAL- for loans, transfers
+  // and outflows, COM- for purchases, the invoice number for a sale (null
+  // while it's a DRAFT quotation, which shows quoteNumber instead).
+  number?: string | null;
+  quoteNumber?: string | null;
+  // Default tax percent (Sale/PurchaseInvoice), used only to resolve a
+  // line's effective percent for display when that line's own taxPercent is null.
+  taxPercent?: number | null;
 }
 
 const STRINGS = {
@@ -43,9 +58,21 @@ const STRINGS = {
     transferTitle: 'COMPROBANTE DE TRANSFERENCIA',
     outflowTitle: 'COMPROBANTE DE SALIDA',
     saleTitle: 'COMPROBANTE DE VENTA',
+    purchaseTitle: 'COMPROBANTE DE COMPRA',
+    quotationTitle: 'COTIZACIÓN',
     voidCancelled: 'CANCELADO',
     voidRejected: 'RECHAZADO',
     id: 'ID',
+    invoiceNumber: 'Venta Nº',
+    quoteNumber: 'Cotización Nº',
+    number: 'Número',
+    purchaseNumber: 'Compra Nº',
+    supplier: 'Proveedor',
+    supplierInvoiceLabel: 'Factura del proveedor',
+    colTax: 'ISV',
+    exempt: 'Exento',
+    subtotal: 'Subtotal',
+    tax: 'Impuesto (ISV)',
     name: 'Nombre',
     status: 'Estado',
     from: 'Bodega origen',
@@ -94,9 +121,21 @@ const STRINGS = {
     transferTitle: 'TRANSFER RECEIPT',
     outflowTitle: 'OUTFLOW RECEIPT',
     saleTitle: 'SALE RECEIPT',
+    purchaseTitle: 'PURCHASE RECEIPT',
+    quotationTitle: 'QUOTATION',
     voidCancelled: 'CANCELLED',
     voidRejected: 'REJECTED',
     id: 'ID',
+    invoiceNumber: 'Sale No.',
+    quoteNumber: 'Quotation No.',
+    number: 'Number',
+    purchaseNumber: 'Purchase No.',
+    supplier: 'Supplier',
+    supplierInvoiceLabel: 'Supplier invoice',
+    colTax: 'Tax',
+    exempt: 'Exempt',
+    subtotal: 'Subtotal',
+    tax: 'Tax (ISV)',
     name: 'Name',
     status: 'Status',
     from: 'Source warehouse',
@@ -177,7 +216,7 @@ export class PdfReceiptsService {
       {
         documentType: 'loan',
         id: loan.id,
-        name: loan.name,
+        number: loan.number,
         status: loan.status,
         sourceWarehouse: loan.sourceWarehouse?.name ?? '',
         destinationWarehouse: loan.destinationWarehouse?.name ?? '',
@@ -220,7 +259,7 @@ export class PdfReceiptsService {
       {
         documentType: 'outflow',
         id: outflow.id,
-        name: outflow.name,
+        number: outflow.number,
         status: outflow.status,
         sourceWarehouse: outflow.warehouse?.name ?? '',
         destinationWarehouse: '',
@@ -250,6 +289,7 @@ export class PdfReceiptsService {
       where: { id: saleId },
       include: {
         warehouse: { select: { name: true } },
+        client: { select: { name: true } },
         createdBy: { select: { name: true, email: true } },
         items: {
           include: {
@@ -265,15 +305,20 @@ export class PdfReceiptsService {
       {
         documentType: 'sale',
         id: sale.id,
-        name: sale.name,
+        quoteNumber: sale.quoteNumber,
         status: sale.status,
         sourceWarehouse: sale.warehouse?.name ?? '',
         destinationWarehouse: '',
         warehouseLabel: sale.warehouse?.name ?? '',
-        customerName: sale.customerName,
+        // The linked Client (used for credit-limit tracking) is the
+        // authoritative name when present — customerName is only the
+        // free-text fallback for a walk-in sale with no client record.
+        customerName: sale.client?.name ?? sale.customerName,
         customerType: sale.customerType,
         createdAt: sale.createdAt,
         createdBy: sale.createdBy?.name || sale.createdBy?.email || '',
+        number: sale.number,
+        taxPercent: sale.taxPercent,
         items: sale.items.map((line) => ({
           // Prefer snapshot fields — they survive item renames and deletions.
           name: line.itemName ?? line.inventoryItem?.name ?? '',
@@ -281,8 +326,60 @@ export class PdfReceiptsService {
           quantity: line.quantity,
           unitPrice: line.unitPrice ?? null,
           currency: line.currency ?? null,
+          taxPercent: line.taxPercent,
+          taxAmount: line.taxAmount,
         })),
         notes: sale.notes,
+      },
+      locale,
+    );
+  }
+
+  async generatePurchaseReceipt(
+    purchaseInvoiceId: string,
+    locale: Locale = 'es',
+  ): Promise<Buffer> {
+    const invoice = await this.prisma.purchaseInvoice.findUnique({
+      where: { id: purchaseInvoiceId },
+      include: {
+        warehouse: { select: { name: true } },
+        supplier: { select: { name: true } },
+        createdBy: { select: { name: true, email: true } },
+        items: {
+          include: {
+            inventoryItem: { select: { name: true, serviceTag: true } },
+          },
+        },
+      },
+    });
+
+    if (!invoice) throw new NotFoundException('Purchase invoice not found');
+
+    return this.render(
+      {
+        documentType: 'purchase',
+        id: invoice.id,
+        status: invoice.status,
+        sourceWarehouse: invoice.warehouse?.name ?? '',
+        destinationWarehouse: '',
+        warehouseLabel: invoice.warehouse?.name ?? '',
+        supplierName: invoice.supplier?.name,
+        supplierInvoiceNumber: invoice.invoiceNumber,
+        createdAt: invoice.createdAt,
+        createdBy: invoice.createdBy?.name || invoice.createdBy?.email || '',
+        number: invoice.number,
+        taxPercent: invoice.taxPercent,
+        items: invoice.items.map((line) => ({
+          // Prefer snapshot fields — they survive item renames and deletions.
+          name: line.itemName ?? line.inventoryItem?.name ?? '',
+          serviceTag: line.serviceTag ?? line.inventoryItem?.serviceTag,
+          quantity: line.quantity,
+          unitPrice: line.unitPrice,
+          currency: line.currency,
+          taxPercent: line.taxPercent,
+          taxAmount: line.taxAmount,
+        })),
+        notes: invoice.notes,
       },
       locale,
     );
@@ -319,7 +416,7 @@ export class PdfReceiptsService {
       {
         documentType: 'transfer',
         id: transfer.id,
-        name: transfer.name,
+        number: transfer.number,
         status: transfer.status,
         sourceWarehouse: transfer.sourceWarehouse?.name ?? '',
         destinationWarehouse: transfer.destinationWarehouse?.name ?? '',
@@ -338,6 +435,48 @@ export class PdfReceiptsService {
       },
       locale,
     );
+  }
+
+  /**
+   * A DRAFT sale is a quotation, not an invoice yet — distinct title, and
+   * never the loan/transfer/outflow titles since only 'sale' can be DRAFT.
+   */
+  private resolveTitle(
+    ctx: Pick<ReceiptContext, 'documentType' | 'status'>,
+    t: (typeof STRINGS)[Locale],
+  ): string {
+    if (ctx.documentType === 'sale' && ctx.status === 'DRAFT') {
+      return t.quotationTitle;
+    }
+    if (ctx.documentType === 'loan') return t.loanTitle;
+    if (ctx.documentType === 'transfer') return t.transferTitle;
+    if (ctx.documentType === 'sale') return t.saleTitle;
+    if (ctx.documentType === 'purchase') return t.purchaseTitle;
+    return t.outflowTitle;
+  }
+
+  /**
+   * ACTIVE/CANCELLED sales and purchases show their real invoice number,
+   * a DRAFT sale its quotation number, and loans, transfers and outflows
+   * their own correlative (each falls back to the internal id only for a
+   * document saved before numbering existed and not yet backfilled).
+   */
+  private resolveIdentifierLine(
+    ctx: Pick<
+      ReceiptContext,
+      'documentType' | 'status' | 'id' | 'number' | 'quoteNumber'
+    >,
+    t: (typeof STRINGS)[Locale],
+  ): string | null {
+    if (ctx.documentType === 'purchase') {
+      return `${t.purchaseNumber}: ${ctx.number ?? ctx.id}`;
+    }
+    if (ctx.documentType !== 'sale')
+      return `${t.number}: ${ctx.number ?? ctx.id}`;
+    if (ctx.status === 'DRAFT') {
+      return ctx.quoteNumber ? `${t.quoteNumber}: ${ctx.quoteNumber}` : null;
+    }
+    return `${t.invoiceNumber}: ${ctx.number ?? ctx.id}`;
   }
 
   private render(ctx: ReceiptContext, locale: Locale): Promise<Buffer> {
@@ -370,22 +509,18 @@ export class PdfReceiptsService {
       doc.on('error', reject);
 
       // Header
-      const title =
-        ctx.documentType === 'loan'
-          ? t.loanTitle
-          : ctx.documentType === 'transfer'
-            ? t.transferTitle
-            : ctx.documentType === 'sale'
-              ? t.saleTitle
-              : t.outflowTitle;
+      const title = this.resolveTitle(ctx, t);
       doc.fontSize(18).font('Helvetica-Bold').text(title, { align: 'center' });
       doc.moveDown(0.5);
-      doc
-        .fontSize(10)
-        .font('Helvetica')
-        .fillColor('#666666')
-        .text(`${t.id}: ${ctx.id}`, { align: 'center' });
-      doc.fillColor('#000000');
+      const identifierLine = this.resolveIdentifierLine(ctx, t);
+      if (identifierLine) {
+        doc
+          .fontSize(10)
+          .font('Helvetica')
+          .fillColor('#666666')
+          .text(identifierLine, { align: 'center' });
+        doc.fillColor('#000000');
+      }
       doc.moveDown(1.5);
 
       // Metadata block (two columns)
@@ -407,7 +542,13 @@ export class PdfReceiptsService {
           .text(value || '—', x, y + 12, { width: colWidth - 10 });
       };
 
-      writeRow(t.name, ctx.name ?? '—', metaTop, left);
+      // Purchases show their supplier first; every other document its
+      // number (the free-text reference these used to show is gone).
+      if (ctx.documentType === 'purchase') {
+        writeRow(t.supplier, ctx.supplierName ?? '—', metaTop, left);
+      } else {
+        writeRow(t.number, ctx.number ?? ctx.quoteNumber ?? '—', metaTop, left);
+      }
       writeRow(t.status, ctx.status, metaTop, right);
 
       if (ctx.documentType === 'outflow') {
@@ -432,6 +573,19 @@ export class PdfReceiptsService {
           ? (t.customerTypes[ctx.customerType] ?? ctx.customerType)
           : '—';
         writeRow(t.customerType, typeLabel, metaTop + 42, right);
+      } else if (ctx.documentType === 'purchase') {
+        writeRow(
+          t.warehouse,
+          ctx.warehouseLabel ?? ctx.sourceWarehouse,
+          metaTop + 42,
+          left,
+        );
+        writeRow(
+          t.supplierInvoiceLabel,
+          ctx.supplierInvoiceNumber ?? '—',
+          metaTop + 42,
+          right,
+        );
       } else {
         writeRow(t.from, ctx.sourceWarehouse, metaTop + 42, left);
         writeRow(t.to, ctx.destinationWarehouse, metaTop + 42, right);
@@ -459,18 +613,32 @@ export class PdfReceiptsService {
         .text(t.items);
       doc.moveDown(0.3);
 
+      // Sales and purchases get a narrower layout to make room for a
+      // per-line ISV% column (Decision 17's receipt tax breakdown); every
+      // other document type keeps its exact existing column positions,
+      // untouched.
+      const showTax =
+        ctx.documentType === 'sale' || ctx.documentType === 'purchase';
+      const unitColWidth = showTax ? 65 : 80;
       const tableTop = doc.y;
       const colItem = left;
-      const colTag = left + 200;
-      const colQty = left + 320;
-      const colUnit = left + 360;
-      const colSub = left + 445;
+      const colTag = left + (showTax ? 165 : 200);
+      const colQty = left + (showTax ? 260 : 320);
+      const colUnit = left + (showTax ? 295 : 360);
+      const colTax = left + 365;
+      const colSub = left + (showTax ? 415 : 445);
 
       doc.font('Helvetica-Bold').fontSize(9).fillColor('#444444');
-      doc.text(t.colItem, colItem, tableTop, { width: 195 });
-      doc.text(t.colTag, colTag, tableTop, { width: 115 });
-      doc.text(t.colQty, colQty, tableTop, { width: 35, align: 'right' });
-      doc.text(t.colUnit, colUnit, tableTop, { width: 80, align: 'right' });
+      doc.text(t.colItem, colItem, tableTop, { width: showTax ? 160 : 195 });
+      doc.text(t.colTag, colTag, tableTop, { width: showTax ? 90 : 115 });
+      doc.text(t.colQty, colQty, tableTop, { width: 30, align: 'right' });
+      doc.text(t.colUnit, colUnit, tableTop, {
+        width: unitColWidth,
+        align: 'right',
+      });
+      if (showTax) {
+        doc.text(t.colTax, colTax, tableTop, { width: 40, align: 'right' });
+      }
       doc.text(t.colSubtotal, colSub, tableTop, { width: 70, align: 'right' });
 
       doc
@@ -480,10 +648,12 @@ export class PdfReceiptsService {
         .stroke();
 
       let cursor = tableTop + 20;
-      // One running total per currency; items with no price contribute to nothing.
-      // Items priced without a currency (currency = null) get bucketed under '' so they
+      // One running total (and, for sales, one running tax total) per
+      // currency; items with no price contribute to nothing. Items priced
+      // without a currency (currency = null) get bucketed under '' so they
       // don't accidentally merge with USD/HNL/etc.
       const totalsByCurrency = new Map<string, number>();
+      const taxByCurrency = new Map<string, number>();
 
       doc.font('Helvetica').fontSize(10).fillColor('#000000');
       for (const item of ctx.items) {
@@ -496,18 +666,34 @@ export class PdfReceiptsService {
         if (sub != null) {
           const key = item.currency ?? '';
           totalsByCurrency.set(key, (totalsByCurrency.get(key) ?? 0) + sub);
+          if (showTax) {
+            taxByCurrency.set(
+              key,
+              (taxByCurrency.get(key) ?? 0) + (item.taxAmount ?? 0),
+            );
+          }
         }
 
-        doc.text(item.name || '—', colItem, cursor, { width: 195 });
-        doc.text(item.serviceTag ?? '—', colTag, cursor, { width: 115 });
+        doc.text(item.name || '—', colItem, cursor, {
+          width: showTax ? 160 : 195,
+        });
+        doc.text(item.serviceTag ?? '—', colTag, cursor, {
+          width: showTax ? 90 : 115,
+        });
         doc.text(String(item.quantity), colQty, cursor, {
-          width: 35,
+          width: 30,
           align: 'right',
         });
         doc.text(fmtAmount(unit, item.currency), colUnit, cursor, {
-          width: 80,
+          width: unitColWidth,
           align: 'right',
         });
+        if (showTax) {
+          const effectivePercent = item.taxPercent ?? ctx.taxPercent ?? 0;
+          const taxLabel =
+            effectivePercent > 0 ? `${effectivePercent}%` : t.exempt;
+          doc.text(taxLabel, colTax, cursor, { width: 40, align: 'right' });
+        }
         doc.text(fmtAmount(sub, item.currency), colSub, cursor, {
           width: 70,
           align: 'right',
@@ -515,16 +701,24 @@ export class PdfReceiptsService {
         cursor += 18;
       }
 
-      // Totals — one row per currency present. If none have prices, show a single em-dash.
+      // Totals — one row per currency present (three, Subtotal/Impuesto/
+      // Total, for a sale currency that actually carried any tax). If none
+      // have prices, show a single em-dash.
       doc
         .moveTo(colUnit, cursor + 4)
         .lineTo(doc.page.width - 50, cursor + 4)
         .strokeColor('#cccccc')
         .stroke();
-      doc.font('Helvetica-Bold').fontSize(11).fillColor('#000000');
+
+      const labelX = left + 250;
+      const labelWidth = colSub - labelX - 10;
 
       if (totalsByCurrency.size === 0) {
-        doc.text(t.total, colUnit, cursor + 10, { width: 80, align: 'right' });
+        doc.font('Helvetica-Bold').fontSize(11).fillColor('#000000');
+        doc.text(t.total, colUnit, cursor + 10, {
+          width: unitColWidth,
+          align: 'right',
+        });
         doc.text(t.noPrice, colSub, cursor + 10, { width: 70, align: 'right' });
         cursor += 26;
       } else {
@@ -534,13 +728,51 @@ export class PdfReceiptsService {
         );
         let row = cursor + 10;
         for (const [currency, amount] of entries) {
-          const label = currency ? `${t.total} ${currency}` : t.total;
-          doc.text(label, colUnit, row, { width: 80, align: 'right' });
-          doc.text(fmtAmount(amount, currency || null), colSub, row, {
-            width: 70,
-            align: 'right',
-          });
-          row += 16;
+          const tax = showTax ? (taxByCurrency.get(currency) ?? 0) : 0;
+          if (tax > 0) {
+            doc.font('Helvetica').fontSize(10).fillColor('#000000');
+            const subtotalLabel = currency
+              ? `${t.subtotal} ${currency}`
+              : t.subtotal;
+            doc.text(subtotalLabel, labelX, row, {
+              width: labelWidth,
+              align: 'right',
+            });
+            doc.text(fmtAmount(amount, currency || null), colSub, row, {
+              width: 70,
+              align: 'right',
+            });
+            row += 14;
+            doc.text(t.tax, labelX, row, { width: labelWidth, align: 'right' });
+            doc.text(fmtAmount(tax, currency || null), colSub, row, {
+              width: 70,
+              align: 'right',
+            });
+            row += 14;
+            doc.font('Helvetica-Bold').fontSize(11);
+            const grandLabel = currency ? `${t.total} ${currency}` : t.total;
+            doc.text(grandLabel, labelX, row, {
+              width: labelWidth,
+              align: 'right',
+            });
+            doc.text(fmtAmount(amount + tax, currency || null), colSub, row, {
+              width: 70,
+              align: 'right',
+            });
+            row += 16;
+          } else {
+            doc.font('Helvetica-Bold').fontSize(11).fillColor('#000000');
+            const label = currency ? `${t.total} ${currency}` : t.total;
+            doc.text(label, colUnit, row, {
+              width: unitColWidth,
+              align: 'right',
+            });
+            doc.text(fmtAmount(amount, currency || null), colSub, row, {
+              width: 70,
+              align: 'right',
+            });
+            row += 16;
+          }
         }
         cursor = row;
       }

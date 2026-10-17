@@ -20,7 +20,15 @@ import {
   buildPaginationMeta,
   parseSortOrder,
 } from '../common/dto';
-import { warehouseFilter } from '../common/warehouse-access/warehouse-filter.util';
+import {
+  warehouseFilter,
+  selectedWarehouseFilter,
+} from '../common/warehouse-access/warehouse-filter.util';
+import { StockLevelService } from '../alerts/stock-level.service';
+import { DocumentNumberingService } from '../common/numbering/document-numbering.service';
+import { apiError } from '../common/errors/api-error';
+import { lockForUpdate } from '../common/locking';
+import { takeStock } from '../inventory/stock.util';
 
 interface OutflowItemSeed {
   inventoryItemId: string;
@@ -33,7 +41,6 @@ interface OutflowItemSeed {
 }
 
 interface CreateInternalArgs {
-  name?: string | null;
   warehouseId: string;
   reason: OutflowReason;
   notes?: string | null;
@@ -46,6 +53,8 @@ export class OutflowsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditService: AuditService,
+    private readonly documentNumbering: DocumentNumberingService,
+    private readonly stockLevelService: StockLevelService,
   ) {}
 
   private readonly includeLight = {
@@ -94,13 +103,18 @@ export class OutflowsService {
     }
 
     if (!dto.items?.length) {
-      throw new BadRequestException('At least one item is required');
+      throw new BadRequestException(
+        apiError('ITEMS_REQUIRED', 'At least one item is required'),
+      );
     }
 
     const ids = dto.items.map((i) => i.inventoryItemId);
     if (new Set(ids).size !== ids.length) {
       throw new BadRequestException(
-        'Duplicate inventory item in outflow payload',
+        apiError(
+          'DUPLICATE_INVENTORY_ITEM',
+          'Duplicate inventory item in outflow payload',
+        ),
       );
     }
 
@@ -130,13 +144,16 @@ export class OutflowsService {
       }
       if (item.warehouseId !== dto.warehouseId) {
         throw new BadRequestException(
-          `Item ${line.inventoryItemId} does not belong to the selected warehouse`,
+          apiError(
+            'ITEM_NOT_IN_WAREHOUSE',
+            `Item ${line.inventoryItemId} does not belong to the selected warehouse`,
+            { item: line.inventoryItemId },
+          ),
         );
       }
     }
 
     return this.createInternal({
-      name: dto.name?.trim() || null,
       warehouseId: dto.warehouseId,
       reason: dto.reason,
       notes: dto.notes ?? null,
@@ -176,28 +193,37 @@ export class OutflowsService {
         const current = currentMap.get(line.inventoryItemId);
         if (!current) {
           throw new BadRequestException(
-            `Item ${line.inventoryItemId} is no longer available`,
+            apiError(
+              'ITEM_NO_LONGER_AVAILABLE',
+              `Item ${line.inventoryItemId} is no longer available`,
+              { item: line.inventoryItemId },
+            ),
           );
         }
         if (current.quantity < line.quantity) {
           throw new BadRequestException(
-            `Insufficient quantity for item ${current.name}. Available: ${current.quantity}, Requested: ${line.quantity}`,
+            apiError(
+              'INSUFFICIENT_STOCK',
+              `Insufficient quantity for item ${current.name}. Available: ${current.quantity}, Requested: ${line.quantity}`,
+              {
+                item: current.name,
+                available: current.quantity,
+                requested: line.quantity,
+              },
+            ),
           );
         }
       }
 
-      await Promise.all(
-        args.items.map((line) =>
-          tx.inventoryItem.update({
-            where: { id: line.inventoryItemId },
-            data: { quantity: { decrement: line.quantity } },
-          }),
-        ),
-      );
+      // The check above gives the friendly error; takeStock is what keeps two
+      // concurrent outflows/sales from taking the same last units.
+      for (const line of args.items) {
+        await takeStock(tx, line.inventoryItemId, line.quantity);
+      }
 
       return tx.outflow.create({
         data: {
-          name: args.name,
+          number: await this.documentNumbering.assignNumber(tx, 'OUTFLOW'),
           warehouseId: args.warehouseId,
           reason: args.reason,
           status: OutflowStatus.ACTIVE,
@@ -226,6 +252,7 @@ export class OutflowsService {
       userId: args.createdById,
       changes: {
         after: {
+          number: outflow.number,
           warehouseId: outflow.warehouseId,
           reason: outflow.reason,
           status: outflow.status,
@@ -234,18 +261,21 @@ export class OutflowsService {
       },
     });
 
+    this.stockLevelService.scheduleRefresh();
     return outflow;
   }
 
   async findAll(filters: FilterOutflowDto, userWarehouseIds?: string[] | null) {
     const { page, limit, skip } = parsePagination(filters);
 
-    const wFilter = warehouseFilter(userWarehouseIds);
+    const wFilter = selectedWarehouseFilter(
+      userWarehouseIds,
+      filters.warehouseId,
+    );
     const where: Prisma.OutflowWhereInput = {
       ...wFilter,
       ...(filters.status ? { status: filters.status } : {}),
       ...(filters.reason ? { reason: filters.reason } : {}),
-      ...(filters.warehouseId ? { warehouseId: filters.warehouseId } : {}),
     };
 
     const [data, total] = await Promise.all([
@@ -289,6 +319,8 @@ export class OutflowsService {
     await this.findOne(id, userWarehouseIds);
 
     const updated = await this.prisma.$transaction(async (tx) => {
+      // A concurrent cancel waits here, then reads CANCELLED: stock is restored once
+      await lockForUpdate(tx, 'outflows', id);
       const current = await tx.outflow.findUnique({
         where: { id },
         include: { items: true },
@@ -298,7 +330,11 @@ export class OutflowsService {
       }
       if (current.status !== OutflowStatus.ACTIVE) {
         throw new BadRequestException(
-          `Cannot cancel outflow in ${current.status} status`,
+          apiError(
+            'OUTFLOW_NOT_CANCELLABLE',
+            `Cannot cancel outflow in ${current.status} status`,
+            { status: current.status },
+          ),
         );
       }
 
@@ -336,6 +372,7 @@ export class OutflowsService {
       },
     });
 
+    this.stockLevelService.scheduleRefresh();
     return updated;
   }
 

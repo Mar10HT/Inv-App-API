@@ -175,6 +175,13 @@ export class ScheduledReportsService {
         );
         filename = `bajas_${ts}.xlsx`;
         break;
+      case ReportType.OUTFLOWS:
+        buffer = await this.reportsService.generateOutflowsReport(
+          warehouseIds,
+          locale,
+        );
+        filename = `salidas_${ts}.xlsx`;
+        break;
       default:
         throw new Error(`Unknown report type: ${String(report.reportType)}`);
     }

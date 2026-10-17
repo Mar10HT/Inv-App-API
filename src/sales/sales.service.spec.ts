@@ -7,18 +7,28 @@ import {
 import {
   CustomerType,
   SaleStatus,
+  PaymentCondition,
   type Sale,
   type InventoryItem,
   type Warehouse,
 } from '@prisma/client';
 import { mockDeep, type DeepMockProxy } from 'jest-mock-extended';
+import type { UpdateSaleDto } from './dto/update-sale.dto';
 import { SalesService } from './sales.service';
+import { SaleNumberingService } from './sale-numbering.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
+import { PermissionsService } from '../permissions/permissions.service';
+import { StockLevelService } from '../alerts/stock-level.service';
+import { DocumentNumberingService } from '../common/numbering/document-numbering.service';
 
 describe('SalesService', () => {
   let service: SalesService;
+  let numbering: { assignNumber: jest.Mock };
   let prisma: DeepMockProxy<PrismaService>;
+  let saleNumbering: { assignNumber: jest.Mock };
+  let permissions: { getPermissionsForUser: jest.Mock };
+  let stockLevel: { scheduleRefresh: jest.Mock };
 
   // Fixtures deliberately only populate the fields each test actually reads;
   // cast once here (rather than at each mockResolvedValue call site) now that
@@ -66,24 +76,57 @@ describe('SalesService', () => {
     warehouse: mockWarehouse,
   } as unknown as Sale;
 
+  const mockDraftSale = {
+    ...mockSale,
+    status: SaleStatus.DRAFT,
+    number: null,
+  } as unknown as Sale;
+
   beforeEach(async () => {
     prisma = mockDeep<PrismaService>();
+    // takeStock: the conditional decrement finds the units by default
+    prisma.inventoryItem.updateMany.mockResolvedValue({ count: 1 });
+    // No payments on the document unless a test says otherwise
+    prisma.payment.aggregate.mockResolvedValue({
+      _sum: { amount: null },
+    } as never);
     prisma.$transaction.mockImplementation(((
       cb: (tx: DeepMockProxy<PrismaService>) => unknown,
     ) => cb(prisma)) as never);
+    saleNumbering = {
+      assignNumber: jest
+        .fn()
+        .mockResolvedValue({ number: '001-001-01-00000001' }),
+    };
+    // Defaults to having sales:cancel, so existing cancel() tests (written
+    // before the DRAFT/ACTIVE permission branch existed) keep passing
+    // unchanged; the dedicated permission tests below override this.
+    permissions = {
+      getPermissionsForUser: jest.fn().mockResolvedValue(['sales:cancel']),
+    };
+
+    stockLevel = { scheduleRefresh: jest.fn() };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
+        {
+          provide: DocumentNumberingService,
+          useValue: { assignNumber: jest.fn().mockResolvedValue('DOC-0001') },
+        },
         SalesService,
+        { provide: StockLevelService, useValue: stockLevel },
         { provide: PrismaService, useValue: prisma },
         {
           provide: AuditService,
           useValue: { log: jest.fn(), logSafe: jest.fn() },
         },
+        { provide: SaleNumberingService, useValue: saleNumbering },
+        { provide: PermissionsService, useValue: permissions },
       ],
     }).compile();
 
     service = module.get<SalesService>(SalesService);
+    numbering = module.get(DocumentNumberingService);
   });
 
   afterEach(() => jest.clearAllMocks());
@@ -126,10 +169,71 @@ describe('SalesService', () => {
         }),
       );
       // eslint-disable-next-line @typescript-eslint/unbound-method
-      expect(prisma.inventoryItem.update).toHaveBeenCalledWith({
-        where: { id: 'item-1' },
+      expect(prisma.inventoryItem.updateMany).toHaveBeenCalledWith({
+        where: { id: 'item-1', deletedAt: null, quantity: { gte: 2 } },
         data: { quantity: { decrement: 2 } },
       });
+      // Stock moved: statuses and alerts must be re-evaluated.
+      expect(stockLevel.scheduleRefresh).toHaveBeenCalledTimes(1);
+      // A direct sale is never a quotation.
+      expect(numbering.assignNumber).not.toHaveBeenCalled();
+    });
+
+    it('ignores a typed reference', async () => {
+      prisma.inventoryItem.findMany
+        .mockResolvedValueOnce([mockItem])
+        .mockResolvedValueOnce([mockItem]);
+      prisma.sale.create.mockResolvedValue(mockSale);
+
+      await service.create({ ...baseDto(), name: 'Typed by hand' }, 'user-1');
+
+      const { data } = prisma.sale.create.mock.calls[0][0];
+      expect(data).not.toHaveProperty('name');
+    });
+
+    it('creates a DRAFT quotation with asDraft:true: a quotation number, but no stock check/decrement and no invoice number', async () => {
+      // Only the outer item-existence/snapshot lookup runs for a draft — no
+      // second (quantity-checking) findMany inside createInternal's tx.
+      prisma.inventoryItem.findMany.mockResolvedValueOnce([mockItem]);
+      prisma.sale.create.mockResolvedValue({
+        ...mockSale,
+        status: SaleStatus.DRAFT,
+        number: null,
+      });
+
+      const result = await service.create(
+        { ...baseDto(), asDraft: true },
+        'user-1',
+      );
+
+      expect(result.status).toBe(SaleStatus.DRAFT);
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(prisma.inventoryItem.update).not.toHaveBeenCalled();
+      expect(saleNumbering.assignNumber).not.toHaveBeenCalled();
+      expect(numbering.assignNumber).toHaveBeenCalledWith(prisma, 'QUOTE');
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(prisma.sale.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+          data: expect.objectContaining({
+            status: SaleStatus.DRAFT,
+            number: null,
+            quoteNumber: 'DOC-0001',
+          }),
+        }),
+      );
+    });
+
+    it('does not relax the stock cap check for a quotation with items that reference an unknown item or wrong warehouse', async () => {
+      // The outer existence/warehouse validation still applies to a draft —
+      // only the real-time quantity check inside createInternal is skipped.
+      prisma.inventoryItem.findMany.mockResolvedValueOnce([
+        { ...mockItem, warehouseId: 'other-wh' },
+      ]);
+
+      await expect(
+        service.create({ ...baseDto(), asDraft: true }, 'user-1'),
+      ).rejects.toThrow(BadRequestException);
     });
 
     it('rounds totals to 2 decimals', async () => {
@@ -209,6 +313,149 @@ describe('SalesService', () => {
         BadRequestException,
       );
     });
+
+    describe('credit limit', () => {
+      const creditDto = () => ({
+        ...baseDto(),
+        clientId: 'client-1',
+        paymentCondition: PaymentCondition.CREDIT,
+      });
+
+      it('blocks a credit sale whose own amount alone exceeds the limit, touching no stock', async () => {
+        prisma.inventoryItem.findMany
+          .mockResolvedValueOnce([mockItem])
+          .mockResolvedValueOnce([mockItem]);
+        prisma.$queryRaw.mockResolvedValueOnce([
+          { id: 'client-1', creditLimit: 50, creditLimitCurrency: 'USD' },
+        ] as never);
+        prisma.sale.findMany.mockResolvedValueOnce([]);
+
+        await expect(
+          service.create(creditDto(), 'user-1'),
+        ).rejects.toMatchObject({
+          response: { code: 'CREDIT_LIMIT_EXCEEDED' },
+        });
+        // eslint-disable-next-line @typescript-eslint/unbound-method
+        expect(prisma.inventoryItem.updateMany).not.toHaveBeenCalled();
+      });
+
+      it('refuses a credit sale in a currency other than the limit, touching no stock', async () => {
+        prisma.inventoryItem.findMany
+          .mockResolvedValueOnce([mockItem])
+          .mockResolvedValueOnce([mockItem]);
+        prisma.$queryRaw.mockResolvedValueOnce([
+          { id: 'client-1', creditLimit: 1000, creditLimitCurrency: 'HNL' },
+        ] as never);
+
+        await expect(
+          service.create(creditDto(), 'user-1'),
+        ).rejects.toMatchObject({
+          response: {
+            code: 'CREDIT_LIMIT_CURRENCY_MISMATCH',
+            params: { limitCurrency: 'HNL', saleCurrency: 'USD' },
+          },
+        });
+        // eslint-disable-next-line @typescript-eslint/unbound-method
+        expect(prisma.sale.findMany).not.toHaveBeenCalled();
+        // eslint-disable-next-line @typescript-eslint/unbound-method
+        expect(prisma.inventoryItem.updateMany).not.toHaveBeenCalled();
+      });
+
+      it('only adds up open credit sales in the limit currency', async () => {
+        prisma.inventoryItem.findMany
+          .mockResolvedValueOnce([mockItem])
+          .mockResolvedValueOnce([mockItem]);
+        prisma.$queryRaw.mockResolvedValueOnce([
+          { id: 'client-1', creditLimit: 1000, creditLimitCurrency: 'USD' },
+        ] as never);
+        prisma.sale.findMany.mockResolvedValueOnce([]);
+        prisma.sale.create.mockResolvedValue(mockSale);
+
+        await service.create(creditDto(), 'user-1');
+
+        // eslint-disable-next-line @typescript-eslint/unbound-method
+        expect(prisma.sale.findMany).toHaveBeenCalledWith(
+          expect.objectContaining({
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+            where: expect.objectContaining({ currency: 'USD' }),
+          }),
+        );
+      });
+
+      it('blocks when the sum of other open CREDIT sales plus this one exceeds the limit', async () => {
+        prisma.inventoryItem.findMany
+          .mockResolvedValueOnce([mockItem])
+          .mockResolvedValueOnce([mockItem]);
+        prisma.$queryRaw.mockResolvedValueOnce([
+          { id: 'client-1', creditLimit: 150, creditLimitCurrency: 'USD' },
+        ] as never);
+        prisma.sale.findMany.mockResolvedValueOnce([
+          { id: 'other-sale', totalAmount: 80, taxAmount: 0 },
+        ] as never);
+        prisma.payment.aggregate.mockResolvedValueOnce({
+          _sum: { amount: 0 },
+        } as never);
+
+        // outstanding 80 + this sale's 100 = 180 > 150
+        await expect(
+          service.create(creditDto(), 'user-1'),
+        ).rejects.toMatchObject({
+          response: { code: 'CREDIT_LIMIT_EXCEEDED' },
+        });
+      });
+
+      it('is not blocked when creditLimit is null (unrestricted credit)', async () => {
+        prisma.inventoryItem.findMany
+          .mockResolvedValueOnce([mockItem])
+          .mockResolvedValueOnce([mockItem]);
+        prisma.$queryRaw.mockResolvedValueOnce([
+          { id: 'client-1', creditLimit: null, creditLimitCurrency: 'USD' },
+        ] as never);
+        prisma.sale.create.mockResolvedValue(mockSale);
+
+        await expect(
+          service.create(creditDto(), 'user-1'),
+        ).resolves.toBeDefined();
+        // eslint-disable-next-line @typescript-eslint/unbound-method
+        expect(prisma.sale.findMany).not.toHaveBeenCalled();
+      });
+
+      it('is not blocked for a CASH sale even with a clientId and a tight creditLimit — the check never runs', async () => {
+        prisma.inventoryItem.findMany
+          .mockResolvedValueOnce([mockItem])
+          .mockResolvedValueOnce([mockItem]);
+        prisma.sale.create.mockResolvedValue(mockSale);
+
+        await expect(
+          service.create(
+            {
+              ...baseDto(),
+              clientId: 'client-1',
+              paymentCondition: PaymentCondition.CASH,
+            },
+            'user-1',
+          ),
+        ).resolves.toBeDefined();
+        // eslint-disable-next-line @typescript-eslint/unbound-method
+        expect(prisma.$queryRaw).not.toHaveBeenCalled();
+      });
+
+      it('is not blocked without a clientId regardless of paymentCondition', async () => {
+        prisma.inventoryItem.findMany
+          .mockResolvedValueOnce([mockItem])
+          .mockResolvedValueOnce([mockItem]);
+        prisma.sale.create.mockResolvedValue(mockSale);
+
+        await expect(
+          service.create(
+            { ...baseDto(), paymentCondition: PaymentCondition.CREDIT },
+            'user-1',
+          ),
+        ).resolves.toBeDefined();
+        // eslint-disable-next-line @typescript-eslint/unbound-method
+        expect(prisma.$queryRaw).not.toHaveBeenCalled();
+      });
+    });
   });
 
   describe('findOne', () => {
@@ -235,6 +482,252 @@ describe('SalesService', () => {
         ForbiddenException,
       );
     });
+
+    it('includes the linked client (id + name)', async () => {
+      prisma.sale.findUnique.mockResolvedValue(mockSale);
+
+      await service.findOne('sale-1');
+
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(prisma.sale.findUnique).toHaveBeenCalledWith(
+        expect.objectContaining({
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+          include: expect.objectContaining({
+            client: { select: { id: true, name: true } },
+          }),
+        }),
+      );
+    });
+  });
+
+  describe('update', () => {
+    it('replaces fields and items on a DRAFT and recomputes totals', async () => {
+      prisma.sale.findUnique
+        .mockResolvedValueOnce(mockDraftSale) // findOne() access check
+        .mockResolvedValueOnce(mockDraftSale); // inside the transaction
+      prisma.inventoryItem.findMany.mockResolvedValueOnce([mockItem]);
+      prisma.sale.update.mockResolvedValue(mockDraftSale);
+
+      await service.update(
+        'sale-1',
+        { items: [{ inventoryItemId: 'item-1', quantity: 3, unitPrice: 20 }] },
+        'user-1',
+      );
+
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(prisma.sale.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'sale-1' },
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+          data: expect.objectContaining({ totalAmount: 60 }),
+        }),
+      );
+    });
+
+    const draftForClient = {
+      ...mockDraftSale,
+      clientId: 'client-1',
+      paymentCondition: PaymentCondition.CREDIT,
+    } as unknown as Sale;
+
+    it('keeps the client and payment condition when the edit leaves them out', async () => {
+      prisma.sale.findUnique
+        .mockResolvedValueOnce(draftForClient)
+        .mockResolvedValueOnce(draftForClient);
+      prisma.$queryRaw.mockResolvedValueOnce([
+        { id: 'client-1', creditLimit: null, creditLimitCurrency: 'USD' },
+      ] as never);
+      prisma.sale.update.mockResolvedValue(draftForClient);
+
+      await service.update('sale-1', { notes: 'x' }, 'user-1');
+
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(prisma.sale.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+          data: expect.objectContaining({
+            clientId: 'client-1',
+            paymentCondition: PaymentCondition.CREDIT,
+          }),
+        }),
+      );
+    });
+
+    it('drops the client when the edit clears it', async () => {
+      prisma.sale.findUnique
+        .mockResolvedValueOnce(draftForClient)
+        .mockResolvedValueOnce(draftForClient);
+      prisma.sale.update.mockResolvedValue(mockDraftSale);
+
+      await service.update(
+        'sale-1',
+        { clientId: null } as unknown as UpdateSaleDto,
+        'user-1',
+      );
+
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(prisma.sale.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+          data: expect.objectContaining({ clientId: null }),
+        }),
+      );
+    });
+
+    it('refuses to move a quotation to a warehouse the user cannot access', async () => {
+      prisma.sale.findUnique.mockResolvedValue(mockDraftSale);
+
+      await expect(
+        service.update('sale-1', { warehouseId: 'wh-2' }, 'user-1', ['wh-1']),
+      ).rejects.toThrow(ForbiddenException);
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(prisma.sale.update).not.toHaveBeenCalled();
+    });
+
+    it('refuses to move a quotation whose lines are stocked in the old warehouse', async () => {
+      prisma.sale.findUnique
+        .mockResolvedValueOnce(mockDraftSale)
+        .mockResolvedValueOnce(mockDraftSale);
+      prisma.inventoryItem.findMany.mockResolvedValueOnce([
+        { id: 'item-1', warehouseId: 'wh-1' },
+      ] as never);
+
+      await expect(
+        service.update('sale-1', { warehouseId: 'wh-2' }, 'user-1'),
+      ).rejects.toMatchObject({ response: { code: 'ITEM_NOT_IN_WAREHOUSE' } });
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(prisma.sale.update).not.toHaveBeenCalled();
+    });
+
+    it('throws BadRequestException when the sale is not a DRAFT', async () => {
+      prisma.sale.findUnique
+        .mockResolvedValueOnce(mockSale)
+        .mockResolvedValueOnce(mockSale);
+
+      await expect(
+        service.update('sale-1', { notes: 'x' }, 'user-1'),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('throws ForbiddenException when user has no access to the warehouse', async () => {
+      prisma.sale.findUnique.mockResolvedValue(mockDraftSale);
+
+      await expect(
+        service.update('sale-1', { notes: 'x' }, 'user-1', ['other-wh']),
+      ).rejects.toThrow(ForbiddenException);
+    });
+  });
+
+  describe('confirm', () => {
+    it('assigns a number, decrements stock and sets status ACTIVE', async () => {
+      prisma.sale.findUnique
+        .mockResolvedValueOnce(mockDraftSale) // findOne() access check
+        .mockResolvedValueOnce(mockDraftSale); // inside the transaction
+      prisma.inventoryItem.findMany.mockResolvedValueOnce([mockItem]);
+      prisma.sale.update.mockResolvedValue({
+        ...mockDraftSale,
+        status: SaleStatus.ACTIVE,
+        number: '001-001-01-00000001',
+      });
+
+      const result = await service.confirm('sale-1', 'user-1');
+
+      expect(result.status).toBe(SaleStatus.ACTIVE);
+      expect(result.number).toBe('001-001-01-00000001');
+      expect(saleNumbering.assignNumber).toHaveBeenCalledTimes(1);
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(prisma.inventoryItem.updateMany).toHaveBeenCalledWith({
+        where: { id: 'item-1', deletedAt: null, quantity: { gte: 2 } },
+        data: { quantity: { decrement: 2 } },
+      });
+    });
+
+    it('throws BadRequestException on insufficient stock, without assigning a number', async () => {
+      prisma.sale.findUnique
+        .mockResolvedValueOnce(mockDraftSale)
+        .mockResolvedValueOnce(mockDraftSale);
+      prisma.inventoryItem.findMany.mockResolvedValueOnce([
+        { ...mockItem, quantity: 1 },
+      ]);
+
+      await expect(service.confirm('sale-1', 'user-1')).rejects.toThrow(
+        BadRequestException,
+      );
+      expect(saleNumbering.assignNumber).not.toHaveBeenCalled();
+    });
+
+    it('throws BadRequestException when the sale is not a DRAFT', async () => {
+      prisma.sale.findUnique
+        .mockResolvedValueOnce(mockSale)
+        .mockResolvedValueOnce(mockSale);
+
+      await expect(service.confirm('sale-1', 'user-1')).rejects.toThrow(
+        BadRequestException,
+      );
+    });
+
+    it('throws ForbiddenException when user has no access to the warehouse', async () => {
+      prisma.sale.findUnique.mockResolvedValue(mockDraftSale);
+
+      await expect(
+        service.confirm('sale-1', 'user-1', ['other-wh']),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    describe('credit limit', () => {
+      it('blocks confirming when the amount exceeds the client credit limit — status stays DRAFT, no number assigned, no stock touched', async () => {
+        const draftWithClient = {
+          ...mockDraftSale,
+          clientId: 'client-1',
+          paymentCondition: PaymentCondition.CREDIT,
+        };
+        prisma.sale.findUnique
+          .mockResolvedValueOnce(draftWithClient)
+          .mockResolvedValueOnce(draftWithClient);
+        prisma.$queryRaw.mockResolvedValueOnce([
+          { id: 'client-1', creditLimit: 50, creditLimitCurrency: 'USD' },
+        ] as never);
+        prisma.sale.findMany.mockResolvedValueOnce([]);
+
+        await expect(service.confirm('sale-1', 'user-1')).rejects.toMatchObject(
+          { response: { code: 'CREDIT_LIMIT_EXCEEDED' } },
+        );
+        expect(saleNumbering.assignNumber).not.toHaveBeenCalled();
+        // eslint-disable-next-line @typescript-eslint/unbound-method
+        expect(prisma.inventoryItem.updateMany).not.toHaveBeenCalled();
+      });
+
+      it("excludes the sale itself from the sum of the client's other open CREDIT sales", async () => {
+        const draftWithClient = {
+          ...mockDraftSale,
+          id: 'sale-1',
+          clientId: 'client-1',
+          paymentCondition: PaymentCondition.CREDIT,
+        };
+        prisma.sale.findUnique
+          .mockResolvedValueOnce(draftWithClient)
+          .mockResolvedValueOnce(draftWithClient);
+        prisma.inventoryItem.findMany.mockResolvedValueOnce([mockItem]);
+        prisma.$queryRaw.mockResolvedValueOnce([
+          { id: 'client-1', creditLimit: 1000, creditLimitCurrency: 'USD' },
+        ] as never);
+        prisma.sale.findMany.mockResolvedValueOnce([]);
+        prisma.sale.update.mockResolvedValue({
+          ...draftWithClient,
+          status: SaleStatus.ACTIVE,
+        });
+
+        await service.confirm('sale-1', 'user-1');
+
+        // eslint-disable-next-line @typescript-eslint/unbound-method
+        expect(prisma.sale.findMany).toHaveBeenCalledWith(
+          expect.objectContaining({
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+            where: expect.objectContaining({ id: { not: 'sale-1' } }),
+          }),
+        );
+      });
+    });
   });
 
   describe('cancel', () => {
@@ -255,6 +748,7 @@ describe('SalesService', () => {
         where: { id: 'item-1' },
         data: { quantity: { increment: 2 } },
       });
+      expect(stockLevel.scheduleRefresh).toHaveBeenCalledTimes(1);
     });
 
     it('throws BadRequestException when sale is already CANCELLED', async () => {
@@ -275,13 +769,105 @@ describe('SalesService', () => {
         service.cancel('sale-1', 'user-2', undefined, ['other-wh']),
       ).rejects.toThrow(ForbiddenException);
     });
+
+    it('cancels a DRAFT with no stock to restore and no extra permission check', async () => {
+      prisma.sale.findUnique
+        .mockResolvedValueOnce(mockDraftSale)
+        .mockResolvedValueOnce(mockDraftSale);
+      prisma.sale.update.mockResolvedValue({
+        ...mockDraftSale,
+        status: SaleStatus.CANCELLED,
+      });
+
+      const result = await service.cancel('sale-1', 'user-2');
+
+      expect(result.status).toBe(SaleStatus.CANCELLED);
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(prisma.inventoryItem.update).not.toHaveBeenCalled();
+      expect(permissions.getPermissionsForUser).not.toHaveBeenCalled();
+    });
+
+    it('throws ForbiddenException cancelling an ACTIVE sale when the caller only has sales:create', async () => {
+      permissions.getPermissionsForUser.mockResolvedValue(['sales:create']);
+      prisma.sale.findUnique
+        .mockResolvedValueOnce(mockSale)
+        .mockResolvedValueOnce(mockSale);
+
+      await expect(service.cancel('sale-1', 'user-2')).rejects.toThrow(
+        ForbiddenException,
+      );
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(prisma.inventoryItem.update).not.toHaveBeenCalled();
+    });
+
+    it('allows cancelling an ACTIVE sale for a caller with the SYSTEM_ADMIN wildcard', async () => {
+      permissions.getPermissionsForUser.mockResolvedValue(['*']);
+      prisma.sale.findUnique
+        .mockResolvedValueOnce(mockSale)
+        .mockResolvedValueOnce(mockSale);
+      prisma.sale.update.mockResolvedValue({
+        ...mockSale,
+        status: SaleStatus.CANCELLED,
+      });
+
+      const result = await service.cancel('sale-1', 'user-2');
+
+      expect(result.status).toBe(SaleStatus.CANCELLED);
+    });
+  });
+
+  describe('findAll', () => {
+    it('includes the linked client (id + name), so Accounts Receivable can show who owes', async () => {
+      prisma.sale.findMany.mockResolvedValueOnce([]);
+      prisma.sale.count.mockResolvedValueOnce(0);
+      prisma.payment.groupBy.mockResolvedValueOnce([]);
+
+      await service.findAll({} as never);
+
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(prisma.sale.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+          include: expect.objectContaining({
+            client: { select: { id: true, name: true } },
+          }),
+        }),
+      );
+    });
+
+    it('with onlyWithBalance returns only ACTIVE sales whose balance is greater than zero', async () => {
+      const paidOff = {
+        ...mockSale,
+        id: 'paid-off',
+        totalAmount: 50,
+        taxAmount: 0,
+      };
+      const owing = {
+        ...mockSale,
+        id: 'owing',
+        totalAmount: 100,
+        taxAmount: 0,
+      };
+      prisma.sale.findMany.mockResolvedValueOnce([paidOff, owing] as never);
+      prisma.payment.groupBy.mockResolvedValueOnce([
+        { saleId: 'paid-off', _sum: { amount: 50 } },
+        { saleId: 'owing', _sum: { amount: 30 } },
+      ] as never);
+
+      const result = await service.findAll({ onlyWithBalance: true } as never);
+
+      expect(
+        result.data.map((s) => (s as unknown as { id: string }).id),
+      ).toEqual(['owing']);
+    });
   });
 
   describe('getStats', () => {
-    it('returns counts, breakdown by customer type and revenue by currency', async () => {
+    it('returns counts (including draft), breakdown by customer type and revenue by currency', async () => {
       prisma.sale.count
         .mockResolvedValueOnce(20) // total
-        .mockResolvedValueOnce(15) // active
+        .mockResolvedValueOnce(12) // active
+        .mockResolvedValueOnce(3) // draft
         .mockResolvedValueOnce(5); // cancelled
       prisma.sale.groupBy
         .mockResolvedValueOnce([
@@ -289,16 +875,25 @@ describe('SalesService', () => {
           { customerType: CustomerType.WHOLESALE, _count: { _all: 5 } },
         ] as never)
         .mockResolvedValueOnce([
-          { currency: 'USD', _sum: { totalAmount: 1234.567 } },
+          {
+            currency: 'USD',
+            _sum: { totalAmount: 1234.567, taxAmount: 185.18 },
+          },
+          { currency: 'HNL', _sum: { totalAmount: 100, taxAmount: null } },
         ] as never);
 
       const result = await service.getStats();
 
       expect(result.total).toBe(20);
-      expect(result.active).toBe(15);
+      expect(result.active).toBe(12);
+      expect(result.draft).toBe(3);
       expect(result.cancelled).toBe(5);
+      expect(result.total).toBe(
+        result.active + result.draft + result.cancelled,
+      );
       expect(result.byCustomerType).toEqual({ RETAIL: 10, WHOLESALE: 5 });
-      expect(result.revenueByCurrency).toEqual({ USD: 1234.57 });
+      // Grand totals: subtotal plus tax, per currency
+      expect(result.revenueByCurrency).toEqual({ USD: 1419.75, HNL: 100 });
     });
   });
 });

@@ -15,9 +15,12 @@ import {
   type InventoryItem,
 } from '@prisma/client';
 import { mockDeep, type DeepMockProxy } from 'jest-mock-extended';
+import { StockLevelService } from '../alerts/stock-level.service';
+import { DocumentNumberingService } from '../common/numbering/document-numbering.service';
 
 describe('TransferRequestsService', () => {
   let service: TransferRequestsService;
+  let numbering: { assignNumber: jest.Mock };
   let prisma: DeepMockProxy<PrismaService>;
   let auditService: { log: jest.Mock; logSafe: jest.Mock };
   let qrService: {
@@ -92,6 +95,12 @@ describe('TransferRequestsService', () => {
 
   beforeEach(async () => {
     prisma = mockDeep<PrismaService>();
+    // takeStock: the conditional decrement finds the units by default
+    prisma.inventoryItem.updateMany.mockResolvedValue({ count: 1 });
+    // No payments on the document unless a test says otherwise
+    prisma.payment.aggregate.mockResolvedValue({
+      _sum: { amount: null },
+    } as never);
 
     // inventoryItem tx mock — standalone, used for confirmReceipt / complete flows
     prisma.inventoryItem.update.mockResolvedValue(mockInventoryItem);
@@ -123,7 +132,15 @@ describe('TransferRequestsService', () => {
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
+        {
+          provide: DocumentNumberingService,
+          useValue: { assignNumber: jest.fn().mockResolvedValue('DOC-0001') },
+        },
         TransferRequestsService,
+        {
+          provide: StockLevelService,
+          useValue: { scheduleRefresh: jest.fn() },
+        },
         { provide: PrismaService, useValue: prisma },
         { provide: AuditService, useValue: mockAuditService },
         { provide: QrService, useValue: mockQrService },
@@ -131,6 +148,7 @@ describe('TransferRequestsService', () => {
     }).compile();
 
     service = module.get<TransferRequestsService>(TransferRequestsService);
+    numbering = module.get(DocumentNumberingService);
     auditService = module.get(AuditService);
     qrService = module.get(QrService);
   });
@@ -163,6 +181,23 @@ describe('TransferRequestsService', () => {
           entity: 'TransferRequest',
         }),
       );
+    });
+
+    it('numbers the transfer automatically and ignores a typed reference', async () => {
+      prisma.warehouse.findUnique
+        .mockResolvedValueOnce(mockSourceWarehouse)
+        .mockResolvedValueOnce(mockDestWarehouse);
+      prisma.inventoryItem.findMany.mockResolvedValue([mockInventoryItem]);
+      prisma.transferRequest.create.mockResolvedValue(mockTransferRequest);
+      numbering.assignNumber.mockResolvedValue('TRA-0042');
+
+      await service.create({ ...dto, name: 'Typed by hand' }, 'user-1');
+
+      expect(numbering.assignNumber).toHaveBeenCalledWith(prisma, 'TRANSFER');
+
+      const { data } = prisma.transferRequest.create.mock.calls[0][0];
+      expect(data.number).toBe('TRA-0042');
+      expect(data).not.toHaveProperty('name');
     });
 
     it('throws BadRequestException when source and destination are the same', async () => {

@@ -10,6 +10,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { AlertsService } from './alerts.service';
+import { StockLevelService } from './stock-level.service';
 import { JwtAuthGuard, PermissionsGuard } from '../auth/guards';
 import { Permissions } from '../auth/decorators';
 import { PaginationDto } from '../common/dto/pagination.dto';
@@ -19,7 +20,10 @@ import { AlertType } from '@prisma/client';
 @Controller('alerts')
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 export class AlertsController {
-  constructor(private readonly alertsService: AlertsService) {}
+  constructor(
+    private readonly alertsService: AlertsService,
+    private readonly stockLevelService: StockLevelService,
+  ) {}
 
   @Get()
   @Permissions('alerts:view')
@@ -77,7 +81,8 @@ export class AlertsController {
 
   @Post('trigger-check')
   @Permissions('alerts:manage')
-  triggerCheck() {
-    return this.alertsService.triggerCheck();
+  async triggerCheck() {
+    await this.stockLevelService.refreshNow();
+    return { message: 'Low stock check triggered successfully' };
   }
 }

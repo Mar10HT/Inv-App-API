@@ -53,6 +53,9 @@ describe('ScheduledReportsService', () => {
       generateDischargesReport: jest
         .fn()
         .mockResolvedValue(Buffer.from('discharges')),
+      generateOutflowsReport: jest
+        .fn()
+        .mockResolvedValue(Buffer.from('outflows')),
     } as unknown as jest.Mocked<ReportsService>;
 
     emailService = {
@@ -372,6 +375,7 @@ describe('ScheduledReportsService', () => {
       [ReportType.TRANSFERS, 'generateTransferRequestsReport'],
       [ReportType.STOCK_TAKES, 'generateStockTakeReport'],
       [ReportType.DISCHARGES, 'generateDischargesReport'],
+      [ReportType.OUTFLOWS, 'generateOutflowsReport'],
     ] as const)(
       'dispatches %s to the matching report generator',
       async (reportType, method) => {

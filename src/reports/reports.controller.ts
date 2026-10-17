@@ -11,17 +11,36 @@ import {
 import { ApiTags } from '@nestjs/swagger';
 import { Response } from 'express';
 import { ReportsService } from './reports.service';
+import { StockMovementsService } from './stock-movements.service';
 import { JwtAuthGuard, PermissionsGuard } from '../auth/guards';
 import { Permissions, CurrentUser } from '../auth/decorators';
 import { FilterInventoryDto } from '../inventory/dto/filter-inventory.dto';
 import { AuthenticatedUser } from '../auth/interfaces/auth-user.interface';
 import { resolveWarehouseScope } from '../common/warehouse-access/warehouse-filter.util';
+import { apiError } from '../common/errors/api-error';
 
 @ApiTags('reports')
 @Controller('reports')
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 export class ReportsController {
-  constructor(private readonly reportsService: ReportsService) {}
+  constructor(
+    private readonly reportsService: ReportsService,
+    private readonly stockMovements: StockMovementsService,
+  ) {}
+
+  /**
+   * Every stock movement (manual transactions plus sales, purchases,
+   * outflows, transfers, stock takes and discharges), newest first, for the
+   * Transactions and Trends tabs.
+   */
+  @Get('movements')
+  @Permissions('reports:view')
+  getMovements(
+    @Query('warehouseId') warehouseId: string | undefined,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.stockMovements.findAll(this.scope(user, warehouseId));
+  }
 
   private scope(
     user: AuthenticatedUser,
@@ -119,10 +138,14 @@ export class ReportsController {
     const end = endDate ? new Date(endDate) : undefined;
 
     if (start && isNaN(start.getTime())) {
-      throw new BadRequestException('Invalid startDate format');
+      throw new BadRequestException(
+        apiError('INVALID_START_DATE', 'Invalid startDate format'),
+      );
     }
     if (end && isNaN(end.getTime())) {
-      throw new BadRequestException('Invalid endDate format');
+      throw new BadRequestException(
+        apiError('INVALID_END_DATE', 'Invalid endDate format'),
+      );
     }
 
     const scope = this.scope(user, warehouseId);

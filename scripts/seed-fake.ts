@@ -661,12 +661,22 @@ async function main() {
       returnConfirmedById = random(managerUsers).id;
     }
 
-    const quantity = item.itemType === ItemType.UNIQUE ? 1 : randomInt(1, Math.min(5, item.quantity));
+    // A loan holds 1-3 distinct items, all from the source warehouse
+    const sameWarehouse = loanableItems.filter(it => it.id !== item.id && it.warehouseId === item.warehouseId);
+    const loanItems = [item];
+    for (let n = randomInt(0, 2); n > 0 && sameWarehouse.length > 0; n--) {
+      loanItems.push(sameWarehouse.splice(randomInt(0, sameWarehouse.length - 1), 1)[0]);
+    }
 
     await prisma.loan.create({
       data: {
-        inventoryItemId: item.id,
-        quantity,
+        number: `PRE-${String(loanCount + 1).padStart(4, '0')}`,
+        items: {
+          create: loanItems.map(it => ({
+            inventoryItemId: it.id,
+            quantity: it.itemType === ItemType.UNIQUE ? 1 : randomInt(1, Math.min(5, it.quantity)),
+          })),
+        },
         sourceWarehouseId: srcWh.id,
         destinationWarehouseId: dstWh.id,
         loanDate,
@@ -740,6 +750,7 @@ async function main() {
 
     await prisma.transferRequest.create({
       data: {
+        number: `TRA-${String(trCount + 1).padStart(4, '0')}`,
         status: scenario.status,
         sourceWarehouseId: srcWh.id,
         destinationWarehouseId: dstWh.id,
@@ -763,6 +774,13 @@ async function main() {
   }
 
   console.log(`   ✓ ${trCount} transfer requests\n`);
+
+  // Continue the app's own numbering after the seeded documents.
+  const fiscalConfig = (await prisma.fiscalConfig.findFirst()) ?? (await prisma.fiscalConfig.create({ data: {} }));
+  await prisma.fiscalConfig.update({
+    where: { id: fiscalConfig.id },
+    data: { nextLoanNumber: loanCount + 1, nextTransferNumber: trCount + 1 },
+  });
 
   // ----------------------------------------
   // Audit Logs

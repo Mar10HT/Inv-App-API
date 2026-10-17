@@ -12,6 +12,8 @@ import {
   type Outflow,
 } from '@prisma/client';
 import { mockDeep, type DeepMockProxy } from 'jest-mock-extended';
+import { StockLevelService } from '../alerts/stock-level.service';
+import { DocumentNumberingService } from '../common/numbering/document-numbering.service';
 
 describe('DischargeRequestsService', () => {
   let service: DischargeRequestsService;
@@ -71,6 +73,12 @@ describe('DischargeRequestsService', () => {
 
   beforeEach(async () => {
     prisma = mockDeep<PrismaService>();
+    // takeStock: the conditional decrement finds the units by default
+    prisma.inventoryItem.updateMany.mockResolvedValue({ count: 1 });
+    // No payments on the document unless a test says otherwise
+    prisma.payment.aggregate.mockResolvedValue({
+      _sum: { amount: null },
+    } as never);
     // jest-mock-extended's DeepMockProxy methods are real jest.Mock functions
     // at runtime, but their static type doesn't carry that through cleanly
     // enough for this rule to recognize them as safe to reference unbound.
@@ -105,6 +113,14 @@ describe('DischargeRequestsService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         DischargeRequestsService,
+        {
+          provide: DocumentNumberingService,
+          useValue: { assignNumber: jest.fn().mockResolvedValue('SAL-0001') },
+        },
+        {
+          provide: StockLevelService,
+          useValue: { scheduleRefresh: jest.fn() },
+        },
         { provide: PrismaService, useValue: prisma },
         { provide: AuditService, useValue: mockAuditService },
         { provide: QrService, useValue: mockQrService },

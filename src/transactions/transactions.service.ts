@@ -20,12 +20,17 @@ import {
 } from '../common/dto';
 import { EventsService } from '../events/events.service';
 import { warehouseFilterMultiField } from '../common/warehouse-access/warehouse-filter.util';
+import { StockLevelService } from '../alerts/stock-level.service';
+import { apiError } from '../common/errors/api-error';
+import { lockForUpdate } from '../common/locking';
+import { takeStock } from '../inventory/stock.util';
 
 @Injectable()
 export class TransactionsService {
   constructor(
     private prisma: PrismaService,
     private eventsService: EventsService,
+    private readonly stockLevelService: StockLevelService,
   ) {}
 
   async create(createTransactionDto: CreateTransactionDto) {
@@ -77,6 +82,7 @@ export class TransactionsService {
     this.eventsService.emitTransactionChange('created', result.id);
     this.eventsService.emitInventoryChange('updated');
 
+    this.stockLevelService.scheduleRefresh();
     return result;
   }
 
@@ -140,7 +146,32 @@ export class TransactionsService {
     });
   }
 
-  async findOne(id: string) {
+  /**
+   * A transaction belongs to the warehouses it moved stock between. One the
+   * user can't see is reported as missing rather than forbidden, so ids from
+   * other warehouses can't be probed.
+   */
+  private assertVisible(
+    transaction: {
+      id: string;
+      sourceWarehouseId: string | null;
+      destinationWarehouseId: string | null;
+    },
+    warehouseIds: string[] | null | undefined,
+  ): void {
+    if (warehouseIds == null) return;
+    const visible = [
+      transaction.sourceWarehouseId,
+      transaction.destinationWarehouseId,
+    ].some((w) => w != null && warehouseIds.includes(w));
+    if (!visible) {
+      throw new NotFoundException(
+        `Transaction with ID ${transaction.id} not found`,
+      );
+    }
+  }
+
+  async findOne(id: string, warehouseIds?: string[] | null) {
     const transaction = await this.prisma.transaction.findUnique({
       where: { id },
       include: {
@@ -164,11 +195,17 @@ export class TransactionsService {
     if (!transaction) {
       throw new NotFoundException(`Transaction with ID ${id} not found`);
     }
+    this.assertVisible(transaction, warehouseIds);
 
     return transaction;
   }
 
-  async update(id: string, updateTransactionDto: UpdateTransactionDto) {
+  async update(
+    id: string,
+    updateTransactionDto: UpdateTransactionDto,
+    warehouseIds?: string[] | null,
+  ) {
+    if (warehouseIds != null) await this.findOne(id, warehouseIds);
     try {
       return await this.prisma.transaction.update({
         where: { id },
@@ -201,21 +238,57 @@ export class TransactionsService {
     }
   }
 
-  async remove(id: string) {
-    try {
-      // Note: This will cascade delete transaction items
-      await this.prisma.transaction.delete({
+  async remove(id: string, warehouseIds?: string[] | null) {
+    await this.prisma.$transaction(async (tx) => {
+      // A concurrent delete waits here, then finds nothing: undone once
+      await lockForUpdate(tx, 'transactions', id);
+      const transaction = await tx.transaction.findUnique({
         where: { id },
+        include: { items: { include: { inventoryItem: true } } },
       });
-    } catch (error: unknown) {
-      if (
-        error instanceof Prisma.PrismaClientKnownRequestError &&
-        error.code === 'P2025'
-      ) {
+      if (!transaction) {
         throw new NotFoundException(`Transaction with ID ${id} not found`);
       }
-      throw error;
-    }
+      this.assertVisible(transaction, warehouseIds);
+
+      // Deleting undoes the stock movement the transaction made, so the
+      // inventory stays consistent. A TRANSFER never changed quantities.
+      const type = transaction.type as TransactionType;
+      for (const line of transaction.items) {
+        if (type === TransactionType.IN) {
+          await takeStock(
+            tx,
+            line.inventoryItemId,
+            line.quantity,
+            (item) =>
+              new BadRequestException(
+                apiError(
+                  'TRANSACTION_UNDO_BELOW_ZERO',
+                  `Cannot delete this entry: undoing it would take ${item.name} below zero. Available: ${item.quantity}, to remove: ${line.quantity}`,
+                  {
+                    item: item.name,
+                    available: item.quantity,
+                    toRemove: line.quantity,
+                  },
+                ),
+              ),
+          );
+        } else if (type === TransactionType.OUT) {
+          await tx.inventoryItem.update({
+            where: { id: line.inventoryItemId },
+            data: { quantity: { increment: line.quantity } },
+          });
+        }
+      }
+
+      // Cascades to the transaction items
+      await tx.transaction.delete({ where: { id } });
+    });
+
+    this.eventsService.emitTransactionChange('deleted', id);
+    this.eventsService.emitInventoryChange('updated');
+
+    this.stockLevelService.scheduleRefresh();
   }
 
   // Helper methods
@@ -224,13 +297,19 @@ export class TransactionsService {
 
     if (type === TransactionType.IN && !destinationWarehouseId) {
       throw new BadRequestException(
-        'IN transactions require destinationWarehouseId',
+        apiError(
+          'IN_TRANSACTION_REQUIRES_DESTINATION',
+          'IN transactions require destinationWarehouseId',
+        ),
       );
     }
 
     if (type === TransactionType.OUT && !sourceWarehouseId) {
       throw new BadRequestException(
-        'OUT transactions require sourceWarehouseId',
+        apiError(
+          'OUT_TRANSACTION_REQUIRES_SOURCE',
+          'OUT transactions require sourceWarehouseId',
+        ),
       );
     }
 
@@ -239,7 +318,10 @@ export class TransactionsService {
       (!sourceWarehouseId || !destinationWarehouseId)
     ) {
       throw new BadRequestException(
-        'TRANSFER transactions require both sourceWarehouseId and destinationWarehouseId',
+        apiError(
+          'TRANSFER_TRANSACTION_REQUIRES_WAREHOUSES',
+          'TRANSFER transactions require both sourceWarehouseId and destinationWarehouseId',
+        ),
       );
     }
   }
@@ -272,42 +354,23 @@ export class TransactionsService {
     });
     const itemMap = new Map(fetchedItems.map((fi) => [fi.id, fi]));
 
+    // Relative updates only: writing back a quantity computed from the read
+    // above would erase any sale or outflow committed in between. Statuses
+    // follow through StockLevelService (create() schedules a refresh).
     for (const item of items) {
-      const currentItem = itemMap.get(item.inventoryItemId);
+      if (!itemMap.has(item.inventoryItemId)) continue;
 
-      if (!currentItem) continue;
-
-      let newQuantity = currentItem.quantity;
-
-      // Update quantity based on transaction type
       if (type === TransactionType.IN) {
-        newQuantity += item.quantity;
+        await tx.inventoryItem.update({
+          where: { id: item.inventoryItemId },
+          data: { quantity: { increment: item.quantity } },
+        });
       } else if (type === TransactionType.OUT) {
-        newQuantity -= item.quantity;
+        // Rejects instead of clamping at zero: a clamped OUT could not be
+        // undone exactly when the transaction is deleted.
+        await takeStock(tx, item.inventoryItemId, item.quantity);
       }
       // TRANSFER doesn't change total quantity, just location
-
-      // Determine new status based on quantity and assignment
-      let newStatus = 'IN_STOCK';
-      if (newQuantity <= 0) {
-        newStatus = 'OUT_OF_STOCK';
-        newQuantity = Math.max(0, newQuantity); // Don't allow negative
-      } else if (
-        currentItem.itemType === 'UNIQUE' &&
-        currentItem.assignedToUserId
-      ) {
-        newStatus = 'IN_USE';
-      } else if (newQuantity <= currentItem.minQuantity) {
-        newStatus = 'LOW_STOCK';
-      }
-
-      await tx.inventoryItem.update({
-        where: { id: item.inventoryItemId },
-        data: {
-          quantity: newQuantity,
-          status: newStatus,
-        },
-      });
     }
   }
 }

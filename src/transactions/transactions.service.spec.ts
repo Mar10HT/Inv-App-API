@@ -10,6 +10,7 @@ import { mockDeep, type DeepMockProxy } from 'jest-mock-extended';
 import { TransactionsService } from './transactions.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { EventsService } from '../events/events.service';
+import { StockLevelService } from '../alerts/stock-level.service';
 
 const prismaError = (code: string) =>
   new Prisma.PrismaClientKnownRequestError('test error', {
@@ -20,6 +21,7 @@ const prismaError = (code: string) =>
 describe('TransactionsService', () => {
   let service: TransactionsService;
   let prisma: DeepMockProxy<PrismaService>;
+  let stockLevel: { scheduleRefresh: jest.Mock };
 
   const mockWarehouse = {
     id: 'warehouse-123',
@@ -59,6 +61,13 @@ describe('TransactionsService', () => {
 
   beforeEach(async () => {
     prisma = mockDeep<PrismaService>();
+    // takeStock: the conditional decrement finds the units by default
+    prisma.inventoryItem.updateMany.mockResolvedValue({ count: 1 });
+    // No payments on the document unless a test says otherwise
+    prisma.payment.aggregate.mockResolvedValue({
+      _sum: { amount: null },
+    } as never);
+    stockLevel = { scheduleRefresh: jest.fn() };
     prisma.inventoryItem.findMany.mockResolvedValue([mockInventoryItem]);
     prisma.$transaction.mockImplementation(((
       cb: (tx: DeepMockProxy<PrismaService>) => unknown,
@@ -72,6 +81,7 @@ describe('TransactionsService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         TransactionsService,
+        { provide: StockLevelService, useValue: stockLevel },
         { provide: PrismaService, useValue: prisma },
         { provide: EventsService, useValue: mockEventsService },
       ],
@@ -139,6 +149,34 @@ describe('TransactionsService', () => {
           items: [{ inventoryItemId: 'item-123', quantity: 10 }],
         }),
       ).rejects.toThrow(BadRequestException);
+    });
+
+    it('rejects an exit (OUT) larger than the available stock instead of clamping it to zero', async () => {
+      prisma.inventoryItem.findMany.mockResolvedValue([
+        { ...mockInventoryItem, quantity: 5 },
+      ]);
+      // The conditional decrement finds fewer units than asked for
+      prisma.inventoryItem.updateMany.mockResolvedValue({ count: 0 });
+      prisma.inventoryItem.findFirst.mockResolvedValue({
+        id: 'item-123',
+        name: 'Test Item',
+        quantity: 5,
+      } as never);
+      prisma.transaction.create.mockResolvedValue(mockTransaction);
+
+      const result = service.create({
+        type: 'OUT',
+        sourceWarehouseId: 'warehouse-123',
+        userId: 'user-123',
+        items: [{ inventoryItemId: 'item-123', quantity: 10 }],
+      });
+      await expect(result).rejects.toThrow(BadRequestException);
+      await expect(result).rejects.toMatchObject({
+        response: {
+          code: 'INSUFFICIENT_STOCK',
+          params: { available: 5, requested: 10 },
+        },
+      });
     });
 
     it('should throw NotFoundException if inventory item does not exist', async () => {
@@ -252,19 +290,110 @@ describe('TransactionsService', () => {
   });
 
   describe('remove', () => {
-    it('should delete a transaction', async () => {
-      prisma.transaction.delete.mockResolvedValue(mockTransaction);
+    const withLine = (type: string, stock: number, lineQty = 10): Transaction =>
+      ({
+        ...mockTransaction,
+        type,
+        items: [
+          {
+            id: 'item-tx-123',
+            inventoryItemId: 'item-123',
+            quantity: lineQty,
+            notes: null,
+            inventoryItem: { ...mockInventoryItem, quantity: stock },
+          },
+        ],
+      }) as unknown as Transaction;
+
+    it('refuses to undo a transaction from a warehouse the user cannot see', async () => {
+      prisma.transaction.findUnique.mockResolvedValue(withLine('IN', 100));
+
+      await expect(
+        service.remove('transaction-123', ['other-warehouse']),
+      ).rejects.toThrow(NotFoundException);
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(prisma.inventoryItem.updateMany).not.toHaveBeenCalled();
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(prisma.transaction.delete).not.toHaveBeenCalled();
+    });
+
+    it('lets a user undo a transaction into one of their warehouses', async () => {
+      prisma.transaction.findUnique.mockResolvedValue(withLine('IN', 100));
+
+      await service.remove('transaction-123', ['warehouse-123']);
+
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(prisma.transaction.delete).toHaveBeenCalled();
+    });
+
+    it('takes an entry (IN) back out of stock before deleting it', async () => {
+      prisma.transaction.findUnique.mockResolvedValue(withLine('IN', 100));
 
       await service.remove('transaction-123');
 
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(prisma.inventoryItem.updateMany).toHaveBeenCalledWith({
+        where: { id: 'item-123', deletedAt: null, quantity: { gte: 10 } },
+        data: { quantity: { decrement: 10 } },
+      });
       // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(prisma.transaction.delete).toHaveBeenCalledWith({
         where: { id: 'transaction-123' },
       });
     });
 
+    it('puts an exit (OUT) back into stock before deleting it', async () => {
+      prisma.transaction.findUnique.mockResolvedValue(withLine('OUT', 5));
+
+      await service.remove('transaction-123');
+
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(prisma.inventoryItem.update).toHaveBeenCalledWith({
+        where: { id: 'item-123' },
+        data: { quantity: { increment: 10 } },
+      });
+    });
+
+    it('leaves stock alone for a TRANSFER, which never changed quantities', async () => {
+      prisma.transaction.findUnique.mockResolvedValue(withLine('TRANSFER', 50));
+
+      await service.remove('transaction-123');
+
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(prisma.inventoryItem.update).not.toHaveBeenCalled();
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(prisma.transaction.delete).toHaveBeenCalled();
+    });
+
+    it('refuses to delete an entry whose stock was already used, instead of going negative', async () => {
+      prisma.transaction.findUnique.mockResolvedValue(withLine('IN', 4));
+      // The conditional decrement finds fewer units than asked for
+      prisma.inventoryItem.updateMany.mockResolvedValue({ count: 0 });
+      prisma.inventoryItem.findFirst.mockResolvedValue({
+        id: 'item-123',
+        name: 'Test Item',
+        quantity: 4,
+      } as never);
+
+      const result = service.remove('transaction-123');
+      await expect(result).rejects.toThrow(BadRequestException);
+      await expect(result).rejects.toMatchObject({
+        response: { code: 'TRANSACTION_UNDO_BELOW_ZERO' },
+      });
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(prisma.transaction.delete).not.toHaveBeenCalled();
+    });
+
+    it('re-evaluates stock levels after deleting', async () => {
+      prisma.transaction.findUnique.mockResolvedValue(withLine('IN', 100));
+
+      await service.remove('transaction-123');
+
+      expect(stockLevel.scheduleRefresh).toHaveBeenCalledTimes(1);
+    });
+
     it('should throw NotFoundException if transaction does not exist', async () => {
-      prisma.transaction.delete.mockRejectedValue(prismaError('P2025'));
+      prisma.transaction.findUnique.mockResolvedValue(null);
 
       await expect(service.remove('nonexistent')).rejects.toThrow(
         NotFoundException,

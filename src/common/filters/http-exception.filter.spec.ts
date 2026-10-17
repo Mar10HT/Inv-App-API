@@ -1,8 +1,14 @@
-import { HttpException, HttpStatus } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  HttpException,
+  HttpStatus,
+} from '@nestjs/common';
 import type { ArgumentsHost, LoggerService } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import type { Request, Response } from 'express';
 import { GlobalExceptionFilter } from './http-exception.filter';
+import { apiError } from '../errors/api-error';
 
 const prismaError = (code: string, message: string) =>
   new Prisma.PrismaClientKnownRequestError(message, {
@@ -52,6 +58,75 @@ describe('GlobalExceptionFilter', () => {
     );
   });
 
+  it('passes apiError code and params through to the response', () => {
+    const exception = new BadRequestException(
+      apiError(
+        'INSUFFICIENT_STOCK',
+        'Insufficient quantity for item Mouse. Available: 1, Requested: 3',
+        { item: 'Mouse', available: 1, requested: 3 },
+      ),
+    );
+
+    filter.catch(exception, mockHost);
+
+    expect(mockResponse.status).toHaveBeenCalledWith(400);
+    expect(mockResponse.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        statusCode: 400,
+        error: 'Bad Request',
+        code: 'INSUFFICIENT_STOCK',
+        params: { item: 'Mouse', available: 1, requested: 3 },
+        message: [
+          'Insufficient quantity for item Mouse. Available: 1, Requested: 3',
+        ],
+      }),
+    );
+  });
+
+  it('passes apiError code through without params', () => {
+    const exception = new ConflictException(
+      apiError('EMAIL_ALREADY_EXISTS', 'User with this email already exists'),
+    );
+
+    filter.catch(exception, mockHost);
+
+    const call = mockResponse.json.mock.calls[0] as unknown[];
+    const body = call[0] as Record<string, unknown>;
+    expect(body.code).toBe('EMAIL_ALREADY_EXISTS');
+    expect(body.error).toBe('Conflict');
+    expect(body).not.toHaveProperty('params');
+  });
+
+  it('omits code and params for exceptions without a code', () => {
+    const exception = new BadRequestException('Plain message');
+
+    filter.catch(exception, mockHost);
+
+    const call = mockResponse.json.mock.calls[0] as unknown[];
+    const body = call[0] as Record<string, unknown>;
+    expect(body).not.toHaveProperty('code');
+    expect(body).not.toHaveProperty('params');
+    expect(body.message).toEqual(['Plain message']);
+  });
+
+  it('tags DTO validation failures (a list of messages) as VALIDATION_FAILED', () => {
+    // What ValidationPipe throws for a body that fails its class-validator checks
+    const exception = new BadRequestException([
+      'quantity must not be less than 1',
+      'warehouseId should not be empty',
+    ]);
+
+    filter.catch(exception, mockHost);
+
+    const call = mockResponse.json.mock.calls[0] as unknown[];
+    const body = call[0] as Record<string, unknown>;
+    expect(body.code).toBe('VALIDATION_FAILED');
+    expect(body.message).toEqual([
+      'quantity must not be less than 1',
+      'warehouseId should not be empty',
+    ]);
+  });
+
   it('handles HttpException with string response', () => {
     const exception = new HttpException('Forbidden', HttpStatus.FORBIDDEN);
 
@@ -82,6 +157,17 @@ describe('GlobalExceptionFilter', () => {
     expect(mockResponse.status).toHaveBeenCalledWith(409);
     expect(mockResponse.json).toHaveBeenCalledWith(
       expect.objectContaining({ statusCode: 409 }),
+    );
+  });
+
+  it('adds a code to user-facing Prisma errors', () => {
+    filter.catch(prismaError('P2002', 'Unique constraint'), mockHost);
+
+    expect(mockResponse.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        statusCode: 409,
+        code: 'RECORD_ALREADY_EXISTS',
+      }),
     );
   });
 

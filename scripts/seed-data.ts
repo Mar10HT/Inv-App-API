@@ -1,5 +1,6 @@
 import { PrismaClient, InventoryStatus, Currency, ItemType, UserRole } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
+import { INITIAL_ROLES, PERMISSIONS, ROLE_PERMISSIONS } from '../src/common/constants';
 
 const prisma = new PrismaClient();
 
@@ -124,155 +125,22 @@ const usersData = [
   { name: 'System Administrator', email: 'admin@example.com', role: UserRole.SYSTEM_ADMIN },
   { name: 'Secondary Admin', email: 'admin2@example.com', role: UserRole.SYSTEM_ADMIN },
   // WAREHOUSE_MANAGER x2
-  { name: 'Warehouse Manager', email: 'manager@example.com', role: UserRole.WAREHOUSE_MANAGER, roleKey: 'warehouse_manager' },
-  { name: 'Laura Reyes', email: 'laura.r@example.com', role: UserRole.WAREHOUSE_MANAGER, roleKey: 'warehouse_manager' },
+  { name: 'Warehouse Manager', email: 'manager@example.com', role: UserRole.WAREHOUSE_MANAGER },
+  { name: 'Laura Reyes', email: 'laura.r@example.com', role: UserRole.WAREHOUSE_MANAGER },
   // USER x2
-  { name: 'Regular User', email: 'user@example.com', role: UserRole.USER, roleKey: 'user' },
-  { name: 'Pedro Alvarado', email: 'pedro.a@example.com', role: UserRole.USER, roleKey: 'user' },
+  { name: 'Regular User', email: 'user@example.com', role: UserRole.USER },
+  { name: 'Pedro Alvarado', email: 'pedro.a@example.com', role: UserRole.USER },
   // VIEWER x2
-  { name: 'Viewer User', email: 'viewer@example.com', role: UserRole.VIEWER, roleKey: 'viewer' },
-  { name: 'Sofia Mendez', email: 'sofia.m@example.com', role: UserRole.VIEWER, roleKey: 'viewer' },
+  { name: 'Viewer User', email: 'viewer@example.com', role: UserRole.VIEWER },
+  { name: 'Sofia Mendez', email: 'sofia.m@example.com', role: UserRole.VIEWER },
   // EXTERNAL x2
-  { name: 'Carlos Martinez', email: 'carlos.m@external.hn', role: UserRole.EXTERNAL, roleKey: 'external' },
-  { name: 'Ana Lopez', email: 'ana.l@external.hn', role: UserRole.EXTERNAL, roleKey: 'external' },
+  { name: 'Carlos Martinez', email: 'carlos.m@external.hn', role: UserRole.EXTERNAL },
+  { name: 'Ana Lopez', email: 'ana.l@external.hn', role: UserRole.EXTERNAL },
 ];
 
-// ── Permissions ────────────────────────────────────────────────────────────────
-
-const permissionsData = [
-  // Audit
-  { key: 'audit:view', module: 'audit', action: 'view', description: 'View audit logs' },
-  // Categories
-  { key: 'categories:view', module: 'categories', action: 'view', description: 'View categories' },
-  { key: 'categories:create', module: 'categories', action: 'create', description: 'Create categories' },
-  { key: 'categories:edit', module: 'categories', action: 'edit', description: 'Edit categories' },
-  { key: 'categories:delete', module: 'categories', action: 'delete', description: 'Delete categories' },
-  // Dashboard
-  { key: 'dashboard:view', module: 'dashboard', action: 'view', description: 'View dashboard' },
-  // Discharges
-  { key: 'discharges:view', module: 'discharges', action: 'view', description: 'View discharge requests' },
-  { key: 'discharges:manage', module: 'discharges', action: 'manage', description: 'Manage discharge requests' },
-  // Inventory
-  { key: 'inventory:view', module: 'inventory', action: 'view', description: 'View inventory' },
-  { key: 'inventory:create', module: 'inventory', action: 'create', description: 'Create inventory items' },
-  { key: 'inventory:edit', module: 'inventory', action: 'edit', description: 'Edit inventory items' },
-  { key: 'inventory:delete', module: 'inventory', action: 'delete', description: 'Delete inventory items' },
-  { key: 'inventory:change', module: 'inventory', action: 'change', description: 'Change inventory quantities' },
-  // Loans
-  { key: 'loans:view', module: 'loans', action: 'view', description: 'View loans' },
-  { key: 'loans:create', module: 'loans', action: 'create', description: 'Create loans' },
-  { key: 'loans:manage', module: 'loans', action: 'manage', description: 'Manage all loans' },
-  // Reports
-  { key: 'reports:view', module: 'reports', action: 'view', description: 'View reports' },
-  // Settings
-  { key: 'settings:view', module: 'settings', action: 'view', description: 'View settings' },
-  { key: 'settings:edit', module: 'settings', action: 'edit', description: 'Edit settings' },
-  // Stocktake
-  { key: 'stocktake:view', module: 'stocktake', action: 'view', description: 'View stock takes' },
-  { key: 'stocktake:create', module: 'stocktake', action: 'create', description: 'Create stock takes' },
-  { key: 'stocktake:manage', module: 'stocktake', action: 'manage', description: 'Manage stock takes' },
-  // Suppliers
-  { key: 'suppliers:view', module: 'suppliers', action: 'view', description: 'View suppliers' },
-  { key: 'suppliers:create', module: 'suppliers', action: 'create', description: 'Create suppliers' },
-  { key: 'suppliers:edit', module: 'suppliers', action: 'edit', description: 'Edit suppliers' },
-  { key: 'suppliers:delete', module: 'suppliers', action: 'delete', description: 'Delete suppliers' },
-  // Transactions
-  { key: 'transactions:view', module: 'transactions', action: 'view', description: 'View transactions' },
-  { key: 'transactions:create', module: 'transactions', action: 'create', description: 'Create transactions' },
-  { key: 'transactions:delete', module: 'transactions', action: 'delete', description: 'Delete transactions' },
-  // Transfers
-  { key: 'transfers:view', module: 'transfers', action: 'view', description: 'View transfer requests' },
-  { key: 'transfers:create', module: 'transfers', action: 'create', description: 'Create transfer requests' },
-  { key: 'transfers:manage', module: 'transfers', action: 'manage', description: 'Manage all transfer requests' },
-  // Users
-  { key: 'users:view', module: 'users', action: 'view', description: 'View users' },
-  { key: 'users:create', module: 'users', action: 'create', description: 'Create users' },
-  { key: 'users:edit', module: 'users', action: 'edit', description: 'Edit users' },
-  { key: 'users:delete', module: 'users', action: 'delete', description: 'Delete users' },
-  // Warehouse
-  { key: 'warehouse:view', module: 'warehouse', action: 'view', description: 'View warehouses' },
-  { key: 'warehouse:create', module: 'warehouse', action: 'create', description: 'Create warehouses' },
-  { key: 'warehouse:edit', module: 'warehouse', action: 'edit', description: 'Edit warehouses' },
-  { key: 'warehouse:delete', module: 'warehouse', action: 'delete', description: 'Delete warehouses' },
-];
-
-// ── Roles & their permission sets ─────────────────────────────────────────────
-
-const rolesData = [
-  {
-    name: 'warehouse_manager',
-    displayName: 'Warehouse Manager',
-    description: 'Full access to inventory, warehouses, and operations',
-    isSystem: true,
-    permissions: [
-      'audit:view',
-      'categories:view', 'categories:create', 'categories:edit', 'categories:delete',
-      'dashboard:view',
-      'discharges:view', 'discharges:manage',
-      'inventory:view', 'inventory:create', 'inventory:edit', 'inventory:delete', 'inventory:change',
-      'loans:view', 'loans:create', 'loans:manage',
-      'reports:view',
-      'settings:view',
-      'stocktake:view', 'stocktake:create', 'stocktake:manage',
-      'suppliers:view', 'suppliers:create', 'suppliers:edit', 'suppliers:delete',
-      'transactions:view', 'transactions:create', 'transactions:delete',
-      'transfers:view', 'transfers:create', 'transfers:manage',
-      'users:view',
-      'warehouse:view', 'warehouse:create', 'warehouse:edit', 'warehouse:delete',
-    ],
-  },
-  {
-    name: 'user',
-    displayName: 'Regular User',
-    description: 'Operational access — can create and view but not manage',
-    isSystem: true,
-    permissions: [
-      'categories:view',
-      'dashboard:view',
-      'discharges:view',
-      'inventory:view', 'inventory:create', 'inventory:edit', 'inventory:change',
-      'loans:view', 'loans:create',
-      'reports:view',
-      'stocktake:view', 'stocktake:create',
-      'suppliers:view',
-      'transactions:view', 'transactions:create',
-      'transfers:view', 'transfers:create',
-      'warehouse:view',
-    ],
-  },
-  {
-    name: 'viewer',
-    displayName: 'Viewer',
-    description: 'Read-only access to all modules',
-    isSystem: true,
-    permissions: [
-      'audit:view',
-      'categories:view',
-      'dashboard:view',
-      'discharges:view',
-      'inventory:view',
-      'loans:view',
-      'reports:view',
-      'stocktake:view',
-      'suppliers:view',
-      'transactions:view',
-      'transfers:view',
-      'warehouse:view',
-    ],
-  },
-  {
-    name: 'external',
-    displayName: 'External',
-    description: 'External user — can view assigned items and their loans',
-    isSystem: true,
-    permissions: [
-      'dashboard:view',
-      'discharges:view',
-      'inventory:view',
-      'loans:view',
-    ],
-  },
-];
+// Permissions and roles come from the app's own RBAC constants, so this seed
+// creates exactly the roles seed:rbac and the startup sync know about (it used
+// to create lowercase copies like "warehouse_manager" next to them).
 
 type ProductDef = {
   name: string;
@@ -576,8 +444,8 @@ async function main() {
   console.log('🔑 Creating permissions...');
   const permissionsMap: Record<string, any> = {};
 
-  for (const permData of permissionsData) {
-    const perm = await prisma.permission.create({ data: permData });
+  for (const { key, module, action, description } of PERMISSIONS) {
+    const perm = await prisma.permission.create({ data: { key, module, action, description } });
     permissionsMap[perm.key] = perm;
   }
   console.log(`   ✓ Created ${Object.keys(permissionsMap).length} permissions\n`);
@@ -588,11 +456,11 @@ async function main() {
   console.log('🎭 Creating roles...');
   const rolesMap: Record<string, any> = {};
 
-  for (const roleData of rolesData) {
-    const { permissions: permKeys, ...rest } = roleData;
-    const role = await prisma.role.create({ data: rest });
+  for (const { name, displayName, description } of INITIAL_ROLES) {
+    const role = await prisma.role.create({ data: { name, displayName, description, isSystem: true } });
     rolesMap[role.name] = role;
 
+    const permKeys = ROLE_PERMISSIONS[name] ?? [];
     for (const key of permKeys) {
       const perm = permissionsMap[key];
       if (perm) {
@@ -614,12 +482,11 @@ async function main() {
   const assignableUsers: any[] = []; // Users that can be assigned unique items
 
   for (const userData of usersData) {
-    const { roleKey, ...rest } = userData as any;
-    const roleId = roleKey ? rolesMap[roleKey]?.id : undefined;
+    const roleId = rolesMap[userData.role]?.id;
 
     const user = await prisma.user.create({
       data: {
-        ...rest,
+        ...userData,
         password: hashedPassword,
         ...(roleId ? { roleId } : {}),
       },

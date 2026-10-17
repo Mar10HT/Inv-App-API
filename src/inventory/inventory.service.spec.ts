@@ -18,6 +18,7 @@ import {
   type InventoryItem,
   type Warehouse,
 } from '@prisma/client';
+import { StockLevelService } from '../alerts/stock-level.service';
 
 describe('InventoryService', () => {
   let service: InventoryService;
@@ -94,6 +95,10 @@ describe('InventoryService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         InventoryService,
+        {
+          provide: StockLevelService,
+          useValue: { scheduleRefresh: jest.fn() },
+        },
         { provide: PrismaService, useValue: prisma },
         { provide: AuditService, useValue: auditService },
         { provide: CACHE_MANAGER, useValue: mockCacheManager },
@@ -159,15 +164,17 @@ describe('InventoryService', () => {
       prisma.warehouse.findUnique.mockResolvedValue(mockWarehouse);
       prisma.inventoryItem.findUnique.mockResolvedValue(mockInventoryItem);
 
-      await expect(
-        service.create({
-          name: 'Test Item',
-          quantity: 10,
-          category: 'Electronics',
-          warehouseId: 'warehouse-123',
-          sku: 'SKU-001',
-        }),
-      ).rejects.toThrow(ConflictException);
+      const result = service.create({
+        name: 'Test Item',
+        quantity: 10,
+        category: 'Electronics',
+        warehouseId: 'warehouse-123',
+        sku: 'SKU-001',
+      });
+      await expect(result).rejects.toThrow(ConflictException);
+      await expect(result).rejects.toMatchObject({
+        response: { code: 'SKU_ALREADY_EXISTS', params: { sku: 'SKU-001' } },
+      });
     });
 
     it('should throw BadRequestException if UNIQUE item has quantity > 1', async () => {
@@ -327,6 +334,23 @@ describe('InventoryService', () => {
       const result = await service.update('item-123', { name: 'Updated Item' });
 
       expect(result.name).toBe('Updated Item');
+    });
+
+    it('expands a date-only expirationDate to a full ISO datetime for Prisma', async () => {
+      prisma.inventoryItem.findUnique.mockResolvedValue(mockInventoryItem);
+      prisma.inventoryItem.update.mockResolvedValue(mockInventoryItem);
+
+      await service.update('item-123', { expirationDate: '2027-01-15' });
+
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(prisma.inventoryItem.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+          data: expect.objectContaining({
+            expirationDate: '2027-01-15T00:00:00.000Z',
+          }),
+        }),
+      );
     });
 
     it('should throw ConflictException if updating to existing SKU', async () => {

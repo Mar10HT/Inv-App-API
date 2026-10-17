@@ -190,9 +190,13 @@ describe('UsersService', () => {
     it('should throw ConflictException if email already exists', async () => {
       prisma.user.update.mockRejectedValue(prismaError('P2002'));
 
-      await expect(
-        service.update('user-123', { email: 'existing@example.com' }),
-      ).rejects.toThrow(ConflictException);
+      const result = service.update('user-123', {
+        email: 'existing@example.com',
+      });
+      await expect(result).rejects.toThrow(ConflictException);
+      await expect(result).rejects.toMatchObject({
+        response: { code: 'EMAIL_ALREADY_EXISTS' },
+      });
     });
 
     it('should throw NotFoundException if user does not exist', async () => {

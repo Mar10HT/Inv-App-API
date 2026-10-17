@@ -14,6 +14,7 @@
  */
 import { PrismaClient } from '@prisma/client';
 import { PERMISSIONS, INITIAL_ROLES, ROLE_PERMISSIONS } from '../src/common/constants';
+import { removeDuplicateRoles } from '../src/seed/remove-duplicate-roles';
 
 const prisma = new PrismaClient();
 
@@ -120,6 +121,8 @@ async function main(): Promise<void> {
   await seedRoles();
   await syncRolePermissions();
   await migrateUserRoles();
+  const duplicates = await removeDuplicateRoles(prisma);
+  if (duplicates.length > 0) console.log(`Removed duplicate roles: ${duplicates.join(', ')}`);
   console.log('RBAC seed complete.');
 }
 

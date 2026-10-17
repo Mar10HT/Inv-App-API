@@ -14,7 +14,15 @@ import {
   OutflowStatus,
   Prisma,
 } from '@prisma/client';
-import { warehouseFilter } from '../common/warehouse-access/warehouse-filter.util';
+import {
+  warehouseFilter,
+  selectedWarehouseFilter,
+} from '../common/warehouse-access/warehouse-filter.util';
+import { StockLevelService } from '../alerts/stock-level.service';
+import { apiError } from '../common/errors/api-error';
+import { lockForUpdate } from '../common/locking';
+import { takeStock } from '../inventory/stock.util';
+import { DocumentNumberingService } from '../common/numbering/document-numbering.service';
 
 @Injectable()
 export class DischargeRequestsService {
@@ -22,6 +30,8 @@ export class DischargeRequestsService {
     private prisma: PrismaService,
     private auditService: AuditService,
     private qrService: QrService,
+    private readonly stockLevelService: StockLevelService,
+    private readonly documentNumbering: DocumentNumberingService,
   ) {}
 
   private readonly includeLight = {
@@ -65,7 +75,15 @@ export class DischargeRequestsService {
 
         if (inventoryItem.quantity < item.quantity) {
           throw new BadRequestException(
-            `Insufficient quantity for item ${inventoryItem.name}. Available: ${inventoryItem.quantity}, Requested: ${item.quantity}`,
+            apiError(
+              'INSUFFICIENT_STOCK',
+              `Insufficient quantity for item ${inventoryItem.name}. Available: ${inventoryItem.quantity}, Requested: ${item.quantity}`,
+              {
+                item: inventoryItem.name,
+                available: inventoryItem.quantity,
+                requested: item.quantity,
+              },
+            ),
           );
         }
 
@@ -174,9 +192,8 @@ export class DischargeRequestsService {
     const skip = (page - 1) * limit;
 
     const where: Prisma.DischargeRequestWhereInput = {
-      ...warehouseFilter(warehouseIds),
+      ...selectedWarehouseFilter(warehouseIds, filters.warehouseId),
       ...(filters.status ? { status: filters.status } : {}),
-      ...(filters.warehouseId ? { warehouseId: filters.warehouseId } : {}),
     };
 
     const [requests, total] = await Promise.all([
@@ -225,13 +242,34 @@ export class DischargeRequestsService {
 
     if (request.status !== DischargeRequestStatus.PENDING) {
       throw new BadRequestException(
-        `Discharge request is not pending. Current status: ${request.status}`,
+        apiError(
+          'DISCHARGE_REQUEST_NOT_PENDING',
+          `Discharge request is not pending. Current status: ${request.status}`,
+          { status: request.status },
+        ),
       );
     }
 
     // Validate and decrement inventory in a single transaction to prevent race conditions
     let createdOutflowId: string | null = null;
     const updated = await this.prisma.$transaction(async (tx) => {
+      // Lock and re-check: a concurrent completion waits here, then sees
+      // COMPLETED, so stock leaves once
+      await lockForUpdate(tx, 'discharge_requests', id);
+      const fresh = await tx.dischargeRequest.findUnique({
+        where: { id },
+        select: { status: true },
+      });
+      if (fresh?.status !== DischargeRequestStatus.PENDING) {
+        throw new BadRequestException(
+          apiError(
+            'DISCHARGE_REQUEST_NOT_PENDING',
+            `Discharge request is not pending. Current status: ${fresh?.status ?? 'unknown'}`,
+            { status: fresh?.status ?? 'unknown' },
+          ),
+        );
+      }
+
       // Validate all items exist, are not soft-deleted, and have sufficient quantity
       const inventoryItems = await Promise.all(
         request.items.map((item) =>
@@ -254,36 +292,48 @@ export class DischargeRequestsService {
         const requestItem = request.items[i];
         if (!inventoryItem) {
           throw new BadRequestException(
-            `Item ${requestItem.inventoryItem.name} is no longer available`,
+            apiError(
+              'ITEM_NO_LONGER_AVAILABLE',
+              `Item ${requestItem.inventoryItem.name} is no longer available`,
+              { item: requestItem.inventoryItem.name },
+            ),
           );
         }
         if (inventoryItem.quantity < requestItem.quantity) {
           throw new BadRequestException(
-            `Insufficient quantity for item ${requestItem.inventoryItem.name}. Available: ${inventoryItem.quantity}, Requested: ${requestItem.quantity}`,
+            apiError(
+              'INSUFFICIENT_STOCK',
+              `Insufficient quantity for item ${requestItem.inventoryItem.name}. Available: ${inventoryItem.quantity}, Requested: ${requestItem.quantity}`,
+              {
+                item: requestItem.inventoryItem.name,
+                available: inventoryItem.quantity,
+                requested: requestItem.quantity,
+              },
+            ),
           );
         }
       }
 
-      // Decrement all inventory quantities in parallel
-      await Promise.all(
-        request.items.map((item) =>
-          tx.inventoryItem.update({
-            where: { id: item.inventoryItemId },
-            data: { quantity: { decrement: item.quantity } },
-          }),
-        ),
-      );
+      // takeStock keeps a concurrent sale/outflow from taking the same units
+      for (const item of request.items) {
+        await takeStock(tx, item.inventoryItemId, item.quantity);
+      }
 
       // Approved discharges are recorded as outflows (CONSUMED) so they show up
       // in the Salidas module alongside manually-created write-offs. The stock
       // was already decremented above, so we don't go through OutflowsService.
       const outflow = await tx.outflow.create({
         data: {
-          name: `Discharge: ${request.requesterName}`,
+          number: await this.documentNumbering.assignNumber(tx, 'OUTFLOW'),
           warehouseId: request.warehouseId,
           reason: OutflowReason.CONSUMED,
           status: OutflowStatus.ACTIVE,
-          notes: request.justification ?? null,
+          notes: [
+            `Baja solicitada por ${request.requesterName}`,
+            request.justification,
+          ]
+            .filter(Boolean)
+            .join('\n'),
           createdById: resolvedById,
           items: {
             create: request.items.map((item, i) => {
@@ -343,6 +393,7 @@ export class DischargeRequestsService {
       });
     }
 
+    this.stockLevelService.scheduleRefresh();
     return updated;
   }
 
@@ -354,7 +405,11 @@ export class DischargeRequestsService {
 
     if (request.status !== DischargeRequestStatus.PENDING) {
       throw new BadRequestException(
-        `Discharge request is not pending. Current status: ${request.status}`,
+        apiError(
+          'DISCHARGE_REQUEST_NOT_PENDING',
+          `Discharge request is not pending. Current status: ${request.status}`,
+          { status: request.status },
+        ),
       );
     }
 
@@ -366,7 +421,11 @@ export class DischargeRequestsService {
       }
       if (current.status !== DischargeRequestStatus.PENDING) {
         throw new BadRequestException(
-          `Discharge request is not pending. Current status: ${current.status}`,
+          apiError(
+            'DISCHARGE_REQUEST_NOT_PENDING',
+            `Discharge request is not pending. Current status: ${current.status}`,
+            { status: current.status },
+          ),
         );
       }
 

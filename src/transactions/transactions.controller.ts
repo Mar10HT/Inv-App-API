@@ -72,8 +72,8 @@ export class TransactionsController {
 
   @Get(':id')
   @Permissions('transactions:view')
-  findOne(@Param('id') id: string) {
-    return this.transactionsService.findOne(id);
+  findOne(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.transactionsService.findOne(id, user.warehouseIds);
   }
 
   @Patch(':id')
@@ -81,14 +81,22 @@ export class TransactionsController {
   update(
     @Param('id') id: string,
     @Body(ValidationPipe) updateTransactionDto: UpdateTransactionDto,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.transactionsService.update(id, updateTransactionDto);
+    return this.transactionsService.update(
+      id,
+      updateTransactionDto,
+      user.warehouseIds,
+    );
   }
 
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
   @Permissions('transactions:delete')
-  async remove(@Param('id') id: string) {
-    await this.transactionsService.remove(id);
+  async remove(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    await this.transactionsService.remove(id, user.warehouseIds);
   }
 }

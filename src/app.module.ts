@@ -22,6 +22,7 @@ import { SeedModule } from './seed/seed.module';
 import { AuditModule } from './audit/audit.module';
 import { HealthModule } from './health/health.module';
 import { AlertsModule } from './alerts/alerts.module';
+import { DocumentNumberingModule } from './common/numbering/document-numbering.module';
 import { TransferRequestsModule } from './transfer-requests/transfer-requests.module';
 import { ReportsModule } from './reports/reports.module';
 import { StockTakeModule } from './stock-take/stock-take.module';
@@ -32,10 +33,15 @@ import { SearchModule } from './common/search/search.module';
 import { DischargeRequestsModule } from './discharge-requests/discharge-requests.module';
 import { OutflowsModule } from './outflows/outflows.module';
 import { SalesModule } from './sales/sales.module';
+import { PurchaseInvoicesModule } from './purchase-invoices/purchase-invoices.module';
 import { WarehouseAccessModule } from './common/warehouse-access/warehouse-access.module';
 import { WarehouseAccessInterceptor } from './common/warehouse-access/warehouse-access.interceptor';
 import { ScheduledReportsModule } from './scheduled-reports/scheduled-reports.module';
 import { RolesModule } from './roles/roles.module';
+import { FiscalConfigModule } from './fiscal-config/fiscal-config.module';
+import { CaiRangesModule } from './cai-ranges/cai-ranges.module';
+import { ClientsModule } from './clients/clients.module';
+import { PaymentsModule } from './payments/payments.module';
 
 @Module({
   imports: [
@@ -108,6 +114,7 @@ import { RolesModule } from './roles/roles.module';
     SeedModule,
     AuditModule,
     AlertsModule,
+    DocumentNumberingModule,
     TransferRequestsModule,
     ReportsModule,
     StockTakeModule,
@@ -116,9 +123,14 @@ import { RolesModule } from './roles/roles.module';
     DischargeRequestsModule,
     OutflowsModule,
     SalesModule,
+    PurchaseInvoicesModule,
     WarehouseAccessModule,
     ScheduledReportsModule,
     RolesModule,
+    FiscalConfigModule,
+    CaiRangesModule,
+    ClientsModule,
+    PaymentsModule,
   ],
   controllers: [AppController],
   providers: [

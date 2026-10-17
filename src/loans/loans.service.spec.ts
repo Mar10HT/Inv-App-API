@@ -17,6 +17,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { QrService } from '../qr/qr.service';
 import { EventsService } from '../events/events.service';
 import { AuditService } from '../audit/audit.service';
+import { DocumentNumberingService } from '../common/numbering/document-numbering.service';
 
 const prismaError = (code: string) =>
   new Prisma.PrismaClientKnownRequestError('test error', {
@@ -26,6 +27,7 @@ const prismaError = (code: string) =>
 
 describe('LoansService', () => {
   let service: LoansService;
+  let numbering: { assignNumber: jest.Mock };
   let prisma: DeepMockProxy<PrismaService>;
 
   // Fixtures deliberately only populate the fields each test actually reads;
@@ -84,6 +86,10 @@ describe('LoansService', () => {
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
+        {
+          provide: DocumentNumberingService,
+          useValue: { assignNumber: jest.fn().mockResolvedValue('DOC-0001') },
+        },
         LoansService,
         { provide: PrismaService, useValue: prisma },
         {
@@ -106,6 +112,7 @@ describe('LoansService', () => {
     }).compile();
 
     service = module.get<LoansService>(LoansService);
+    numbering = module.get(DocumentNumberingService);
   });
 
   afterEach(() => jest.clearAllMocks());
@@ -148,6 +155,22 @@ describe('LoansService', () => {
           }),
         }),
       );
+    });
+
+    it('numbers the loan automatically and ignores a typed reference', async () => {
+      prisma.warehouse.findUnique
+        .mockResolvedValueOnce(mockWarehouse)
+        .mockResolvedValueOnce(mockDestWarehouse);
+      prisma.loan.create.mockResolvedValue(mockLoan);
+      numbering.assignNumber.mockResolvedValue('PRE-0042');
+
+      await service.create({ ...baseDto(), name: 'Typed by hand' }, 'user-1');
+
+      expect(numbering.assignNumber).toHaveBeenCalledWith(prisma, 'LOAN');
+
+      const { data } = prisma.loan.create.mock.calls[0][0];
+      expect(data.number).toBe('PRE-0042');
+      expect(data).not.toHaveProperty('name');
     });
 
     it('rejects when source and destination are the same', async () => {

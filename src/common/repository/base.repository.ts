@@ -12,6 +12,7 @@ import {
   parsePagination,
   buildPaginationMeta,
 } from '../dto';
+import { apiError } from '../errors/api-error';
 
 export interface BaseRepositoryOptions {
   modelName: string;
@@ -24,6 +25,13 @@ export interface BaseRepositoryOptions {
    * label should differ from the Prisma model accessor.
    */
   auditEntityName?: string;
+  /**
+   * Merged into every findAll/findOne/count `where` clause. Existing modules
+   * that don't set this keep querying with no filter, unchanged. Introduced
+   * for soft-deleted entities (e.g. `{ deletedAt: null }`) so a deleted row
+   * stops showing up without every caller having to remember to filter it.
+   */
+  defaultWhere?: Record<string, unknown>;
 }
 
 /**
@@ -48,13 +56,17 @@ interface PrismaModelDelegate<
     take: number;
     orderBy: Record<string, string>;
     include?: Record<string, unknown>;
+    where?: Record<string, unknown>;
   }): Promise<TEntity[]>;
   count(args?: { where?: Record<string, unknown> }): Promise<number>;
   findUnique(args: {
-    where: { id: string };
+    where: { id: string } & Record<string, unknown>;
     include?: Record<string, unknown>;
   }): Promise<TEntity | null>;
-  update(args: { where: { id: string }; data: TUpdate }): Promise<TEntity>;
+  update(args: {
+    where: { id: string } & Record<string, unknown>;
+    data: TUpdate;
+  }): Promise<TEntity>;
   delete(args: { where: { id: string } }): Promise<TEntity>;
 }
 
@@ -124,7 +136,11 @@ export abstract class BaseRepository<
         error.code === 'P2002'
       ) {
         throw new ConflictException(
-          `${this.options.modelName} with this value already exists`,
+          apiError(
+            'RECORD_ALREADY_EXISTS',
+            `${this.options.modelName} with this value already exists`,
+            { model: this.options.modelName },
+          ),
         );
       }
       throw error;
@@ -152,15 +168,23 @@ export abstract class BaseRepository<
       take: number;
       orderBy: Record<string, string>;
       include?: Record<string, unknown>;
+      where?: Record<string, unknown>;
     } = { skip, take: limit, orderBy };
 
     if (this.options.findAllInclude) {
       findManyArgs.include = this.options.findAllInclude;
     }
+    if (this.options.defaultWhere) {
+      findManyArgs.where = this.options.defaultWhere;
+    }
 
     const [data, total] = await Promise.all([
       this.model.findMany(findManyArgs),
-      this.model.count(),
+      this.model.count(
+        this.options.defaultWhere
+          ? { where: this.options.defaultWhere }
+          : undefined,
+      ),
     ]);
 
     return { data, meta: buildPaginationMeta(total, page, limit) };
@@ -168,9 +192,9 @@ export abstract class BaseRepository<
 
   async findOne(id: string): Promise<TEntity> {
     const findArgs: {
-      where: { id: string };
+      where: { id: string } & Record<string, unknown>;
       include?: Record<string, unknown>;
-    } = { where: { id } };
+    } = { where: { id, ...this.options.defaultWhere } };
 
     if (this.options.findOneInclude) {
       findArgs.include = this.options.findOneInclude;
@@ -194,19 +218,25 @@ export abstract class BaseRepository<
   ): Promise<TEntity> {
     // Load the prior state for the audit diff. If it doesn't exist the
     // following update would 404 anyway, so this isn't an extra failure path.
-    const before = await this.model.findUnique({ where: { id } });
+    const before = await this.model.findUnique({
+      where: { id, ...this.options.defaultWhere },
+    });
 
     let entity: TEntity;
     try {
       entity = await this.model.update({
-        where: { id },
+        where: { id, ...this.options.defaultWhere },
         data: updateDto,
       });
     } catch (error: unknown) {
       if (error instanceof Prisma.PrismaClientKnownRequestError) {
         if (error.code === 'P2002')
           throw new ConflictException(
-            `${this.options.modelName} with this value already exists`,
+            apiError(
+              'RECORD_ALREADY_EXISTS',
+              `${this.options.modelName} with this value already exists`,
+              { model: this.options.modelName },
+            ),
           );
         if (error.code === 'P2025')
           throw new NotFoundException(
@@ -260,6 +290,8 @@ export abstract class BaseRepository<
   }
 
   count(where?: Record<string, unknown>): Promise<number> {
-    return this.model.count({ where });
+    return this.model.count({
+      where: { ...this.options.defaultWhere, ...where },
+    });
   }
 }

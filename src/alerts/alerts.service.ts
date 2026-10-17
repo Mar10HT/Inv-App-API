@@ -1,5 +1,4 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
 import { EventsService } from '../events/events.service';
 import { PushNotificationsService } from '../push-notifications/push-notifications.service';
@@ -28,8 +27,8 @@ export class AlertsService {
     private pushNotifications: PushNotificationsService,
   ) {}
 
-  // Run every 6 hours to check for low stock
-  @Cron(CronExpression.EVERY_6_HOURS)
+  // Scheduled and triggered through StockLevelService, which syncs item
+  // statuses first: this check reads them.
   async checkLowStock() {
     if (this.isCheckRunning) {
       this.logger.warn('Low stock check already running, skipping...');
@@ -196,12 +195,19 @@ export class AlertsService {
         }
       }
 
-      // Resolve alerts for items that are now in stock or in use
+      // Resolve alerts for items that are now in stock, in use, or deleted
       const resolvedAlerts = await this.prisma.stockAlert.updateMany({
         where: {
           resolvedAt: null,
           item: {
-            status: { in: [InventoryStatus.IN_STOCK, InventoryStatus.IN_USE] },
+            OR: [
+              {
+                status: {
+                  in: [InventoryStatus.IN_STOCK, InventoryStatus.IN_USE],
+                },
+              },
+              { deletedAt: { not: null } },
+            ],
           },
         },
         data: {
@@ -357,12 +363,6 @@ export class AlertsService {
       notified,
       pendingNotification: active - notified,
     };
-  }
-
-  // Manual trigger for testing or immediate check
-  async triggerCheck() {
-    await this.checkLowStock();
-    return { message: 'Low stock check triggered successfully' };
   }
 
   private async sendAlertPushNotification(

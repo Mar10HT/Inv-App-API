@@ -11,6 +11,7 @@ import {
   type Warehouse,
 } from '@prisma/client';
 import { mockDeep, type DeepMockProxy } from 'jest-mock-extended';
+import { StockLevelService } from '../alerts/stock-level.service';
 
 describe('StockTakeService', () => {
   let service: StockTakeService;
@@ -73,6 +74,10 @@ describe('StockTakeService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         StockTakeService,
+        {
+          provide: StockLevelService,
+          useValue: { scheduleRefresh: jest.fn() },
+        },
         { provide: PrismaService, useValue: prisma },
         { provide: AuditService, useValue: mockAuditService },
       ],
@@ -117,9 +122,14 @@ describe('StockTakeService', () => {
       prisma.warehouse.findUnique.mockResolvedValue(mockWarehouse);
       prisma.stockTake.findFirst.mockResolvedValue(mockStockTake);
 
-      await expect(service.create(dto, 'user-1')).rejects.toThrow(
-        BadRequestException,
-      );
+      const result = service.create(dto, 'user-1');
+      await expect(result).rejects.toThrow(BadRequestException);
+      await expect(result).rejects.toMatchObject({
+        response: {
+          code: 'STOCK_TAKE_ALREADY_IN_PROGRESS',
+          params: { id: mockStockTake.id },
+        },
+      });
     });
   });
 
