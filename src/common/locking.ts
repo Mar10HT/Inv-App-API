@@ -2,6 +2,8 @@ import { Prisma } from '@prisma/client';
 
 /** Tables whose status transitions move stock or money. */
 type LockableTable =
+  | 'warehouses'
+  | 'stock_takes'
   | 'sales'
   | 'purchase_invoices'
   | 'outflows'

@@ -235,6 +235,11 @@ describe('StockTakeService', () => {
       const result = await service.complete('st-1', 'user-1', false);
 
       expect(result.status).toBe(StockTakeStatus.COMPLETED);
+      // The row is locked before its status is read, inside the transaction
+
+      expect(prisma.$executeRaw.mock.invocationCallOrder[0]).toBeLessThan(
+        prisma.stockTake.findUnique.mock.invocationCallOrder[0],
+      );
       // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(prisma.$transaction).toHaveBeenCalled();
     });
@@ -247,7 +252,10 @@ describe('StockTakeService', () => {
       await service.complete('st-1', 'user-1', true);
 
       // eslint-disable-next-line @typescript-eslint/unbound-method
-      expect(prisma.$transaction).toHaveBeenCalled();
+      expect(prisma.inventoryItem.update).toHaveBeenCalledWith({
+        where: { id: mockStockTakeItem.itemId },
+        data: { quantity: 18 },
+      });
     });
 
     it('throws BadRequestException when stock take is not IN_PROGRESS', async () => {
