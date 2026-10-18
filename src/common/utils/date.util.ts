@@ -19,3 +19,14 @@ export function toEndOfBusinessDay(value: string): string {
     ? new Date(`${value}T23:59:59.999${BUSINESS_UTC_OFFSET}`).toISOString()
     : toIsoDateTime(value);
 }
+
+/**
+ * The first instant of a bare date in Honduras ("2027-06-30" is 06:00 UTC
+ * that day), for the "from" end of a date range. A full ISO string is kept
+ * as the exact instant it names.
+ */
+export function toStartOfBusinessDay(value: string): string {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value)
+    ? new Date(`${value}T00:00:00.000${BUSINESS_UTC_OFFSET}`).toISOString()
+    : toIsoDateTime(value);
+}

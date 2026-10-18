@@ -12,6 +12,9 @@ const line = (quantity: number, id = 'i1') => ({
   inventoryItem: { id, name: `Item ${id}`, sku: null },
 });
 
+// Covers every day() used below
+const october = { from: day(1), to: day(31) };
+
 describe('StockMovementsService', () => {
   let service: StockMovementsService;
   let prisma: DeepMockProxy<PrismaService>;
@@ -52,7 +55,7 @@ describe('StockMovementsService', () => {
       },
     ] as never);
 
-    const [cancel, sale] = await service.findAll(null);
+    const [cancel, sale] = await service.findAll(null, october);
 
     expect(sale).toEqual(
       expect.objectContaining({
@@ -93,7 +96,7 @@ describe('StockMovementsService', () => {
       },
     ] as never);
 
-    const [movement] = await service.findAll(null);
+    const [movement] = await service.findAll(null, october);
     expect(movement.date).toEqual(day(1));
   });
 
@@ -111,7 +114,7 @@ describe('StockMovementsService', () => {
       },
     ] as never);
 
-    const [movement] = await service.findAll(null);
+    const [movement] = await service.findAll(null, october);
     expect(movement).toEqual(
       expect.objectContaining({
         type: 'IN',
@@ -160,7 +163,7 @@ describe('StockMovementsService', () => {
       },
     ] as never);
 
-    const movements = await service.findAll(null);
+    const movements = await service.findAll(null, october);
 
     expect(movements).toEqual([
       expect.objectContaining({
@@ -181,7 +184,7 @@ describe('StockMovementsService', () => {
   });
 
   it('only asks for stock takes whose counts were applied, and only completed transfers', async () => {
-    await service.findAll(null);
+    await service.findAll(null, october);
 
     // eslint-disable-next-line @typescript-eslint/unbound-method
     expect(prisma.stockTake.findMany).toHaveBeenCalledWith(
@@ -198,7 +201,7 @@ describe('StockMovementsService', () => {
   });
 
   it('leaves out quotations that were cancelled before being confirmed', async () => {
-    await service.findAll(null);
+    await service.findAll(null, october);
 
     // eslint-disable-next-line @typescript-eslint/unbound-method
     expect(prisma.sale.findMany).toHaveBeenCalledWith(
@@ -251,7 +254,7 @@ describe('StockMovementsService', () => {
       },
     ] as never);
 
-    const movements = await service.findAll(null);
+    const movements = await service.findAll(null, october);
 
     expect(movements.map((m) => m.id)).toEqual([
       'TRANSFER:tr1',
@@ -261,7 +264,7 @@ describe('StockMovementsService', () => {
   });
 
   it('limits every source to the warehouses the user can see', async () => {
-    await service.findAll(['a']);
+    await service.findAll(['a'], october);
 
     // eslint-disable-next-line @typescript-eslint/unbound-method
     expect(prisma.sale.findMany).toHaveBeenCalledWith(
@@ -279,8 +282,108 @@ describe('StockMovementsService', () => {
             { sourceWarehouseId: { in: ['a'] } },
             { destinationWarehouseId: { in: ['a'] } },
           ],
+          date: { gte: october.from, lte: october.to },
         },
       }),
     );
+  });
+
+  describe('period and type', () => {
+    const transaction = (id: string, date: Date, type = 'IN') => ({
+      id,
+      type,
+      date,
+      sourceWarehouseId: null,
+      destinationWarehouseId: 'a',
+      sourceWarehouse: null,
+      destinationWarehouse: wh('a'),
+      user: ana,
+      notes: null,
+      items: [line(1)],
+    });
+
+    it('asks every source only for the documents that moved stock in the period', async () => {
+      await service.findAll(null, { from: day(5), to: day(9) });
+      const inRange = { gte: day(5), lte: day(9) };
+
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(prisma.transaction.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ date: inRange }) as unknown,
+        }),
+      );
+      // A purchase counts for when it was saved and for when it was cancelled
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(prisma.purchaseInvoice.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            OR: [{ createdAt: inRange }, { cancelledAt: inRange }],
+          }) as unknown,
+        }),
+      );
+    });
+
+    it('lists a cancellation in the period even when the sale was saved before it', async () => {
+      prisma.sale.findMany.mockResolvedValue([
+        {
+          id: 's1',
+          number: 'V-0001',
+          notes: null,
+          createdAt: day(1),
+          confirmedAt: day(1),
+          cancelledAt: day(7),
+          warehouse: wh('a'),
+          createdBy: ana,
+          cancelledBy: ana,
+          items: [line(1)],
+        },
+      ] as never);
+
+      const movements = await service.findAll(null, {
+        from: day(5),
+        to: day(9),
+      });
+
+      expect(movements.map((m) => m.id)).toEqual(['SALE:s1:cancel']);
+    });
+
+    it('keeps only the movements of the type asked for', async () => {
+      prisma.transaction.findMany.mockResolvedValue([
+        transaction('t1', day(2), 'IN'),
+        transaction('t2', day(3), 'OUT'),
+      ] as never);
+
+      const movements = await service.findAll(null, {
+        ...october,
+        type: 'OUT',
+      });
+
+      expect(movements.map((m) => m.id)).toEqual(['TRANSACTION:t2']);
+    });
+
+    it('returns one page and the totals of the whole period', async () => {
+      prisma.transaction.findMany.mockResolvedValue([
+        transaction('t1', day(1), 'IN'),
+        transaction('t2', day(2), 'OUT'),
+        transaction('t3', day(3), 'IN'),
+      ] as never);
+
+      const result = await service.findPage(null, october, {
+        page: 2,
+        limit: 2,
+      });
+
+      expect(result.data.map((m) => m.id)).toEqual(['TRANSACTION:t1']);
+      expect(result.meta).toEqual(
+        expect.objectContaining({ total: 3, page: 2, limit: 2, totalPages: 2 }),
+      );
+      expect(result.summary).toEqual({
+        total: 3,
+        inCount: 2,
+        outCount: 1,
+        transferCount: 0,
+        totalItems: 3,
+      });
+    });
   });
 });
