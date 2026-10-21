@@ -18,6 +18,7 @@ import {
 import { StockLevelService } from '../alerts/stock-level.service';
 import { apiError } from '../common/errors/api-error';
 import { lockForUpdate } from '../common/locking';
+import { takeStock } from '../inventory/stock.util';
 
 @Injectable()
 export class StockTakeService {
@@ -198,11 +199,20 @@ export class StockTakeService {
           );
         }
 
-        const itemVariance = dto.countedQty - item.expectedQty;
+        // What the system holds right now is what the count is compared
+        // against: sales or outflows since the stock take started are
+        // already reflected on the shelf being counted
+        const inStock = await tx.inventoryItem.findUnique({
+          where: { id: dto.itemId },
+          select: { quantity: true },
+        });
+        const expectedQty = inStock?.quantity ?? item.expectedQty;
+        const itemVariance = dto.countedQty - expectedQty;
 
         const saved = await tx.stockTakeItem.update({
           where: { id: item.id },
           data: {
+            expectedQty,
             countedQty: dto.countedQty,
             variance: itemVariance,
             notes: dto.notes,
@@ -278,15 +288,34 @@ export class StockTakeService {
           );
         }
 
+        // Only the difference each count found is applied: whatever sold or
+        // came in after an item was counted stays in its stock
         if (applyChanges) {
           for (const stockItem of current.items) {
-            if (stockItem.variance !== 0 && stockItem.countedQty !== null) {
+            const variance = stockItem.variance ?? 0;
+            if (variance > 0) {
               await tx.inventoryItem.update({
                 where: { id: stockItem.itemId },
-                data: {
-                  quantity: stockItem.countedQty,
-                },
+                data: { quantity: { increment: variance } },
               });
+            } else if (variance < 0) {
+              await takeStock(
+                tx,
+                stockItem.itemId,
+                -variance,
+                (item) =>
+                  new BadRequestException(
+                    apiError(
+                      'STOCK_TAKE_ADJUSTMENT_BELOW_ZERO',
+                      `Cannot apply the count of ${item.name}: removing ${-variance} would take it below zero (in stock: ${item.quantity})`,
+                      {
+                        item: item.name,
+                        available: item.quantity,
+                        toRemove: -variance,
+                      },
+                    ),
+                  ),
+              );
             }
           }
         }

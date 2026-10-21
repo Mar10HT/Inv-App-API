@@ -173,4 +173,53 @@ describe('stock takes under concurrent requests', () => {
       }
     }
   });
+
+  describe('applying a count', () => {
+    /** Stands in for a sale or outflow: the stock moves while the count is open. */
+    const sell = (itemId: string, units: number) =>
+      prisma.inventoryItem.update({
+        where: { id: itemId },
+        data: { quantity: { decrement: units } },
+      });
+
+    it('keeps a sale made between counting and completing', async () => {
+      // 10 in the system, 7 on the shelf: 3 missing
+      const { stockTake, item } = await countedStockTake(10, 7);
+      await sell(item.id, 2);
+
+      await stockTakes.complete(stockTake.id, userId, true);
+
+      // 10 - 2 sold - 3 missing; replacing with the count would give 7
+      expect(await stockOf(item.id)).toBe(5);
+    });
+
+    it('compares the count with the stock when the item is counted', async () => {
+      const warehouse = await newWarehouse();
+      const item = await prisma.inventoryItem.create({
+        data: {
+          name: `${run}-item-${Math.random()}`,
+          quantity: 10,
+          category: 'Test',
+          itemType: ItemType.BULK,
+          warehouseId: warehouse.id,
+        },
+      });
+      const stockTake = await stockTakes.create(
+        { warehouseId: warehouse.id },
+        userId,
+      );
+      // Sold after the stock take started, before this item was counted
+      await sell(item.id, 2);
+      await stockTakes.updateItem(
+        stockTake.id,
+        { itemId: item.id, countedQty: 7 },
+        userId,
+      );
+
+      await stockTakes.complete(stockTake.id, userId, true);
+
+      // 8 in the system when counted, 7 on the shelf: 1 missing
+      expect(await stockOf(item.id)).toBe(7);
+    });
+  });
 });
