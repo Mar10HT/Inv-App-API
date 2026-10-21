@@ -4,6 +4,7 @@ import { Prisma } from '@prisma/client';
 type LockableTable =
   | 'warehouses'
   | 'stock_takes'
+  | 'loans'
   | 'sales'
   | 'purchase_invoices'
   | 'outflows'

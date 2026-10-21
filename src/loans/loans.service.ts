@@ -25,6 +25,7 @@ import { AuditService } from '../audit/audit.service';
 import { DocumentNumberingService } from '../common/numbering/document-numbering.service';
 import { warehouseFilterMultiField } from '../common/warehouse-access/warehouse-filter.util';
 import { apiError } from '../common/errors/api-error';
+import { lockForUpdate } from '../common/locking';
 
 @Injectable()
 export class LoansService {
@@ -276,26 +277,35 @@ export class LoansService {
       }
     }
 
-    if (loan.status !== 'PENDING') {
-      throw new BadRequestException(
-        apiError(
-          'LOAN_NOT_PENDING',
-          `Cannot send loan in ${loan.status} status. Only PENDING loans can be sent.`,
-          { status: loan.status },
-        ),
-      );
-    }
-
     // Generate unique QR code for send confirmation
     const sendQrCode = this.qrService.generateCode();
 
-    const updatedLoan = await this.prisma.loan.update({
-      where: { id },
-      data: {
-        status: 'SENT',
-        sendQrCode,
-      },
-      include: this.loanInclude,
+    // A second Send of the same loan waits here and is then refused, so the
+    // code already handed out stays the valid one
+    const updatedLoan = await this.prisma.$transaction(async (tx) => {
+      await lockForUpdate(tx, 'loans', id);
+      const current = await tx.loan.findUnique({
+        where: { id },
+        select: { status: true },
+      });
+      const status = current?.status ?? loan.status;
+      if (status !== 'PENDING') {
+        throw new BadRequestException(
+          apiError(
+            'LOAN_NOT_PENDING',
+            `Cannot send loan in ${status} status. Only PENDING loans can be sent.`,
+            { status },
+          ),
+        );
+      }
+      return tx.loan.update({
+        where: { id },
+        data: {
+          status: 'SENT',
+          sendQrCode,
+        },
+        include: this.loanInclude,
+      });
     });
 
     this.auditService.logSafe({
@@ -354,6 +364,8 @@ export class LoansService {
 
     // Status check + write in one transaction to prevent double-confirmation under concurrency
     const updated = await this.prisma.$transaction(async (tx) => {
+      // A second scan of the same code waits here and then sees the new status
+      await lockForUpdate(tx, 'loans', loan.id);
       const current = await tx.loan.findUnique({ where: { id: loan.id } });
       if (!current || current.status !== 'SENT') {
         throw new BadRequestException(
@@ -409,28 +421,36 @@ export class LoansService {
 
     // Allow ACTIVE for backwards compatibility with legacy loans
     const allowedStatuses = ['RECEIVED', 'OVERDUE', 'ACTIVE'];
-    if (!allowedStatuses.includes(loan.status)) {
-      throw new BadRequestException(
-        apiError(
-          'LOAN_RETURN_INVALID_STATUS',
-          `Cannot initiate return. Loan is in ${loan.status} status. Only RECEIVED, OVERDUE or ACTIVE loans can be returned.`,
-          { status: loan.status },
-        ),
-      );
-    }
-
-    const previousStatus = loan.status;
+    let previousStatus: string = loan.status;
 
     // Generate unique QR code for return confirmation
     const returnQrCode = this.qrService.generateCode();
 
-    const updatedLoan = await this.prisma.loan.update({
-      where: { id },
-      data: {
-        status: 'RETURN_PENDING',
-        returnQrCode,
-      },
-      include: this.loanInclude,
+    // Same as sending: one return code per loan, however many clicks arrive
+    const updatedLoan = await this.prisma.$transaction(async (tx) => {
+      await lockForUpdate(tx, 'loans', id);
+      const current = await tx.loan.findUnique({
+        where: { id },
+        select: { status: true },
+      });
+      previousStatus = current?.status ?? loan.status;
+      if (!allowedStatuses.includes(previousStatus)) {
+        throw new BadRequestException(
+          apiError(
+            'LOAN_RETURN_INVALID_STATUS',
+            `Cannot initiate return. Loan is in ${previousStatus} status. Only RECEIVED, OVERDUE or ACTIVE loans can be returned.`,
+            { status: previousStatus },
+          ),
+        );
+      }
+      return tx.loan.update({
+        where: { id },
+        data: {
+          status: 'RETURN_PENDING',
+          returnQrCode,
+        },
+        include: this.loanInclude,
+      });
     });
 
     this.auditService.logSafe({
@@ -489,6 +509,8 @@ export class LoansService {
 
     // Status check + write in one transaction to prevent double-confirmation under concurrency
     const updated = await this.prisma.$transaction(async (tx) => {
+      // A second scan of the same code waits here and then sees the new status
+      await lockForUpdate(tx, 'loans', loan.id);
       const current = await tx.loan.findUnique({ where: { id: loan.id } });
       if (!current || current.status !== 'RETURN_PENDING') {
         throw new BadRequestException(
@@ -628,6 +650,8 @@ export class LoansService {
 
     // Status check + write in one transaction to prevent double-confirmation under concurrency
     const updated = await this.prisma.$transaction(async (tx) => {
+      // Waits for a send, return or confirmation of the same loan running now
+      await lockForUpdate(tx, 'loans', id);
       const current = await tx.loan.findUnique({ where: { id } });
       if (
         !current ||
@@ -701,6 +725,8 @@ export class LoansService {
 
     // Status check + write in one transaction to prevent double-confirmation under concurrency
     const updated = await this.prisma.$transaction(async (tx) => {
+      // Waits for a send, return or confirmation of the same loan running now
+      await lockForUpdate(tx, 'loans', id);
       const current = await tx.loan.findUnique({ where: { id } });
       if (
         !current ||
@@ -954,6 +980,8 @@ export class LoansService {
 
     // Wrap status check and update in a single transaction to prevent TOCTOU races
     const updated = await this.prisma.$transaction(async (tx) => {
+      // Waits for a send, return or confirmation of the same loan running now
+      await lockForUpdate(tx, 'loans', id);
       const current = await tx.loan.findUnique({ where: { id } });
       if (
         !current ||
