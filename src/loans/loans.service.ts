@@ -939,29 +939,52 @@ export class LoansService {
       }
     }
 
-    if (loan.status === 'RETURNED') {
-      throw new BadRequestException(
-        apiError('LOAN_ALREADY_RETURNED', 'Loan is already returned'),
-      );
-    }
-
     const returnDate = returnLoanDto?.returnDate
       ? new Date(returnLoanDto.returnDate)
       : new Date();
 
-    let notes = loan.notes || '';
-    if (returnLoanDto?.notes) {
-      notes = notes ? `${notes}\n${returnLoanDto.notes}` : returnLoanDto.notes;
-    }
+    return this.prisma.$transaction(async (tx) => {
+      await lockForUpdate(tx, 'loans', id);
+      const current = await tx.loan.findUnique({
+        where: { id },
+        select: { status: true, notes: true },
+      });
+      const status = current?.status ?? loan.status;
+      if (status === 'RETURNED') {
+        throw new BadRequestException(
+          apiError('LOAN_ALREADY_RETURNED', 'Loan is already returned'),
+        );
+      }
+      // Only a loan that went out can come back: not one still pending, nor
+      // one that was cancelled
+      if (
+        !['RECEIVED', 'OVERDUE', 'ACTIVE', 'RETURN_PENDING'].includes(status)
+      ) {
+        throw new BadRequestException(
+          apiError(
+            'LOAN_RETURN_INVALID_STATUS',
+            `Cannot return a loan in ${status} status`,
+            { status },
+          ),
+        );
+      }
 
-    return this.prisma.loan.update({
-      where: { id },
-      data: {
-        status: 'RETURNED',
-        returnDate,
-        notes: notes || undefined,
-      },
-      include: this.loanInclude,
+      let notes = current?.notes || '';
+      if (returnLoanDto?.notes) {
+        notes = notes
+          ? `${notes}\n${returnLoanDto.notes}`
+          : returnLoanDto.notes;
+      }
+
+      return tx.loan.update({
+        where: { id },
+        data: {
+          status: 'RETURNED',
+          returnDate,
+          notes: notes || undefined,
+        },
+        include: this.loanInclude,
+      });
     });
   }
 

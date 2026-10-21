@@ -142,4 +142,33 @@ describe('loans under concurrent requests', () => {
       }
     }
   });
+
+  describe('returning without a QR code (PATCH /loans/:id/return)', () => {
+    it('refuses a loan that was cancelled or never sent', async () => {
+      for (const status of [LoanStatus.CANCELLED, LoanStatus.PENDING]) {
+        const loan = await newLoan(status);
+
+        await expect(loans.returnLoan(loan.id)).rejects.toMatchObject({
+          response: { code: 'LOAN_RETURN_INVALID_STATUS' },
+        });
+        expect((await reload(loan.id)).status).toBe(status);
+      }
+    });
+
+    it('returns a received loan once, however many requests arrive', async () => {
+      const loan = await newLoan(LoanStatus.RECEIVED);
+
+      const results = await Promise.allSettled(
+        [1, 2, 3].map(() => loans.returnLoan(loan.id, { notes: 'ok' })),
+      );
+
+      expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+      expect(
+        results.filter((r) => r.status === 'rejected').map(codeOf),
+      ).toEqual(['LOAN_ALREADY_RETURNED', 'LOAN_ALREADY_RETURNED']);
+      const returned = await reload(loan.id);
+      expect(returned.status).toBe(LoanStatus.RETURNED);
+      expect(returned.notes).toBe('ok');
+    });
+  });
 });
