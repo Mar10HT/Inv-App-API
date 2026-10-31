@@ -1,6 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import { RequestStatus, SaleStatus, StockTakeStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import {
+  buildPaginationMeta,
+  PaginatedResult,
+  PaginationDto,
+  parsePagination,
+} from '../common/dto';
 
 export type MovementType = 'IN' | 'OUT' | 'TRANSFER';
 export type MovementOrigin =
@@ -52,6 +58,23 @@ export interface StockMovement {
   items: StockMovementLine[];
 }
 
+/** The movements of one period, optionally of one type only. */
+export interface MovementQuery {
+  from: Date;
+  to: Date;
+  type?: MovementType;
+}
+
+/** Counts over every movement of the query, not only the page returned. */
+export interface MovementSummary {
+  total: number;
+  inCount: number;
+  outCount: number;
+  transferCount: number;
+  /** Item lines across all of them. */
+  totalItems: number;
+}
+
 const warehouseSelect = { select: { id: true, name: true } } as const;
 const userSelect = { select: { name: true, email: true } } as const;
 const itemSelect = { select: { id: true, name: true, sku: true } } as const;
@@ -84,7 +107,43 @@ const between = (
 export class StockMovementsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async findAll(warehouseIds: string[] | null): Promise<StockMovement[]> {
+  /** One page of the period's movements, newest first, plus its totals. */
+  async findPage(
+    warehouseIds: string[] | null,
+    query: MovementQuery,
+    pagination: PaginationDto,
+  ): Promise<PaginatedResult<StockMovement> & { summary: MovementSummary }> {
+    const movements = await this.findAll(warehouseIds, query);
+    const { page, limit, skip } = parsePagination(pagination);
+    const count = (type: MovementType) =>
+      movements.filter((m) => m.type === type).length;
+    return {
+      data: movements.slice(skip, skip + limit),
+      meta: buildPaginationMeta(movements.length, page, limit),
+      summary: {
+        total: movements.length,
+        inCount: count('IN'),
+        outCount: count('OUT'),
+        transferCount: count('TRANSFER'),
+        totalItems: movements.reduce((sum, m) => sum + m.items.length, 0),
+      },
+    };
+  }
+
+  /**
+   * Every movement of the period, newest first. Each source is filtered by
+   * the dates its movements take (a document listed for when it was saved
+   * and again for when it was cancelled), so only the period is read; the
+   * exact cut is made once the movements are built.
+   */
+  async findAll(
+    warehouseIds: string[] | null,
+    query: MovementQuery,
+  ): Promise<StockMovement[]> {
+    const inRange = { gte: query.from, lte: query.to };
+    const savedOrCancelled = {
+      OR: [{ createdAt: inRange }, { cancelledAt: inRange }],
+    };
     const single = warehouseIds ? { warehouseId: { in: warehouseIds } } : {};
     const pair = warehouseIds
       ? {
@@ -98,7 +157,7 @@ export class StockMovementsService {
     const [transactions, sales, purchases, outflows, transfers, stockTakes] =
       await Promise.all([
         this.prisma.transaction.findMany({
-          where: pair,
+          where: { ...pair, date: inRange },
           include: {
             sourceWarehouse: warehouseSelect,
             destinationWarehouse: warehouseSelect,
@@ -112,6 +171,14 @@ export class StockMovementsService {
             status: { not: SaleStatus.DRAFT },
             // A quotation cancelled before it was confirmed never moved stock
             NOT: { confirmedAt: null, quoteNumber: { not: null } },
+            // Saved when confirmed (or created, before confirmedAt existed)
+            AND: {
+              OR: [
+                { confirmedAt: inRange },
+                { confirmedAt: null, createdAt: inRange },
+                { cancelledAt: inRange },
+              ],
+            },
           },
           include: {
             warehouse: warehouseSelect,
@@ -121,7 +188,7 @@ export class StockMovementsService {
           },
         }),
         this.prisma.purchaseInvoice.findMany({
-          where: single,
+          where: { ...single, ...savedOrCancelled },
           include: {
             warehouse: warehouseSelect,
             createdBy: userSelect,
@@ -130,7 +197,7 @@ export class StockMovementsService {
           },
         }),
         this.prisma.outflow.findMany({
-          where: single,
+          where: { ...single, ...savedOrCancelled },
           include: {
             warehouse: warehouseSelect,
             createdBy: userSelect,
@@ -139,7 +206,16 @@ export class StockMovementsService {
           },
         }),
         this.prisma.transferRequest.findMany({
-          where: { ...pair, status: RequestStatus.COMPLETED },
+          where: {
+            ...pair,
+            status: RequestStatus.COMPLETED,
+            AND: {
+              OR: [
+                { receivedAt: inRange },
+                { receivedAt: null, updatedAt: inRange },
+              ],
+            },
+          },
           include: {
             sourceWarehouse: warehouseSelect,
             destinationWarehouse: warehouseSelect,
@@ -153,6 +229,10 @@ export class StockMovementsService {
             ...single,
             status: StockTakeStatus.COMPLETED,
             adjustmentsApplied: true,
+            OR: [
+              { completedAt: inRange },
+              { completedAt: null, updatedAt: inRange },
+            ],
           },
           include: {
             warehouse: warehouseSelect,
@@ -297,6 +377,13 @@ export class StockMovementsService {
       side('OUT');
     }
 
-    return movements.sort((a, b) => b.date.getTime() - a.date.getTime());
+    return movements
+      .filter(
+        (m) =>
+          m.date >= query.from &&
+          m.date <= query.to &&
+          (!query.type || m.type === query.type),
+      )
+      .sort((a, b) => b.date.getTime() - a.date.getTime());
   }
 }

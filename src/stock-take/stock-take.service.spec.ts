@@ -191,12 +191,38 @@ describe('StockTakeService', () => {
       };
       prisma.stockTake.findUnique.mockResolvedValue(mockStockTake);
       prisma.stockTakeItem.findFirst.mockResolvedValue(mockStockTakeItem);
+      prisma.inventoryItem.findUnique.mockResolvedValue(mockInventoryItem);
       prisma.stockTakeItem.update.mockResolvedValue(updatedItem);
 
       const result = await service.updateItem('st-1', dto, 'user-1');
 
       expect(result.countedQty).toBe(18);
       expect(result.variance).toBe(-2);
+    });
+
+    it('compares the count with the stock at the time of counting, not when the stock take started', async () => {
+      // Started with 20; 5 were sold before this item was counted
+      prisma.stockTake.findUnique.mockResolvedValue(mockStockTake);
+      prisma.stockTakeItem.findFirst.mockResolvedValue(mockStockTakeItem);
+      prisma.inventoryItem.findUnique.mockResolvedValue({
+        ...mockInventoryItem,
+        quantity: 15,
+      });
+      prisma.stockTakeItem.update.mockResolvedValue(mockStockTakeItem);
+
+      await service.updateItem('st-1', dto, 'user-1');
+
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(prisma.stockTakeItem.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+          data: expect.objectContaining({
+            expectedQty: 15,
+            countedQty: 18,
+            variance: 3,
+          }),
+        }),
+      );
     });
 
     it('throws BadRequestException when stock take is not IN_PROGRESS', async () => {
@@ -235,19 +261,71 @@ describe('StockTakeService', () => {
       const result = await service.complete('st-1', 'user-1', false);
 
       expect(result.status).toBe(StockTakeStatus.COMPLETED);
+      // The row is locked before its status is read, inside the transaction
+
+      expect(prisma.$executeRaw.mock.invocationCallOrder[0]).toBeLessThan(
+        prisma.stockTake.findUnique.mock.invocationCallOrder[0],
+      );
       // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(prisma.$transaction).toHaveBeenCalled();
     });
 
-    it('applies inventory changes when applyChanges=true', async () => {
+    it('takes out only the shortage the count found, keeping what moved since', async () => {
       const completedST = { ...countedST, status: StockTakeStatus.COMPLETED };
       prisma.stockTake.findUnique.mockResolvedValue(countedST);
       prisma.stockTake.update.mockResolvedValue(completedST);
+      prisma.inventoryItem.updateMany.mockResolvedValue({ count: 1 });
+
+      await service.complete('st-1', 'user-1', true);
+
+      // variance -2: two units out, not "set to 18"
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(prisma.inventoryItem.updateMany).toHaveBeenCalledWith({
+        where: { id: 'item-1', deletedAt: null, quantity: { gte: 2 } },
+        data: { quantity: { decrement: 2 } },
+      });
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(prisma.inventoryItem.update).not.toHaveBeenCalled();
+    });
+
+    it('adds only the surplus the count found', async () => {
+      const surplus = {
+        ...mockStockTake,
+        items: [{ ...mockStockTakeItem, countedQty: 23, variance: 3 }],
+      };
+      prisma.stockTake.findUnique.mockResolvedValue(surplus);
+      prisma.stockTake.update.mockResolvedValue({
+        ...surplus,
+        status: StockTakeStatus.COMPLETED,
+      });
 
       await service.complete('st-1', 'user-1', true);
 
       // eslint-disable-next-line @typescript-eslint/unbound-method
-      expect(prisma.$transaction).toHaveBeenCalled();
+      expect(prisma.inventoryItem.update).toHaveBeenCalledWith({
+        where: { id: 'item-1' },
+        data: { quantity: { increment: 3 } },
+      });
+    });
+
+    it('refuses to complete when a shortage would take the stock below zero, changing nothing', async () => {
+      prisma.stockTake.findUnique.mockResolvedValue(countedST);
+      prisma.inventoryItem.updateMany.mockResolvedValue({ count: 0 });
+      prisma.inventoryItem.findFirst.mockResolvedValue({
+        ...mockInventoryItem,
+        quantity: 1,
+      });
+
+      await expect(
+        service.complete('st-1', 'user-1', true),
+      ).rejects.toMatchObject({
+        response: {
+          code: 'STOCK_TAKE_ADJUSTMENT_BELOW_ZERO',
+          params: { available: 1, toRemove: 2 },
+        },
+      });
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(prisma.stockTake.update).not.toHaveBeenCalled();
     });
 
     it('throws BadRequestException when stock take is not IN_PROGRESS', async () => {

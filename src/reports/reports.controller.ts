@@ -18,6 +18,13 @@ import { FilterInventoryDto } from '../inventory/dto/filter-inventory.dto';
 import { AuthenticatedUser } from '../auth/interfaces/auth-user.interface';
 import { resolveWarehouseScope } from '../common/warehouse-access/warehouse-filter.util';
 import { apiError } from '../common/errors/api-error';
+import { MovementsQueryDto } from './dto/movements-query.dto';
+import {
+  toEndOfBusinessDay,
+  toStartOfBusinessDay,
+} from '../common/utils/date.util';
+
+const DEFAULT_MOVEMENT_DAYS = 90;
 
 @ApiTags('reports')
 @Controller('reports')
@@ -36,10 +43,24 @@ export class ReportsController {
   @Get('movements')
   @Permissions('reports:view')
   getMovements(
-    @Query('warehouseId') warehouseId: string | undefined,
+    @Query(new ValidationPipe({ transform: true })) query: MovementsQueryDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.stockMovements.findAll(this.scope(user, warehouseId));
+    // Without dates, the last 90 days: the whole history is never read at once
+    const to = query.to ? new Date(toEndOfBusinessDay(query.to)) : new Date();
+    const from = query.from
+      ? new Date(toStartOfBusinessDay(query.from))
+      : new Date(to.getTime() - DEFAULT_MOVEMENT_DAYS * 24 * 60 * 60 * 1000);
+    if (from > to) {
+      throw new BadRequestException(
+        apiError('INVALID_DATE_RANGE', 'from must not be after to'),
+      );
+    }
+    return this.stockMovements.findPage(
+      this.scope(user, query.warehouseId),
+      { from, to, type: query.type },
+      query,
+    );
   }
 
   private scope(
