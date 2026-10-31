@@ -34,9 +34,7 @@ import { StockLevelService } from '../alerts/stock-level.service';
 import { apiError } from '../common/errors/api-error';
 import { lockForUpdate } from '../common/locking';
 import { takeStock } from '../inventory/stock.util';
-
-// Round to 2 decimals to avoid floating point noise accumulating in totals.
-const round2 = (n: number) => Math.round(n * 100) / 100;
+import { round2 } from '../common/money';
 
 interface TaxableLine {
   lineTotal: number;
@@ -534,7 +532,7 @@ export class PurchaseInvoicesService {
         where: { purchaseInvoiceId: id, status: PaymentStatus.ACTIVE },
         _sum: { amount: true },
       });
-      const paidAmount = Math.round((paid._sum.amount ?? 0) * 100) / 100;
+      const paidAmount = round2(paid._sum.amount);
       if (paidAmount > 0) {
         throw new BadRequestException(
           apiError(

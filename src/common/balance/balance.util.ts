@@ -1,13 +1,12 @@
 import { PaymentStatus } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import { round2 } from '../money';
 
 interface BalanceableDoc {
   id: string;
   totalAmount: number;
   taxAmount: number | null;
 }
-
-const round2 = (n: number) => Math.round(n * 100) / 100;
 
 /**
  * Attaches a computed `balance` to each row: totalAmount + taxAmount -

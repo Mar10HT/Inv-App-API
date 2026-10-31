@@ -35,9 +35,7 @@ import { DocumentNumberingService } from '../common/numbering/document-numbering
 import { apiError } from '../common/errors/api-error';
 import { lockForUpdate } from '../common/locking';
 import { takeStock } from '../inventory/stock.util';
-
-// Round to 2 decimals to avoid floating point noise accumulating in totals.
-const round2 = (n: number) => Math.round(n * 100) / 100;
+import { round2 } from '../common/money';
 
 interface SaleItemSeed {
   inventoryItemId: string;

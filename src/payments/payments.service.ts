@@ -21,8 +21,7 @@ import {
   parseSortOrder,
 } from '../common/dto';
 import { apiError } from '../common/errors/api-error';
-
-const round2 = (n: number) => Math.round(n * 100) / 100;
+import { round2 } from '../common/money';
 
 interface LockedDocRow {
   id: string;
