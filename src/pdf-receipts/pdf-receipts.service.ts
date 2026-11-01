@@ -26,6 +26,11 @@ interface ReceiptItem {
   serviceTag?: string | null;
   quantity: number;
   unitPrice: number | null;
+  // Sale/purchase-specific: the line's own persisted subtotal (SaleItem/
+  // PurchaseInvoiceItem.lineTotal, snapshot of quantity * unitPrice at save
+  // time). Undefined for loan/transfer/outflow items, whose models have no
+  // lineTotal column — the renderer falls back to recomputing for those.
+  lineTotal?: number | null;
   currency: string | null;
   // Sale-specific: stored per-line tax (already resolved at save time —
   // null taxPercent here just means "no explicit line override was stored",
@@ -62,6 +67,12 @@ interface ReceiptContext {
   // Default tax percent (Sale/PurchaseInvoice), used only to resolve a
   // line's effective percent for display when that line's own taxPercent is null.
   taxPercent?: number | null;
+  // Sale/PurchaseInvoice are single-currency documents (every line is
+  // created with the document's own currency — see Sale.currency comment
+  // in the schema), so their grand total/tax are read from these persisted
+  // fields rather than re-summed from the items on screen.
+  totalAmount?: number | null;
+  taxAmount?: number | null;
 }
 
 const STRINGS = {
@@ -331,12 +342,15 @@ export class PdfReceiptsService {
         createdBy: sale.createdBy?.name || sale.createdBy?.email || '',
         number: sale.number,
         taxPercent: toAmount(sale.taxPercent),
+        totalAmount: toAmount(sale.totalAmount),
+        taxAmount: toAmount(sale.taxAmount),
         items: sale.items.map((line) => ({
           // Prefer snapshot fields — they survive item renames and deletions.
           name: line.itemName ?? line.inventoryItem?.name ?? '',
           serviceTag: line.serviceTag ?? line.inventoryItem?.serviceTag,
           quantity: line.quantity,
           unitPrice: toAmount(line.unitPrice),
+          lineTotal: toAmount(line.lineTotal),
           currency: line.currency ?? null,
           taxPercent: toAmount(line.taxPercent),
           taxAmount: toAmount(line.taxAmount),
@@ -381,12 +395,15 @@ export class PdfReceiptsService {
         createdBy: invoice.createdBy?.name || invoice.createdBy?.email || '',
         number: invoice.number,
         taxPercent: toAmount(invoice.taxPercent),
+        totalAmount: toAmount(invoice.totalAmount),
+        taxAmount: toAmount(invoice.taxAmount),
         items: invoice.items.map((line) => ({
           // Prefer snapshot fields — they survive item renames and deletions.
           name: line.itemName ?? line.inventoryItem?.name ?? '',
           serviceTag: line.serviceTag ?? line.inventoryItem?.serviceTag,
           quantity: line.quantity,
           unitPrice: toAmount(line.unitPrice),
+          lineTotal: toAmount(line.lineTotal),
           currency: line.currency,
           taxPercent: toAmount(line.taxPercent),
           taxAmount: toAmount(line.taxAmount),
@@ -674,7 +691,13 @@ export class PdfReceiptsService {
           cursor = 50;
         }
         const unit = item.unitPrice;
-        const sub = unit != null ? unit * item.quantity : null;
+        // Sale/purchase lines carry their own persisted lineTotal — use it
+        // instead of recomputing, so the PDF never drifts from what the
+        // document actually saved. Loan/transfer/outflow items have no
+        // lineTotal (their models don't store one), so they still fall
+        // back to unit * quantity here.
+        const sub =
+          item.lineTotal ?? (unit != null ? unit * item.quantity : null);
         if (sub != null) {
           const key = item.currency ?? '';
           totalsByCurrency.set(key, (totalsByCurrency.get(key) ?? 0) + sub);
@@ -739,8 +762,22 @@ export class PdfReceiptsService {
           ([a], [b]) => a.localeCompare(b),
         );
         let row = cursor + 10;
-        for (const [currency, amount] of entries) {
-          const tax = showTax ? (taxByCurrency.get(currency) ?? 0) : 0;
+        // Sale/PurchaseInvoice are single-currency (every line is created
+        // with the document's own currency), so `entries` has exactly one
+        // item for them — prefer the document's own persisted totalAmount/
+        // taxAmount over re-summing the lines by hand. Loan/transfer/
+        // outflow have no such stored total (and can mix currencies across
+        // lines), so they keep the per-currency sum computed above.
+        const isDocumentTotal =
+          ctx.documentType === 'sale' || ctx.documentType === 'purchase';
+        for (const [currency, summedAmount] of entries) {
+          const summedTax = showTax ? (taxByCurrency.get(currency) ?? 0) : 0;
+          const amount = isDocumentTotal
+            ? (ctx.totalAmount ?? summedAmount)
+            : summedAmount;
+          const tax = isDocumentTotal
+            ? (ctx.taxAmount ?? summedTax)
+            : summedTax;
           if (tax > 0) {
             doc.font('Helvetica').fontSize(10).fillColor('#000000');
             const subtotalLabel = currency
