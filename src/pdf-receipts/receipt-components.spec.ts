@@ -42,6 +42,9 @@ function createMockDoc(pageHeight = 792) {
       return doc;
     }),
     widthOfString: jest.fn(() => 40),
+    // Single-line height by default; individual tests override this to
+    // simulate a wrapped multi-line value (see the "grows" tests below).
+    heightOfString: jest.fn(() => 12),
   };
   for (const method of [
     'fontSize',
@@ -61,6 +64,18 @@ function createMockDoc(pageHeight = 792) {
     doc[method] = jest.fn(() => doc);
   }
   return { doc: doc as unknown as PDFKit.PDFDocument, raw: doc, textCalls };
+}
+
+// doc.rect(x, y, width, height) — reads the height (4th) argument of a
+// recorded call without indexing into the mock's untyped `any[]` args.
+function rectHeight(mock: jest.Mock, callIndex: number): number {
+  const args = mock.mock.calls[callIndex] as unknown as [
+    number,
+    number,
+    number,
+    number,
+  ];
+  return args[3];
 }
 
 describe('receipt-components', () => {
@@ -201,6 +216,29 @@ describe('receipt-components', () => {
 
       expect(raw.addPage).toHaveBeenCalled();
     });
+
+    it('grows a row height to fit a wrapped long cell instead of a fixed single line', () => {
+      const short = createMockDoc();
+      const long = createMockDoc();
+      (long.raw.heightOfString as jest.Mock).mockReturnValue(24); // simulates a 2-line wrap
+
+      drawTable(short.doc, columns, [{ item: 'Router', qty: '1' }], 50, 100);
+      drawTable(
+        long.doc,
+        columns,
+        [{ item: 'A very long product name plus service tag', qty: '1' }],
+        50,
+        100,
+      );
+
+      // rect is called once per column for the header row, then once per column
+      // for the body row — index -2 (the 'item' column) is the body row.
+      const shortRect = short.raw.rect as jest.Mock;
+      const longRect = long.raw.rect as jest.Mock;
+      expect(
+        rectHeight(longRect, longRect.mock.calls.length - 2),
+      ).toBeGreaterThan(rectHeight(shortRect, shortRect.mock.calls.length - 2));
+    });
   });
 
   describe('drawKeyValues', () => {
@@ -226,6 +264,36 @@ describe('receipt-components', () => {
       expect((raw.moveTo as jest.Mock).mock.calls.length).toBe(1);
       expect(raw.rect).toHaveBeenCalled();
       expect(y).toBeGreaterThan(100);
+    });
+
+    it('grows the row height to fit a wrapped long value instead of a fixed single line', () => {
+      const short = createMockDoc();
+      const long = createMockDoc();
+      (long.raw.heightOfString as jest.Mock).mockReturnValue(24); // simulates a 2-line wrap
+
+      drawKeyValues(
+        short.doc,
+        [{ label: 'Motivo', value: 'Consumo interno' }],
+        50,
+        562,
+        100,
+      );
+      drawKeyValues(
+        long.doc,
+        [
+          {
+            label: 'Producto',
+            value: 'A very long product name plus service tag',
+          },
+        ],
+        50,
+        562,
+        100,
+      );
+
+      const shortHeight = rectHeight(short.raw.rect as jest.Mock, 0);
+      const longHeight = rectHeight(long.raw.rect as jest.Mock, 0);
+      expect(longHeight).toBeGreaterThan(shortHeight);
     });
   });
 

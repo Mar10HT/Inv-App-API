@@ -387,7 +387,9 @@ function drawTableHeaderRow(
 /**
  * Declarative-column table: bordered cells, soft header background with a
  * 2px accent top border, uppercased header text. Pages when a row doesn't
- * fit, repeating the header row on the new page.
+ * fit, repeating the header row on the new page. Each row's height grows to
+ * fit its tallest cell (formatItemName() can concatenate a service tag onto
+ * the product name, long enough to wrap) instead of a fixed single line.
  */
 export function drawTable(
   doc: PDFKit.PDFDocument,
@@ -397,9 +399,22 @@ export function drawTable(
   top: number,
 ): number {
   let cursor = drawTableHeaderRow(doc, columns, left, top);
-  const rowHeight = bodyRowHeight();
+  const minRowHeight = bodyRowHeight();
 
   for (const row of rows) {
+    doc.font('Helvetica').fontSize(FONT.tableBody);
+    const rowHeight = Math.max(
+      minRowHeight,
+      ...columns.map((col) =>
+        Math.ceil(
+          doc.heightOfString(row[col.key] ?? '', {
+            width: col.width - SPACING.tdPaddingH * 2,
+          }) +
+            SPACING.tdPaddingV * 2,
+        ),
+      ),
+    );
+
     if (cursor + rowHeight > doc.page.height - PAGE_MARGIN) {
       doc.addPage();
       cursor = drawTableHeaderRow(doc, columns, left, PAGE_MARGIN);
@@ -442,7 +457,10 @@ export interface KeyValueRow {
 /**
  * Stacked label/value rows in a single bordered box, each row separated by
  * a rule line (last row has none — the box's own border closes it off),
- * matching the template's .kv block used by Salida/Préstamo.
+ * matching the template's .kv block used by Salida/Préstamo. Each row's
+ * height grows to fit its value (summarizeItems() can list several item
+ * names, long enough to wrap) instead of a fixed single line; labels are a
+ * handful of known-short translation strings, so only the value is measured.
  */
 export function drawKeyValues(
   doc: PDFKit.PDFDocument,
@@ -452,10 +470,22 @@ export function drawKeyValues(
   top: number,
 ): number {
   const width = right - left;
-  const rowHeight = Math.ceil(
+  const minRowHeight = Math.ceil(
     FONT.kvRow * LINE_HEIGHT + SPACING.kvRowPaddingV * 2,
   );
-  const height = rowHeight * rows.length;
+  const valueWidth = width / 2 - SPACING.kvRowPaddingH;
+
+  doc.font('Helvetica').fontSize(FONT.kvRow);
+  const rowHeights = rows.map((row) =>
+    Math.max(
+      minRowHeight,
+      Math.ceil(
+        doc.heightOfString(row.value, { width: valueWidth }) +
+          SPACING.kvRowPaddingV * 2,
+      ),
+    ),
+  );
+  const height = rowHeights.reduce((sum, h) => sum + h, 0);
 
   doc
     .lineWidth(RULE_WIDTH)
@@ -463,8 +493,9 @@ export function drawKeyValues(
     .rect(left, top, width, height)
     .stroke();
 
+  let rowTop = top;
   rows.forEach((row, i) => {
-    const y = top + i * rowHeight + SPACING.kvRowPaddingV;
+    const y = rowTop + SPACING.kvRowPaddingV;
     doc
       .font('Helvetica-Bold')
       .fontSize(FONT.kvLabel)
@@ -477,12 +508,12 @@ export function drawKeyValues(
       .fontSize(FONT.kvRow)
       .fillColor(TEXT)
       .text(row.value, left + width / 2, y, {
-        width: width / 2 - SPACING.kvRowPaddingH,
+        width: valueWidth,
         align: 'right',
       });
 
+    const dividerY = rowTop + rowHeights[i];
     if (i < rows.length - 1) {
-      const dividerY = top + (i + 1) * rowHeight;
       doc
         .lineWidth(RULE_WIDTH)
         .strokeColor(RULE)
@@ -490,6 +521,7 @@ export function drawKeyValues(
         .lineTo(right, dividerY)
         .stroke();
     }
+    rowTop = dividerY;
   });
 
   doc.fillColor(TEXT);
