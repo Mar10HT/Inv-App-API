@@ -15,11 +15,17 @@ import { Prisma } from '@prisma/client';
  * but must never be walked as plain objects (Buffer would be destructively
  * iterated byte-by-byte, Date would be flattened to `{}`).
  *
- * Currently a no-op in practice: the Prisma schema is still Float, so no
- * Decimal ever appears in a real response yet. This is here ahead of the
- * schema migration that will introduce them.
+ * Active in practice now: the 19 money/percent fields across InventoryItem,
+ * OutflowItem, Sale(Item), FiscalConfig, PurchaseInvoice(Item), Payment and
+ * Client are Prisma.Decimal (numeric columns), so this is what keeps those
+ * fields serializing as plain numbers instead of Decimal's string form.
+ *
+ * Exported for AuditService, which needs the same conversion for `changes`
+ * payloads before persisting them (see audit.service.ts) — reused instead
+ * of re-implemented since it's the exact same "walk an object, convert
+ * Decimal, don't touch Buffer/Date" need.
  */
-function convertDecimals(value: unknown): unknown {
+export function convertDecimals(value: unknown): unknown {
   if (value instanceof Prisma.Decimal) {
     return Number(value);
   }
