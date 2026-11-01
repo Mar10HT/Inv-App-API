@@ -1,8 +1,20 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import PDFDocument from 'pdfkit';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 
 type Locale = 'es' | 'en';
+
+// Prisma.Decimal -> plain number for the PDF layout math below (multiply,
+// accumulate into per-currency totals, .toFixed()). null/undefined stay
+// null (meaning "no price set", rendered as an em dash) rather than 0 —
+// unlike src/common/money.ts's toNumber(), which treats null as 0 because
+// a balance has no "no amount yet" vs "zero amount" distinction to keep.
+function toAmount(
+  n: Prisma.Decimal | number | null | undefined,
+): number | null {
+  return n == null ? null : Number(n);
+}
 
 // Terminal-failure statuses that should be watermarked as VOID so a printed
 // PDF can't be confused with a real receipt. Loans use 'CANCELLED' and
@@ -227,7 +239,7 @@ export class PdfReceiptsService {
           name: li.inventoryItem?.name ?? '',
           serviceTag: li.inventoryItem?.serviceTag,
           quantity: li.quantity,
-          unitPrice: li.inventoryItem?.price ?? null,
+          unitPrice: toAmount(li.inventoryItem?.price),
           currency: li.inventoryItem?.currency ?? null,
         })),
         notes: loan.notes,
@@ -272,7 +284,7 @@ export class PdfReceiptsService {
           name: line.itemName ?? line.inventoryItem?.name ?? '',
           serviceTag: line.serviceTag ?? line.inventoryItem?.serviceTag,
           quantity: line.quantity,
-          unitPrice: line.unitPrice ?? null,
+          unitPrice: toAmount(line.unitPrice),
           currency: line.currency ?? null,
         })),
         notes: outflow.notes,
@@ -318,16 +330,16 @@ export class PdfReceiptsService {
         createdAt: sale.createdAt,
         createdBy: sale.createdBy?.name || sale.createdBy?.email || '',
         number: sale.number,
-        taxPercent: sale.taxPercent,
+        taxPercent: toAmount(sale.taxPercent),
         items: sale.items.map((line) => ({
           // Prefer snapshot fields — they survive item renames and deletions.
           name: line.itemName ?? line.inventoryItem?.name ?? '',
           serviceTag: line.serviceTag ?? line.inventoryItem?.serviceTag,
           quantity: line.quantity,
-          unitPrice: line.unitPrice ?? null,
+          unitPrice: toAmount(line.unitPrice),
           currency: line.currency ?? null,
-          taxPercent: line.taxPercent,
-          taxAmount: line.taxAmount,
+          taxPercent: toAmount(line.taxPercent),
+          taxAmount: toAmount(line.taxAmount),
         })),
         notes: sale.notes,
       },
@@ -368,16 +380,16 @@ export class PdfReceiptsService {
         createdAt: invoice.createdAt,
         createdBy: invoice.createdBy?.name || invoice.createdBy?.email || '',
         number: invoice.number,
-        taxPercent: invoice.taxPercent,
+        taxPercent: toAmount(invoice.taxPercent),
         items: invoice.items.map((line) => ({
           // Prefer snapshot fields — they survive item renames and deletions.
           name: line.itemName ?? line.inventoryItem?.name ?? '',
           serviceTag: line.serviceTag ?? line.inventoryItem?.serviceTag,
           quantity: line.quantity,
-          unitPrice: line.unitPrice,
+          unitPrice: toAmount(line.unitPrice),
           currency: line.currency,
-          taxPercent: line.taxPercent,
-          taxAmount: line.taxAmount,
+          taxPercent: toAmount(line.taxPercent),
+          taxAmount: toAmount(line.taxAmount),
         })),
         notes: invoice.notes,
       },
@@ -428,7 +440,7 @@ export class PdfReceiptsService {
           serviceTag: li.inventoryItem?.serviceTag,
           quantity: li.quantity,
           // TransferRequestItem doesn't currently carry per-line price; fall back to the item's price.
-          unitPrice: li.inventoryItem?.price ?? null,
+          unitPrice: toAmount(li.inventoryItem?.price),
           currency: li.inventoryItem?.currency ?? null,
         })),
         notes: transfer.notes,

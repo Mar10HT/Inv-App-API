@@ -9,6 +9,7 @@ import {
   PaymentStatus,
   SaleStatus,
   PurchaseInvoiceStatus,
+  Prisma,
   type Payment,
 } from '@prisma/client';
 import { mockDeep, type DeepMockProxy } from 'jest-mock-extended';
@@ -89,16 +90,18 @@ describe('PaymentsService', () => {
         id: 'sale-1',
         warehouseId: 'wh-1',
       } as never);
+      // Real runtime shape once totalAmount/taxAmount/amount are
+      // numeric(14,2): Prisma.Decimal, not a plain number.
       prisma.$queryRaw.mockResolvedValueOnce([
         {
           id: 'sale-1',
           status: SaleStatus.ACTIVE,
-          totalAmount: 100,
-          taxAmount: 15,
+          totalAmount: new Prisma.Decimal(100),
+          taxAmount: new Prisma.Decimal(15),
         },
       ] as never);
       prisma.payment.aggregate.mockResolvedValue({
-        _sum: { amount: 40 },
+        _sum: { amount: new Prisma.Decimal(40) },
       } as never);
       prisma.payment.create.mockResolvedValue(mockPayment);
 
@@ -128,12 +131,12 @@ describe('PaymentsService', () => {
         {
           id: 'sale-1',
           status: SaleStatus.ACTIVE,
-          totalAmount: 100,
-          taxAmount: 0,
+          totalAmount: new Prisma.Decimal(100),
+          taxAmount: new Prisma.Decimal(0),
         },
       ] as never);
       prisma.payment.aggregate.mockResolvedValue({
-        _sum: { amount: 0 },
+        _sum: { amount: new Prisma.Decimal(0) },
       } as never);
       prisma.payment.create.mockResolvedValue(mockPayment);
 
@@ -150,6 +153,14 @@ describe('PaymentsService', () => {
     });
 
     it('blocks overpayment: amount greater than the current balance, without creating the payment', async () => {
+      // Regression for the Float -> Decimal migration: totalAmount/taxAmount
+      // (100, 0) and the aggregate's _sum.amount (90) are Prisma.Decimal
+      // here, the real runtime shape once these columns are numeric(14,2).
+      // Without explicit round2/sum/toNumber conversion, `Decimal + Decimal`
+      // concatenates their string representations instead of adding (see
+      // src/common/money.ts): "100" + "0" -> "1000", then "1000" - 90 = 910,
+      // a wildly inflated balance that would let this 50 payment through
+      // when the true balance is only 10.
       prisma.sale.findUnique.mockResolvedValue({
         id: 'sale-1',
         warehouseId: 'wh-1',
@@ -158,12 +169,12 @@ describe('PaymentsService', () => {
         {
           id: 'sale-1',
           status: SaleStatus.ACTIVE,
-          totalAmount: 100,
-          taxAmount: 0,
+          totalAmount: new Prisma.Decimal(100),
+          taxAmount: new Prisma.Decimal(0),
         },
       ] as never);
       prisma.payment.aggregate.mockResolvedValue({
-        _sum: { amount: 90 },
+        _sum: { amount: new Prisma.Decimal(90) },
       } as never);
 
       // Balance is 10, requesting 50
@@ -172,6 +183,41 @@ describe('PaymentsService', () => {
       );
       // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(prisma.payment.create).not.toHaveBeenCalled();
+    });
+
+    it('accepts a final payment that leaves the balance at exactly 0.00', async () => {
+      // 33.33 + 5.00 = 38.33 total; 10.00 already paid; balance is 28.33.
+      // A final payment of exactly 28.33 must be accepted, not rejected by
+      // a floating/Decimal rounding slop that nudges the comparison either
+      // side of true 0.
+      prisma.sale.findUnique.mockResolvedValue({
+        id: 'sale-1',
+        warehouseId: 'wh-1',
+      } as never);
+      prisma.$queryRaw.mockResolvedValueOnce([
+        {
+          id: 'sale-1',
+          status: SaleStatus.ACTIVE,
+          totalAmount: new Prisma.Decimal('33.33'),
+          taxAmount: new Prisma.Decimal('5.00'),
+        },
+      ] as never);
+      prisma.payment.aggregate.mockResolvedValue({
+        _sum: { amount: new Prisma.Decimal('10.00') },
+      } as never);
+      prisma.payment.create.mockResolvedValue({
+        ...mockPayment,
+        amount: 28.33,
+      } as never);
+
+      await expect(
+        service.create(
+          { saleId: 'sale-1', amount: 28.33, method: PaymentMethod.CASH },
+          'user-1',
+        ),
+      ).resolves.toMatchObject({ amount: 28.33 });
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(prisma.payment.create).toHaveBeenCalled();
     });
 
     it('rejects when the target Sale is not ACTIVE', async () => {

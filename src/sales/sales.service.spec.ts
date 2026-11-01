@@ -8,6 +8,7 @@ import {
   CustomerType,
   SaleStatus,
   PaymentCondition,
+  Prisma,
   type Sale,
   type InventoryItem,
   type Warehouse,
@@ -259,6 +260,34 @@ describe('SalesService', () => {
       );
     });
 
+    it('rounds ISV 15% of 33.33 half-up to 5.00, not 4.99 (33.33 * 0.15 = 4.9995)', async () => {
+      const dto = {
+        ...baseDto(),
+        taxPercent: 15,
+        items: [{ inventoryItemId: 'item-1', quantity: 1, unitPrice: 33.33 }],
+      };
+      prisma.inventoryItem.findMany
+        .mockResolvedValueOnce([mockItem])
+        .mockResolvedValueOnce([mockItem]);
+      prisma.sale.create.mockResolvedValue(mockSale);
+
+      await service.create(dto, 'user-1');
+
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(prisma.sale.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+          data: expect.objectContaining({
+            totalAmount: 33.33,
+            taxAmount: 5,
+            items: {
+              create: [expect.objectContaining({ taxAmount: 5 })],
+            },
+          }),
+        }),
+      );
+    });
+
     it('throws ForbiddenException when user has no access to the warehouse', async () => {
       await expect(
         service.create(baseDto(), 'user-1', ['other-wh']),
@@ -326,7 +355,11 @@ describe('SalesService', () => {
           .mockResolvedValueOnce([mockItem])
           .mockResolvedValueOnce([mockItem]);
         prisma.$queryRaw.mockResolvedValueOnce([
-          { id: 'client-1', creditLimit: 50, creditLimitCurrency: 'USD' },
+          {
+            id: 'client-1',
+            creditLimit: new Prisma.Decimal(50),
+            creditLimitCurrency: 'USD',
+          },
         ] as never);
         prisma.sale.findMany.mockResolvedValueOnce([]);
 
@@ -344,7 +377,11 @@ describe('SalesService', () => {
           .mockResolvedValueOnce([mockItem])
           .mockResolvedValueOnce([mockItem]);
         prisma.$queryRaw.mockResolvedValueOnce([
-          { id: 'client-1', creditLimit: 1000, creditLimitCurrency: 'HNL' },
+          {
+            id: 'client-1',
+            creditLimit: new Prisma.Decimal(1000),
+            creditLimitCurrency: 'HNL',
+          },
         ] as never);
 
         await expect(
@@ -366,7 +403,11 @@ describe('SalesService', () => {
           .mockResolvedValueOnce([mockItem])
           .mockResolvedValueOnce([mockItem]);
         prisma.$queryRaw.mockResolvedValueOnce([
-          { id: 'client-1', creditLimit: 1000, creditLimitCurrency: 'USD' },
+          {
+            id: 'client-1',
+            creditLimit: new Prisma.Decimal(1000),
+            creditLimitCurrency: 'USD',
+          },
         ] as never);
         prisma.sale.findMany.mockResolvedValueOnce([]);
         prisma.sale.create.mockResolvedValue(mockSale);
@@ -387,18 +428,85 @@ describe('SalesService', () => {
           .mockResolvedValueOnce([mockItem])
           .mockResolvedValueOnce([mockItem]);
         prisma.$queryRaw.mockResolvedValueOnce([
-          { id: 'client-1', creditLimit: 150, creditLimitCurrency: 'USD' },
+          {
+            id: 'client-1',
+            creditLimit: new Prisma.Decimal(150),
+            creditLimitCurrency: 'USD',
+          },
         ] as never);
         prisma.sale.findMany.mockResolvedValueOnce([
-          { id: 'other-sale', totalAmount: 80, taxAmount: 0 },
+          {
+            id: 'other-sale',
+            totalAmount: new Prisma.Decimal(80),
+            taxAmount: new Prisma.Decimal(0),
+          },
         ] as never);
         prisma.payment.aggregate.mockResolvedValueOnce({
-          _sum: { amount: 0 },
+          _sum: { amount: new Prisma.Decimal(0) },
         } as never);
 
         // outstanding 80 + this sale's 100 = 180 > 150
         await expect(
           service.create(creditDto(), 'user-1'),
+        ).rejects.toMatchObject({
+          response: { code: 'CREDIT_LIMIT_EXCEEDED' },
+        });
+      });
+
+      it('allows a credit sale that projects exactly to the limit (strict > comparison)', async () => {
+        prisma.inventoryItem.findMany
+          .mockResolvedValueOnce([mockItem])
+          .mockResolvedValueOnce([mockItem]);
+        prisma.$queryRaw.mockResolvedValueOnce([
+          {
+            id: 'client-1',
+            creditLimit: new Prisma.Decimal('1000.00'),
+            creditLimitCurrency: 'USD',
+          },
+        ] as never);
+        prisma.sale.findMany.mockResolvedValueOnce([]);
+        prisma.sale.create.mockResolvedValue(mockSale);
+
+        await expect(
+          service.create(
+            {
+              ...creditDto(),
+              items: [
+                { inventoryItemId: 'item-1', quantity: 1, unitPrice: 1000 },
+              ],
+            },
+            'user-1',
+          ),
+        ).resolves.toBeDefined();
+      });
+
+      it('blocks a credit sale that projects one cent over the limit', async () => {
+        prisma.inventoryItem.findMany
+          .mockResolvedValueOnce([mockItem])
+          .mockResolvedValueOnce([mockItem]);
+        prisma.$queryRaw.mockResolvedValueOnce([
+          {
+            id: 'client-1',
+            creditLimit: new Prisma.Decimal('1000.00'),
+            creditLimitCurrency: 'USD',
+          },
+        ] as never);
+        prisma.sale.findMany.mockResolvedValueOnce([]);
+
+        await expect(
+          service.create(
+            {
+              ...creditDto(),
+              items: [
+                {
+                  inventoryItemId: 'item-1',
+                  quantity: 1,
+                  unitPrice: 1000.01,
+                },
+              ],
+            },
+            'user-1',
+          ),
         ).rejects.toMatchObject({
           response: { code: 'CREDIT_LIMIT_EXCEEDED' },
         });
@@ -619,6 +727,48 @@ describe('SalesService', () => {
   });
 
   describe('confirm', () => {
+    it('sums ~100 Decimal-backed line totals correctly (DB rows return Prisma.Decimal, not plain numbers, once the schema is migrated)', async () => {
+      // Regression for the Float -> Decimal migration: current.items here
+      // comes straight from a Prisma read (tx.sale.findUnique), so
+      // lineTotal is a Prisma.Decimal at runtime, not a plain number.
+      // Without round2/sum/toNumber, `items.reduce((sum, i) => sum + i.lineTotal, 0)`
+      // concatenates each line as a string instead of adding it — 100 lines
+      // of "0.01" would corrupt the total into garbage that round2() can't
+      // even parse back into a number, instead of the correct 1.00.
+      const manyItems = Array.from({ length: 100 }, (_, i) => ({
+        id: `si-${i}`,
+        inventoryItemId: 'item-1',
+        quantity: 1,
+        unitPrice: new Prisma.Decimal('0.01'),
+        lineTotal: new Prisma.Decimal('0.01'),
+        taxPercent: null,
+        itemName: 'Widget',
+        serviceTag: null,
+        currency: 'USD',
+        notes: null,
+      }));
+      const draftWithManyItems = {
+        ...mockDraftSale,
+        taxPercent: null,
+        items: manyItems,
+      };
+      prisma.sale.findUnique
+        .mockResolvedValueOnce(draftWithManyItems as never)
+        .mockResolvedValueOnce(draftWithManyItems as never);
+      prisma.inventoryItem.findMany.mockResolvedValueOnce([mockItem]);
+      prisma.sale.update.mockResolvedValue(draftWithManyItems as never);
+
+      await service.confirm('sale-1', 'user-1');
+
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(prisma.sale.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+          data: expect.objectContaining({ totalAmount: 1, taxAmount: 0 }),
+        }),
+      );
+    });
+
     it('assigns a number, decrements stock and sets status ACTIVE', async () => {
       prisma.sale.findUnique
         .mockResolvedValueOnce(mockDraftSale) // findOne() access check
@@ -685,7 +835,11 @@ describe('SalesService', () => {
           .mockResolvedValueOnce(draftWithClient)
           .mockResolvedValueOnce(draftWithClient);
         prisma.$queryRaw.mockResolvedValueOnce([
-          { id: 'client-1', creditLimit: 50, creditLimitCurrency: 'USD' },
+          {
+            id: 'client-1',
+            creditLimit: new Prisma.Decimal(50),
+            creditLimitCurrency: 'USD',
+          },
         ] as never);
         prisma.sale.findMany.mockResolvedValueOnce([]);
 
@@ -709,7 +863,11 @@ describe('SalesService', () => {
           .mockResolvedValueOnce(draftWithClient);
         prisma.inventoryItem.findMany.mockResolvedValueOnce([mockItem]);
         prisma.$queryRaw.mockResolvedValueOnce([
-          { id: 'client-1', creditLimit: 1000, creditLimitCurrency: 'USD' },
+          {
+            id: 'client-1',
+            creditLimit: new Prisma.Decimal(1000),
+            creditLimitCurrency: 'USD',
+          },
         ] as never);
         prisma.sale.findMany.mockResolvedValueOnce([]);
         prisma.sale.update.mockResolvedValue({
@@ -814,6 +972,23 @@ describe('SalesService', () => {
 
       expect(result.status).toBe(SaleStatus.CANCELLED);
     });
+
+    it('throws BadRequestException with SALE_HAS_ACTIVE_PAYMENTS when the sale has active payments', async () => {
+      prisma.sale.findUnique
+        .mockResolvedValueOnce(mockSale)
+        .mockResolvedValueOnce(mockSale);
+      prisma.payment.aggregate.mockResolvedValue({
+        _sum: { amount: new Prisma.Decimal('50.00') },
+      } as never);
+
+      await expect(service.cancel('sale-1', 'user-2')).rejects.toMatchObject({
+        response: { code: 'SALE_HAS_ACTIVE_PAYMENTS' },
+      });
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(prisma.inventoryItem.update).not.toHaveBeenCalled();
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(prisma.sale.update).not.toHaveBeenCalled();
+    });
   });
 
   describe('findAll', () => {
@@ -836,22 +1011,25 @@ describe('SalesService', () => {
     });
 
     it('with onlyWithBalance returns only ACTIVE sales whose balance is greater than zero', async () => {
+      // totalAmount/taxAmount/_sum.amount are Prisma.Decimal here, the real
+      // runtime shape once these columns are numeric(14,2) — plain numbers
+      // would let a broken `+`/`-` on these pass this test by accident.
       const paidOff = {
         ...mockSale,
         id: 'paid-off',
-        totalAmount: 50,
-        taxAmount: 0,
+        totalAmount: new Prisma.Decimal(50),
+        taxAmount: new Prisma.Decimal(0),
       };
       const owing = {
         ...mockSale,
         id: 'owing',
-        totalAmount: 100,
-        taxAmount: 0,
+        totalAmount: new Prisma.Decimal(100),
+        taxAmount: new Prisma.Decimal(0),
       };
       prisma.sale.findMany.mockResolvedValueOnce([paidOff, owing] as never);
       prisma.payment.groupBy.mockResolvedValueOnce([
-        { saleId: 'paid-off', _sum: { amount: 50 } },
-        { saleId: 'owing', _sum: { amount: 30 } },
+        { saleId: 'paid-off', _sum: { amount: new Prisma.Decimal(50) } },
+        { saleId: 'owing', _sum: { amount: new Prisma.Decimal(30) } },
       ] as never);
 
       const result = await service.findAll({ onlyWithBalance: true } as never);
@@ -877,9 +1055,15 @@ describe('SalesService', () => {
         .mockResolvedValueOnce([
           {
             currency: 'USD',
-            _sum: { totalAmount: 1234.567, taxAmount: 185.18 },
+            _sum: {
+              totalAmount: new Prisma.Decimal('1234.567'),
+              taxAmount: new Prisma.Decimal('185.18'),
+            },
           },
-          { currency: 'HNL', _sum: { totalAmount: 100, taxAmount: null } },
+          {
+            currency: 'HNL',
+            _sum: { totalAmount: new Prisma.Decimal(100), taxAmount: null },
+          },
         ] as never);
 
       const result = await service.getStats();

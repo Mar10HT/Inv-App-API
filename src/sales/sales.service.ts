@@ -35,7 +35,7 @@ import { DocumentNumberingService } from '../common/numbering/document-numbering
 import { apiError } from '../common/errors/api-error';
 import { lockForUpdate } from '../common/locking';
 import { takeStock } from '../inventory/stock.util';
-import { round2 } from '../common/money';
+import { round2, sum, toNumber, type MoneyInput } from '../common/money';
 
 interface SaleItemSeed {
   inventoryItemId: string;
@@ -80,17 +80,23 @@ export class SalesService {
   /**
    * Per-line tax, using each line's own taxPercent if set, else the sale's.
    * Shared by create/update/confirm so the math lives in exactly one place.
+   *
+   * `items`/`saleTaxPercent` accept MoneyInput, not just number: confirm()
+   * feeds this straight from `current.items` (a Prisma read), where
+   * lineTotal/taxPercent come back as Prisma.Decimal once the schema is
+   * migrated. create()/update() still pass plain numbers computed in
+   * memory from the DTO — MoneyInput covers both without a second overload.
    */
   private computeTotals(
-    items: Array<{ lineTotal: number; taxPercent?: number | null }>,
-    saleTaxPercent?: number | null,
+    items: Array<{ lineTotal: MoneyInput; taxPercent?: MoneyInput }>,
+    saleTaxPercent?: MoneyInput,
   ): { lineTaxAmounts: number[]; totalAmount: number; taxAmount: number } {
     const lineTaxAmounts = items.map((item) => {
-      const effectivePercent = item.taxPercent ?? saleTaxPercent ?? 0;
-      return round2((item.lineTotal * effectivePercent) / 100);
+      const effectivePercent = toNumber(item.taxPercent ?? saleTaxPercent ?? 0);
+      return round2((toNumber(item.lineTotal) * effectivePercent) / 100);
     });
-    const totalAmount = round2(items.reduce((sum, i) => sum + i.lineTotal, 0));
-    const taxAmount = round2(lineTaxAmounts.reduce((sum, t) => sum + t, 0));
+    const totalAmount = round2(sum(items.map((i) => i.lineTotal)));
+    const taxAmount = round2(sum(lineTaxAmounts));
     return { lineTaxAmounts, totalAmount, taxAmount };
   }
 
@@ -122,13 +128,17 @@ export class SalesService {
     const [client] = await tx.$queryRaw<
       {
         id: string;
-        creditLimit: number | null;
+        // Real runtime type once creditLimit is numeric(14,2): a
+        // Prisma.Decimal, not a plain number (see payments.service.ts's
+        // LockedDocRow for the same gotcha).
+        creditLimit: Prisma.Decimal | null;
         creditLimitCurrency: string;
       }[]
     >(Prisma.sql`
       SELECT "id","creditLimit","creditLimitCurrency" FROM "clients" WHERE "id" = ${args.clientId} FOR UPDATE
     `);
     if (client?.creditLimit == null) return;
+    const creditLimit = toNumber(client.creditLimit);
 
     // HNL and USD can't be added up: the limit only covers sales in its own
     // currency, and a credit sale in another one is refused while it's set.
@@ -165,19 +175,17 @@ export class SalesService {
       : { _sum: { amount: 0 } };
 
     const outstanding =
-      openSales.reduce(
-        (sum, s) => sum + s.totalAmount + (s.taxAmount ?? 0),
-        0,
-      ) - (paidAgg._sum.amount ?? 0);
+      sum(openSales.flatMap((s) => [s.totalAmount, s.taxAmount])) -
+      toNumber(paidAgg._sum.amount);
     const projected = round2(outstanding + args.amount);
 
-    if (projected > client.creditLimit) {
+    if (projected > creditLimit) {
       throw new BadRequestException(
         apiError(
           'CREDIT_LIMIT_EXCEEDED',
-          `This sale would exceed the client's credit limit (${client.creditLimit} ${client.creditLimitCurrency}). Outstanding + this sale: ${projected}`,
+          `This sale would exceed the client's credit limit (${creditLimit} ${client.creditLimitCurrency}). Outstanding + this sale: ${projected}`,
           {
-            creditLimit: client.creditLimit,
+            creditLimit,
             projected,
             currency: client.creditLimitCurrency,
           },
@@ -650,9 +658,13 @@ export class SalesService {
         lineSeeds = current.items.map((item) => ({
           inventoryItemId: item.inventoryItemId,
           quantity: item.quantity,
-          unitPrice: item.unitPrice,
-          lineTotal: item.lineTotal,
-          taxPercent: item.taxPercent,
+          // These come back as Prisma.Decimal from the read above (current
+          // is a Prisma result); SaleItemSeed is number-typed, so convert
+          // explicitly rather than let TS structurally mismatch.
+          unitPrice: toNumber(item.unitPrice),
+          lineTotal: toNumber(item.lineTotal),
+          taxPercent:
+            item.taxPercent == null ? null : toNumber(item.taxPercent),
           itemName: item.itemName,
           serviceTag: item.serviceTag,
           currency: item.currency,
@@ -979,7 +991,7 @@ export class SalesService {
     const revenueByCurrency = revenueRaw.reduce<Record<string, number>>(
       (acc, row) => {
         acc[row.currency] = round2(
-          (row._sum.totalAmount ?? 0) + (row._sum.taxAmount ?? 0),
+          sum([row._sum.totalAmount, row._sum.taxAmount]),
         );
         return acc;
       },

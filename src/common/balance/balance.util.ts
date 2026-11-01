@@ -1,11 +1,15 @@
-import { PaymentStatus } from '@prisma/client';
+import { PaymentStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
-import { round2 } from '../money';
+import { round2, sum, toNumber } from '../money';
 
 interface BalanceableDoc {
   id: string;
-  totalAmount: number;
-  taxAmount: number | null;
+  // Real runtime type once totalAmount/taxAmount are numeric(14,2): a
+  // Prisma.Decimal read straight off a Sale/PurchaseInvoice row, not a
+  // plain number (see src/common/money.ts for why `+`/`-` on these directly
+  // is unsafe).
+  totalAmount: Prisma.Decimal;
+  taxAmount: Prisma.Decimal | null;
 }
 
 /**
@@ -31,17 +35,17 @@ export async function attachBalances<T extends BalanceableDoc>(
     _sum: { amount: true },
   } as never);
 
-  const paidMap = new Map<string, number>(
+  const paidMap = new Map<string, Prisma.Decimal | number | null>(
     (sums as Array<Record<string, unknown>>).map((s) => [
       s[field] as string,
-      (s._sum as { amount: number | null }).amount ?? 0,
+      (s._sum as { amount: Prisma.Decimal | number | null }).amount,
     ]),
   );
 
   return rows.map((r) => ({
     ...r,
     balance: round2(
-      r.totalAmount + (r.taxAmount ?? 0) - (paidMap.get(r.id) ?? 0),
+      sum([r.totalAmount, r.taxAmount]) - toNumber(paidMap.get(r.id)),
     ),
   }));
 }

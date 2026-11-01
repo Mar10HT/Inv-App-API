@@ -1,6 +1,6 @@
 import { Prisma } from '@prisma/client';
 
-type MoneyInput = number | Prisma.Decimal | null | undefined;
+export type MoneyInput = number | Prisma.Decimal | null | undefined;
 
 /**
  * Converts a money value to a plain number, treating null/undefined as 0.

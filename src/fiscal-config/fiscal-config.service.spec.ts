@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import type { FiscalConfig } from '@prisma/client';
+import { Prisma, type FiscalConfig } from '@prisma/client';
 import { mockDeep, type DeepMockProxy } from 'jest-mock-extended';
 import { FiscalConfigService } from './fiscal-config.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -17,7 +17,8 @@ describe('FiscalConfigService', () => {
     fiscalPhone: null,
     address: null,
     currency: 'HNL',
-    isvPercent: 15,
+    // Real runtime type once isvPercent is numeric(5,2): a Prisma.Decimal.
+    isvPercent: new Prisma.Decimal(15),
     createdAt: new Date(),
     updatedAt: new Date(),
   } as unknown as FiscalConfig;
@@ -88,7 +89,7 @@ describe('FiscalConfigService', () => {
       prisma.fiscalConfig.create.mockResolvedValue(mockConfig);
       prisma.fiscalConfig.update.mockResolvedValue({
         ...mockConfig,
-        isvPercent: 18,
+        isvPercent: new Prisma.Decimal(18),
       });
 
       await service.update({ isvPercent: 18 });

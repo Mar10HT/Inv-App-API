@@ -9,6 +9,7 @@ import {
   ItemType,
   PurchaseInvoiceStatus,
   PaymentCondition,
+  Prisma,
   type PurchaseInvoice,
   type InventoryItem,
   type Warehouse,
@@ -505,6 +506,23 @@ describe('PurchaseInvoicesService', () => {
         service.cancel('inv-1', 'user-2', undefined, ['other-wh']),
       ).rejects.toThrow(ForbiddenException);
     });
+
+    it('throws BadRequestException with PURCHASE_INVOICE_HAS_ACTIVE_PAYMENTS when the invoice has active payments', async () => {
+      prisma.purchaseInvoice.findUnique
+        .mockResolvedValueOnce(mockInvoice)
+        .mockResolvedValueOnce(mockInvoice);
+      prisma.payment.aggregate.mockResolvedValue({
+        _sum: { amount: new Prisma.Decimal('50.00') },
+      } as never);
+
+      await expect(service.cancel('inv-1', 'user-2')).rejects.toMatchObject({
+        response: { code: 'PURCHASE_INVOICE_HAS_ACTIVE_PAYMENTS' },
+      });
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(prisma.inventoryItem.updateMany).not.toHaveBeenCalled();
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(prisma.purchaseInvoice.update).not.toHaveBeenCalled();
+    });
   });
 
   describe('findOne', () => {
@@ -535,25 +553,34 @@ describe('PurchaseInvoicesService', () => {
 
   describe('findAll', () => {
     it('with onlyWithBalance returns only ACTIVE invoices whose balance is greater than zero', async () => {
+      // totalAmount/taxAmount/_sum.amount are Prisma.Decimal here, the real
+      // runtime shape once these columns are numeric(14,2) — plain numbers
+      // would let a broken `+`/`-` on these pass this test by accident.
       const paidOff = {
         ...mockInvoice,
         id: 'paid-off',
-        totalAmount: 50,
-        taxAmount: 0,
+        totalAmount: new Prisma.Decimal(50),
+        taxAmount: new Prisma.Decimal(0),
       };
       const owing = {
         ...mockInvoice,
         id: 'owing',
-        totalAmount: 100,
-        taxAmount: 0,
+        totalAmount: new Prisma.Decimal(100),
+        taxAmount: new Prisma.Decimal(0),
       };
       prisma.purchaseInvoice.findMany.mockResolvedValueOnce([
         paidOff,
         owing,
       ] as never);
       prisma.payment.groupBy.mockResolvedValueOnce([
-        { purchaseInvoiceId: 'paid-off', _sum: { amount: 50 } },
-        { purchaseInvoiceId: 'owing', _sum: { amount: 30 } },
+        {
+          purchaseInvoiceId: 'paid-off',
+          _sum: { amount: new Prisma.Decimal(50) },
+        },
+        {
+          purchaseInvoiceId: 'owing',
+          _sum: { amount: new Prisma.Decimal(30) },
+        },
       ] as never);
 
       const result = await service.findAll({ onlyWithBalance: true } as never);
@@ -571,7 +598,13 @@ describe('PurchaseInvoicesService', () => {
         .mockResolvedValueOnce(8)
         .mockResolvedValueOnce(2);
       prisma.purchaseInvoice.groupBy.mockResolvedValue([
-        { currency: 'USD', _sum: { totalAmount: 500, taxAmount: 75 } },
+        {
+          currency: 'USD',
+          _sum: {
+            totalAmount: new Prisma.Decimal(500),
+            taxAmount: new Prisma.Decimal(75),
+          },
+        },
       ] as never);
 
       const result = await service.getStats();

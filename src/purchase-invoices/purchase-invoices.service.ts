@@ -34,7 +34,7 @@ import { StockLevelService } from '../alerts/stock-level.service';
 import { apiError } from '../common/errors/api-error';
 import { lockForUpdate } from '../common/locking';
 import { takeStock } from '../inventory/stock.util';
-import { round2 } from '../common/money';
+import { round2, sum } from '../common/money';
 
 interface TaxableLine {
   lineTotal: number;
@@ -607,7 +607,7 @@ export class PurchaseInvoicesService {
     const totalByCurrency = totalByCurrencyRaw.reduce<Record<string, number>>(
       (acc, row) => {
         acc[row.currency] = round2(
-          (row._sum.totalAmount ?? 0) + (row._sum.taxAmount ?? 0),
+          sum([row._sum.totalAmount, row._sum.taxAmount]),
         );
         return acc;
       },
