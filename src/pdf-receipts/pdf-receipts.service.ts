@@ -1,7 +1,22 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { join } from 'path';
 import PDFDocument from 'pdfkit';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import {
+  PAGE_MARGIN,
+  drawFooter,
+  drawHeader,
+  drawScope,
+  drawSignatures,
+  drawTable,
+  drawTitle,
+  drawTotals,
+  type HeaderData,
+  type ScopePair,
+  type TableColumn,
+  type TotalsRow,
+} from './receipt-components';
 
 type Locale = 'es' | 'en';
 
@@ -138,6 +153,23 @@ const STRINGS = {
       DISTRIBUTOR: 'Distribuidor',
       RETAIL: 'Cliente final',
     } as Record<string, string>,
+    // Union of LoanStatus/RequestStatus(transfer)/OutflowStatus/SaleStatus/
+    // PurchaseInvoiceStatus — ctx.status was rendered untranslated before
+    // ("ACTIVE" instead of "Activo"), per Inv-App/docs/PENDIENTES.md.
+    statuses: {
+      PENDING: 'Pendiente',
+      SENT: 'Enviado',
+      RECEIVED: 'Recibido',
+      RETURN_PENDING: 'Devolución pendiente',
+      RETURNED: 'Devuelto',
+      OVERDUE: 'Vencido',
+      CANCELLED: 'Cancelado',
+      ACTIVE: 'Activo',
+      DRAFT: 'Borrador',
+      APPROVED: 'Aprobado',
+      COMPLETED: 'Completado',
+      REJECTED: 'Rechazado',
+    } as Record<string, string>,
   },
   en: {
     loanTitle: 'LOAN RECEIPT',
@@ -201,8 +233,277 @@ const STRINGS = {
       DISTRIBUTOR: 'Distributor',
       RETAIL: 'Retail',
     } as Record<string, string>,
+    statuses: {
+      PENDING: 'Pending',
+      SENT: 'Sent',
+      RECEIVED: 'Received',
+      RETURN_PENDING: 'Return pending',
+      RETURNED: 'Returned',
+      OVERDUE: 'Overdue',
+      CANCELLED: 'Cancelled',
+      ACTIVE: 'Active',
+      DRAFT: 'Draft',
+      APPROVED: 'Approved',
+      COMPLETED: 'Completed',
+      REJECTED: 'Rejected',
+    } as Record<string, string>,
   },
 } as const;
+
+// Pure helpers for render() below — kept outside the class since they only
+// need ctx/t/fmtAmount, no DI, and this keeps render() itself readable.
+
+/**
+ * The one-line "Label: value · Label: value" strip shown under the title.
+ * Replaces the old two-column metadata grid (writeRow) with the fields
+ * that are actually relevant per document type, same branching as before.
+ */
+function buildScopePairs(
+  ctx: ReceiptContext,
+  t: (typeof STRINGS)[Locale],
+  fmtDate: (d: Date) => string,
+): ScopePair[] {
+  const pairs: ScopePair[] = [
+    { label: t.status, value: t.statuses[ctx.status] ?? ctx.status },
+  ];
+
+  if (ctx.documentType === 'outflow') {
+    pairs.push({
+      label: t.warehouse,
+      value: ctx.warehouseLabel ?? ctx.sourceWarehouse,
+    });
+    pairs.push({
+      label: t.reason,
+      value: ctx.reason ? (t.reasons[ctx.reason] ?? ctx.reason) : t.noPrice,
+    });
+  } else if (ctx.documentType === 'sale') {
+    pairs.push({
+      label: t.warehouse,
+      value: ctx.warehouseLabel ?? ctx.sourceWarehouse,
+    });
+    pairs.push({ label: t.customer, value: ctx.customerName ?? t.noPrice });
+    pairs.push({
+      label: t.customerType,
+      value: ctx.customerType
+        ? (t.customerTypes[ctx.customerType] ?? ctx.customerType)
+        : t.noPrice,
+    });
+  } else if (ctx.documentType === 'purchase') {
+    pairs.push({ label: t.supplier, value: ctx.supplierName ?? t.noPrice });
+    pairs.push({
+      label: t.warehouse,
+      value: ctx.warehouseLabel ?? ctx.sourceWarehouse,
+    });
+    pairs.push({
+      label: t.supplierInvoiceLabel,
+      value: ctx.supplierInvoiceNumber ?? t.noPrice,
+    });
+  } else {
+    pairs.push({ label: t.from, value: ctx.sourceWarehouse });
+    pairs.push({ label: t.to, value: ctx.destinationWarehouse });
+  }
+
+  pairs.push({ label: t.created, value: fmtDate(ctx.createdAt) });
+  if (ctx.dueDate)
+    pairs.push({ label: t.dueDate, value: fmtDate(ctx.dueDate) });
+  pairs.push({ label: t.createdBy, value: ctx.createdBy });
+  return pairs;
+}
+
+/**
+ * Sales/purchases get a narrower layout to make room for the per-line ISV%
+ * column (Decision 17's receipt tax breakdown); every other document type
+ * keeps the item/tag/qty/unit/subtotal columns, no tax column.
+ */
+function buildColumns(
+  t: (typeof STRINGS)[Locale],
+  showTax: boolean,
+): TableColumn[] {
+  const columns: TableColumn[] = [
+    {
+      key: 'item',
+      header: t.colItem,
+      width: showTax ? 160 : 190,
+      align: 'center',
+    },
+    {
+      key: 'tag',
+      header: t.colTag,
+      width: showTax ? 90 : 110,
+      align: 'center',
+    },
+    { key: 'qty', header: t.colQty, width: showTax ? 35 : 40, align: 'center' },
+    {
+      key: 'unit',
+      header: t.colUnit,
+      width: showTax ? 65 : 80,
+      align: 'right',
+    },
+  ];
+  if (showTax)
+    columns.push({ key: 'tax', header: t.colTax, width: 40, align: 'center' });
+  columns.push({
+    key: 'sub',
+    header: t.colSubtotal,
+    width: showTax ? 122 : 92,
+    align: 'right',
+  });
+  return columns;
+}
+
+function toTableRow(
+  item: ReceiptItem,
+  ctx: ReceiptContext,
+  t: (typeof STRINGS)[Locale],
+  fmtAmount: (amount: number | null, currency: string | null) => string,
+  showTax: boolean,
+): Record<string, string> {
+  // Sale/purchase lines carry their own persisted lineTotal — use it instead
+  // of recomputing, so the PDF never drifts from what the document actually
+  // saved. Loan/transfer/outflow items have no lineTotal (their models
+  // don't store one), so they fall back to unit * quantity.
+  const sub =
+    item.lineTotal ??
+    (item.unitPrice != null ? item.unitPrice * item.quantity : null);
+  const row: Record<string, string> = {
+    item: item.name || '—',
+    tag: item.serviceTag ?? '—',
+    qty: String(item.quantity),
+    unit: fmtAmount(item.unitPrice, item.currency),
+    sub: fmtAmount(sub, item.currency),
+  };
+  if (showTax) {
+    const effectivePercent = item.taxPercent ?? ctx.taxPercent ?? 0;
+    row.tax = effectivePercent > 0 ? `${effectivePercent}%` : t.exempt;
+  }
+  return row;
+}
+
+/**
+ * Sale/PurchaseInvoice are single-currency documents (every line is created
+ * with the document's own currency), so the grand total/tax are read from
+ * ctx.totalAmount/taxAmount directly rather than re-summed from the items.
+ */
+/**
+ * Builds the drawHeader() payload: the fiscal address/phone/email join,
+ * plus the already-resolved docbox label/number and date/user lines.
+ */
+function buildHeaderData(
+  fiscalConfig: {
+    rtn: string | null;
+    address: string | null;
+    fiscalPhone: string | null;
+    fiscalEmail: string | null;
+  } | null,
+  docBox: { label: string; number: string | null },
+  ctx: ReceiptContext,
+  fmtDate: (d: Date) => string,
+): HeaderData {
+  const addressLine =
+    [
+      fiscalConfig?.address,
+      fiscalConfig?.fiscalPhone,
+      fiscalConfig?.fiscalEmail,
+    ]
+      .filter(Boolean)
+      .join(' · ') || null;
+  return {
+    logoPath: join(__dirname, 'assets', 'olanchonet-logo.png'),
+    rtn: fiscalConfig?.rtn ?? null,
+    addressLine,
+    docLabel: docBox.label,
+    docNumber: docBox.number,
+    dateLine: fmtDate(ctx.createdAt),
+    userLine: ctx.createdBy,
+  };
+}
+
+/**
+ * Outflow signs off with a single authorizer, sale with whoever attended
+ * the counter plus the customer, every other document type with the
+ * generic issued/received pair.
+ */
+function resolveSignatureLabels(
+  documentType: ReceiptContext['documentType'],
+  t: (typeof STRINGS)[Locale],
+): string[] {
+  if (documentType === 'outflow') return [t.authorizedBy];
+  if (documentType === 'sale') return [t.attendedBy, t.customer];
+  return [t.signedBy, t.receivedBy];
+}
+
+/**
+ * Stamps the footer (rule + legal text + page info/ref) and, for a
+ * cancelled/rejected document, a diagonal VOID watermark, on every buffered
+ * page. Runs after the whole body has been laid out (bufferPages: true)
+ * since only then is the final page count known.
+ */
+function stampFooterAndVoidWatermark(
+  doc: PDFKit.PDFDocument,
+  t: (typeof STRINGS)[Locale],
+  status: string,
+  ref: string,
+  left: number,
+  right: number,
+): void {
+  const { width, height } = doc.page;
+  const range = doc.bufferedPageRange();
+  const isVoid = VOID_STATUSES.has(status);
+  const voidLabel = status === 'REJECTED' ? t.voidRejected : t.voidCancelled;
+
+  for (let i = range.start; i < range.start + range.count; i++) {
+    doc.switchToPage(i);
+    const pageInfo = `${t.page} ${i + 1 - range.start} / ${range.count}`;
+    drawFooter(
+      doc,
+      t.autoGenerated,
+      pageInfo,
+      ref,
+      left,
+      right,
+      height - PAGE_MARGIN + 10,
+    );
+    if (isVoid) {
+      doc.save();
+      doc.opacity(0.18);
+      doc.rotate(-30, { origin: [width / 2, height / 2] });
+      doc.font('Helvetica-Bold').fontSize(110).fillColor('#dc2626');
+      doc.text(voidLabel, 0, height / 2 - 60, { width, align: 'center' });
+      doc.restore();
+    }
+  }
+}
+
+function buildTotalsRows(
+  ctx: ReceiptContext,
+  t: (typeof STRINGS)[Locale],
+  fmtAmount: (amount: number | null, currency: string | null) => string,
+): TotalsRow[] {
+  const currency = ctx.items[0]?.currency ?? null;
+  const amount = ctx.totalAmount ?? 0;
+  const tax = ctx.taxAmount ?? 0;
+  const rows: TotalsRow[] = [
+    {
+      label: currency ? `${t.subtotal} ${currency}` : t.subtotal,
+      value: fmtAmount(amount, currency),
+    },
+  ];
+  if (tax > 0) {
+    rows.push({ label: t.tax, value: fmtAmount(tax, currency) });
+    rows.push({
+      label: currency ? `${t.total} ${currency}` : t.total,
+      value: fmtAmount(amount + tax, currency),
+      grand: true,
+    });
+  } else {
+    rows.push({
+      label: currency ? `${t.total} ${currency}` : t.total,
+      value: fmtAmount(amount, currency),
+      grand: true,
+    });
+  }
+  return rows;
+}
 
 @Injectable()
 export class PdfReceiptsService {
@@ -489,26 +790,29 @@ export class PdfReceiptsService {
    * a DRAFT sale its quotation number, and loans, transfers and outflows
    * their own correlative (each falls back to the internal id only for a
    * document saved before numbering existed and not yet backfilled).
+   * Split into label/number so drawHeader() can lay them out as separate
+   * docbox rows.
    */
-  private resolveIdentifierLine(
+  private resolveDocBoxFields(
     ctx: Pick<
       ReceiptContext,
       'documentType' | 'status' | 'id' | 'number' | 'quoteNumber'
     >,
     t: (typeof STRINGS)[Locale],
-  ): string | null {
+  ): { label: string; number: string | null } {
     if (ctx.documentType === 'purchase') {
-      return `${t.purchaseNumber}: ${ctx.number ?? ctx.id}`;
+      return { label: t.purchaseNumber, number: ctx.number ?? ctx.id };
     }
-    if (ctx.documentType !== 'sale')
-      return `${t.number}: ${ctx.number ?? ctx.id}`;
-    if (ctx.status === 'DRAFT') {
-      return ctx.quoteNumber ? `${t.quoteNumber}: ${ctx.quoteNumber}` : null;
+    if (ctx.documentType === 'sale') {
+      if (ctx.status === 'DRAFT') {
+        return { label: t.quoteNumber, number: ctx.quoteNumber ?? null };
+      }
+      return { label: t.invoiceNumber, number: ctx.number ?? ctx.id };
     }
-    return `${t.invoiceNumber}: ${ctx.number ?? ctx.id}`;
+    return { label: t.number, number: ctx.number ?? ctx.id };
   }
 
-  private render(ctx: ReceiptContext, locale: Locale): Promise<Buffer> {
+  private async render(ctx: ReceiptContext, locale: Locale): Promise<Buffer> {
     const t = STRINGS[locale];
     const dateLocale = locale === 'en' ? 'en-US' : 'es-HN';
     const fmtDate = (d: Date) =>
@@ -524,402 +828,63 @@ export class PdfReceiptsService {
         ? t.noPrice
         : `${currency ?? ''} ${amount.toFixed(2)}`.trim();
 
-    return new Promise((resolve, reject) => {
+    const fiscalConfig = await this.prisma.fiscalConfig.findFirst();
+    const docBox = this.resolveDocBoxFields(ctx, t);
+
+    return new Promise<Buffer>((resolve, reject) => {
       const chunks: Buffer[] = [];
-      // bufferPages so we can stamp the void watermark across every page once
-      // the body has been laid out.
+      // bufferPages so the footer and void watermark can be stamped across
+      // every page once the body has been laid out.
       const doc = new PDFDocument({
         size: 'LETTER',
-        margin: 50,
+        margin: PAGE_MARGIN,
         bufferPages: true,
       });
       doc.on('data', (c: Buffer) => chunks.push(c));
       doc.on('end', () => resolve(Buffer.concat(chunks)));
       doc.on('error', reject);
 
-      // Header
-      const title = this.resolveTitle(ctx, t);
-      doc.fontSize(18).font('Helvetica-Bold').text(title, { align: 'center' });
-      doc.moveDown(0.5);
-      const identifierLine = this.resolveIdentifierLine(ctx, t);
-      if (identifierLine) {
-        doc
-          .fontSize(10)
-          .font('Helvetica')
-          .fillColor('#666666')
-          .text(identifierLine, { align: 'center' });
-        doc.fillColor('#000000');
-      }
-      doc.moveDown(1.5);
+      const left = PAGE_MARGIN;
+      const right = doc.page.width - PAGE_MARGIN;
 
-      // Metadata block (two columns)
-      const metaTop = doc.y;
-      const colWidth = (doc.page.width - 100) / 2;
-      const left = 50;
-      const right = left + colWidth + 10;
+      let y = drawHeader(
+        doc,
+        buildHeaderData(fiscalConfig, docBox, ctx, fmtDate),
+        left,
+        right,
+        PAGE_MARGIN,
+      );
 
-      const writeRow = (label: string, value: string, y: number, x: number) => {
-        doc
-          .font('Helvetica-Bold')
-          .fontSize(9)
-          .fillColor('#555555')
-          .text(label, x, y, { width: colWidth - 10 });
-        doc
-          .font('Helvetica')
-          .fontSize(11)
-          .fillColor('#000000')
-          .text(value || '—', x, y + 12, { width: colWidth - 10 });
-      };
+      y = drawTitle(doc, this.resolveTitle(ctx, t), null, left, right, y);
+      y = drawScope(doc, buildScopePairs(ctx, t, fmtDate), left, right, y);
 
-      // Purchases show their supplier first; every other document its
-      // number (the free-text reference these used to show is gone).
-      if (ctx.documentType === 'purchase') {
-        writeRow(t.supplier, ctx.supplierName ?? '—', metaTop, left);
-      } else {
-        writeRow(t.number, ctx.number ?? ctx.quoteNumber ?? '—', metaTop, left);
-      }
-      writeRow(t.status, ctx.status, metaTop, right);
-
-      if (ctx.documentType === 'outflow') {
-        writeRow(
-          t.warehouse,
-          ctx.warehouseLabel ?? ctx.sourceWarehouse,
-          metaTop + 42,
-          left,
-        );
-        const reasonLabel = ctx.reason
-          ? (t.reasons[ctx.reason] ?? ctx.reason)
-          : '—';
-        writeRow(t.reason, reasonLabel, metaTop + 42, right);
-      } else if (ctx.documentType === 'sale') {
-        writeRow(
-          t.warehouse,
-          ctx.warehouseLabel ?? ctx.sourceWarehouse,
-          metaTop + 42,
-          left,
-        );
-        const typeLabel = ctx.customerType
-          ? (t.customerTypes[ctx.customerType] ?? ctx.customerType)
-          : '—';
-        writeRow(t.customerType, typeLabel, metaTop + 42, right);
-      } else if (ctx.documentType === 'purchase') {
-        writeRow(
-          t.warehouse,
-          ctx.warehouseLabel ?? ctx.sourceWarehouse,
-          metaTop + 42,
-          left,
-        );
-        writeRow(
-          t.supplierInvoiceLabel,
-          ctx.supplierInvoiceNumber ?? '—',
-          metaTop + 42,
-          right,
-        );
-      } else {
-        writeRow(t.from, ctx.sourceWarehouse, metaTop + 42, left);
-        writeRow(t.to, ctx.destinationWarehouse, metaTop + 42, right);
-      }
-
-      writeRow(t.created, fmtDate(ctx.createdAt), metaTop + 84, left);
-      if (ctx.dueDate)
-        writeRow(t.dueDate, fmtDate(ctx.dueDate), metaTop + 84, right);
-      // Reuse the right slot (free for sales — no due date) for the customer name.
-      if (ctx.documentType === 'sale') {
-        writeRow(t.customer, ctx.customerName ?? '—', metaTop + 84, right);
-      }
-
-      writeRow(t.createdBy, ctx.createdBy, metaTop + 126, left);
-
-      doc.y = metaTop + 168;
-      doc.x = left;
-
-      // Items table
-      doc.moveDown(0.5);
-      doc
-        .font('Helvetica-Bold')
-        .fontSize(12)
-        .fillColor('#000000')
-        .text(t.items);
-      doc.moveDown(0.3);
-
-      // Sales and purchases get a narrower layout to make room for a
-      // per-line ISV% column (Decision 17's receipt tax breakdown); every
-      // other document type keeps its exact existing column positions,
-      // untouched.
       const showTax =
         ctx.documentType === 'sale' || ctx.documentType === 'purchase';
-      const unitColWidth = showTax ? 65 : 80;
-      const tableTop = doc.y;
-      const colItem = left;
-      const colTag = left + (showTax ? 165 : 200);
-      const colQty = left + (showTax ? 260 : 320);
-      const colUnit = left + (showTax ? 295 : 360);
-      const colTax = left + 365;
-      const colSub = left + (showTax ? 415 : 445);
+      const rows = ctx.items.map((item) =>
+        toTableRow(item, ctx, t, fmtAmount, showTax),
+      );
+      y = drawTable(doc, buildColumns(t, showTax), rows, left, y);
 
-      doc.font('Helvetica-Bold').fontSize(9).fillColor('#444444');
-      doc.text(t.colItem, colItem, tableTop, { width: showTax ? 160 : 195 });
-      doc.text(t.colTag, colTag, tableTop, { width: showTax ? 90 : 115 });
-      doc.text(t.colQty, colQty, tableTop, { width: 30, align: 'right' });
-      doc.text(t.colUnit, colUnit, tableTop, {
-        width: unitColWidth,
-        align: 'right',
-      });
       if (showTax) {
-        doc.text(t.colTax, colTax, tableTop, { width: 40, align: 'right' });
-      }
-      doc.text(t.colSubtotal, colSub, tableTop, { width: 70, align: 'right' });
-
-      doc
-        .moveTo(left, tableTop + 14)
-        .lineTo(doc.page.width - 50, tableTop + 14)
-        .strokeColor('#cccccc')
-        .stroke();
-
-      let cursor = tableTop + 20;
-      // One running total (and, for sales, one running tax total) per
-      // currency; items with no price contribute to nothing. Items priced
-      // without a currency (currency = null) get bucketed under '' so they
-      // don't accidentally merge with USD/HNL/etc.
-      const totalsByCurrency = new Map<string, number>();
-      const taxByCurrency = new Map<string, number>();
-
-      doc.font('Helvetica').fontSize(10).fillColor('#000000');
-      for (const item of ctx.items) {
-        if (cursor > doc.page.height - 200) {
-          doc.addPage();
-          cursor = 50;
-        }
-        const unit = item.unitPrice;
-        // Sale/purchase lines carry their own persisted lineTotal — use it
-        // instead of recomputing, so the PDF never drifts from what the
-        // document actually saved. Loan/transfer/outflow items have no
-        // lineTotal (their models don't store one), so they still fall
-        // back to unit * quantity here.
-        const sub =
-          item.lineTotal ?? (unit != null ? unit * item.quantity : null);
-        if (sub != null) {
-          const key = item.currency ?? '';
-          totalsByCurrency.set(key, (totalsByCurrency.get(key) ?? 0) + sub);
-          if (showTax) {
-            taxByCurrency.set(
-              key,
-              (taxByCurrency.get(key) ?? 0) + (item.taxAmount ?? 0),
-            );
-          }
-        }
-
-        doc.text(item.name || '—', colItem, cursor, {
-          width: showTax ? 160 : 195,
-        });
-        doc.text(item.serviceTag ?? '—', colTag, cursor, {
-          width: showTax ? 90 : 115,
-        });
-        doc.text(String(item.quantity), colQty, cursor, {
-          width: 30,
-          align: 'right',
-        });
-        doc.text(fmtAmount(unit, item.currency), colUnit, cursor, {
-          width: unitColWidth,
-          align: 'right',
-        });
-        if (showTax) {
-          const effectivePercent = item.taxPercent ?? ctx.taxPercent ?? 0;
-          const taxLabel =
-            effectivePercent > 0 ? `${effectivePercent}%` : t.exempt;
-          doc.text(taxLabel, colTax, cursor, { width: 40, align: 'right' });
-        }
-        doc.text(fmtAmount(sub, item.currency), colSub, cursor, {
-          width: 70,
-          align: 'right',
-        });
-        cursor += 18;
-      }
-
-      // Totals — one row per currency present (three, Subtotal/Impuesto/
-      // Total, for a sale currency that actually carried any tax). If none
-      // have prices, show a single em-dash.
-      doc
-        .moveTo(colUnit, cursor + 4)
-        .lineTo(doc.page.width - 50, cursor + 4)
-        .strokeColor('#cccccc')
-        .stroke();
-
-      const labelX = left + 250;
-      const labelWidth = colSub - labelX - 10;
-
-      if (totalsByCurrency.size === 0) {
-        doc.font('Helvetica-Bold').fontSize(11).fillColor('#000000');
-        doc.text(t.total, colUnit, cursor + 10, {
-          width: unitColWidth,
-          align: 'right',
-        });
-        doc.text(t.noPrice, colSub, cursor + 10, { width: 70, align: 'right' });
-        cursor += 26;
-      } else {
-        // Stable order: known currencies first, then alphabetical
-        const entries = Array.from(totalsByCurrency.entries()).sort(
-          ([a], [b]) => a.localeCompare(b),
+        y = drawTotals(
+          doc,
+          buildTotalsRows(ctx, t, fmtAmount),
+          left,
+          right,
+          y + 14,
         );
-        let row = cursor + 10;
-        // Sale/PurchaseInvoice are single-currency (every line is created
-        // with the document's own currency), so `entries` has exactly one
-        // item for them — prefer the document's own persisted totalAmount/
-        // taxAmount over re-summing the lines by hand. Loan/transfer/
-        // outflow have no such stored total (and can mix currencies across
-        // lines), so they keep the per-currency sum computed above.
-        const isDocumentTotal =
-          ctx.documentType === 'sale' || ctx.documentType === 'purchase';
-        for (const [currency, summedAmount] of entries) {
-          const summedTax = showTax ? (taxByCurrency.get(currency) ?? 0) : 0;
-          const amount = isDocumentTotal
-            ? (ctx.totalAmount ?? summedAmount)
-            : summedAmount;
-          const tax = isDocumentTotal
-            ? (ctx.taxAmount ?? summedTax)
-            : summedTax;
-          if (tax > 0) {
-            doc.font('Helvetica').fontSize(10).fillColor('#000000');
-            const subtotalLabel = currency
-              ? `${t.subtotal} ${currency}`
-              : t.subtotal;
-            doc.text(subtotalLabel, labelX, row, {
-              width: labelWidth,
-              align: 'right',
-            });
-            doc.text(fmtAmount(amount, currency || null), colSub, row, {
-              width: 70,
-              align: 'right',
-            });
-            row += 14;
-            doc.text(t.tax, labelX, row, { width: labelWidth, align: 'right' });
-            doc.text(fmtAmount(tax, currency || null), colSub, row, {
-              width: 70,
-              align: 'right',
-            });
-            row += 14;
-            doc.font('Helvetica-Bold').fontSize(11);
-            const grandLabel = currency ? `${t.total} ${currency}` : t.total;
-            doc.text(grandLabel, labelX, row, {
-              width: labelWidth,
-              align: 'right',
-            });
-            doc.text(fmtAmount(amount + tax, currency || null), colSub, row, {
-              width: 70,
-              align: 'right',
-            });
-            row += 16;
-          } else {
-            doc.font('Helvetica-Bold').fontSize(11).fillColor('#000000');
-            const label = currency ? `${t.total} ${currency}` : t.total;
-            doc.text(label, colUnit, row, {
-              width: unitColWidth,
-              align: 'right',
-            });
-            doc.text(fmtAmount(amount, currency || null), colSub, row, {
-              width: 70,
-              align: 'right',
-            });
-            row += 16;
-          }
-        }
-        cursor = row;
       }
 
-      doc.y = cursor + 16;
-      doc.x = left;
+      drawSignatures(
+        doc,
+        resolveSignatureLabels(ctx.documentType, t),
+        left,
+        right,
+        Math.max(y + 20, doc.page.height - 150),
+      );
 
-      // Notes
-      if (ctx.notes) {
-        doc.moveDown(1);
-        doc
-          .font('Helvetica-Bold')
-          .fontSize(10)
-          .fillColor('#555555')
-          .text(t.notes);
-        doc
-          .font('Helvetica')
-          .fontSize(10)
-          .fillColor('#000000')
-          .text(ctx.notes, { width: doc.page.width - 100 });
-      }
-
-      // Signatures
-      const sigTop = Math.max(doc.y + 50, doc.page.height - 180);
-      doc
-        .font('Helvetica-Bold')
-        .fontSize(12)
-        .fillColor('#000000')
-        .text(t.signaturesHeader, left, sigTop);
-
-      const sigRow = sigTop + 40;
-      const sigCol1 = left;
-      const sigCol2 = left + colWidth + 10;
-
-      const drawSignatureBlock = (label: string, x: number, y: number) => {
-        doc
-          .font('Helvetica-Bold')
-          .fontSize(9)
-          .fillColor('#555555')
-          .text(label, x, y);
-        doc
-          .moveTo(x, y + 30)
-          .lineTo(x + colWidth - 20, y + 30)
-          .strokeColor('#000000')
-          .stroke();
-        doc
-          .font('Helvetica')
-          .fontSize(8)
-          .fillColor('#666666')
-          .text(t.nameLine, x, y + 33);
-        doc
-          .moveTo(x, y + 65)
-          .lineTo(x + colWidth - 20, y + 65)
-          .strokeColor('#000000')
-          .stroke();
-        doc
-          .font('Helvetica')
-          .fontSize(8)
-          .fillColor('#666666')
-          .text(t.dateLine, x, y + 68);
-      };
-
-      if (ctx.documentType === 'outflow') {
-        // Single authorization block for outflows — there is no receiver in a write-off.
-        drawSignatureBlock(t.authorizedBy, sigCol1, sigRow);
-      } else if (ctx.documentType === 'sale') {
-        // A sale is signed by the seller and the customer.
-        drawSignatureBlock(t.attendedBy, sigCol1, sigRow);
-        drawSignatureBlock(t.customer, sigCol2, sigRow);
-      } else {
-        drawSignatureBlock(t.signedBy, sigCol1, sigRow);
-        drawSignatureBlock(t.receivedBy, sigCol2, sigRow);
-      }
-
-      // Footer
-      doc
-        .font('Helvetica')
-        .fontSize(8)
-        .fillColor('#999999')
-        .text(t.autoGenerated, 50, doc.page.height - 40, { align: 'center' });
-
-      // Void watermark for CANCELLED / REJECTED — stamped on every page so a
-      // printed PDF can't be confused with a real receipt.
-      if (VOID_STATUSES.has(ctx.status)) {
-        const label =
-          ctx.status === 'REJECTED' ? t.voidRejected : t.voidCancelled;
-        const { width, height } = doc.page;
-        const range = doc.bufferedPageRange();
-        for (let i = range.start; i < range.start + range.count; i++) {
-          doc.switchToPage(i);
-          doc.save();
-          doc.opacity(0.18);
-          doc.rotate(-30, { origin: [width / 2, height / 2] });
-          doc.font('Helvetica-Bold').fontSize(110).fillColor('#dc2626');
-          doc.text(label, 0, height / 2 - 60, { width, align: 'center' });
-          doc.restore();
-        }
-      }
+      const ref = `OBS-${ctx.id.slice(-6).toUpperCase()}`;
+      stampFooterAndVoidWatermark(doc, t, ctx.status, ref, left, right);
 
       doc.end();
     });
