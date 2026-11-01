@@ -98,29 +98,6 @@ export class ReportsController {
     res.send(buffer);
   }
 
-  @Get('inventory/pdf')
-  @Permissions('reports:export')
-  async exportInventoryPdf(
-    @Query(ValidationPipe) filters: FilterInventoryDto,
-    @Query('locale') locale: 'en' | 'es' = 'es',
-    @CurrentUser() user: AuthenticatedUser,
-    @Res() res: Response,
-  ) {
-    const buffer = await this.reportsService.generateInventoryPdf(
-      filters,
-      user.warehouseIds,
-      locale,
-    );
-
-    res.set({
-      'Content-Type': 'application/pdf',
-      'Content-Disposition': `attachment; filename=inventario_${Date.now()}.pdf`,
-      'Content-Length': buffer.length,
-    });
-
-    res.send(buffer);
-  }
-
   @Get('low-stock/excel')
   @Permissions('reports:export')
   async exportLowStockExcel(
