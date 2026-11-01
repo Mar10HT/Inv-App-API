@@ -22,6 +22,7 @@ export const SOFT = '#f7f6f1';
 
 const RULE_WIDTH = 0.75; // 1px border
 const THICK_RULE_WIDTH = 1.5; // 2px accent border
+const TOP_BAR_WIDTH = 3; // 4px
 // ponytail: approximate single-font line-height factor instead of measuring
 // actual glyph metrics per string; close enough for non-pixel-perfect phase 1.
 const LINE_HEIGHT = 1.3;
@@ -81,6 +82,32 @@ const SPACING = {
 function readPngSize(path: string): { width: number; height: number } {
   const buffer = readFileSync(path);
   return { width: buffer.readUInt32BE(16), height: buffer.readUInt32BE(20) };
+}
+
+/**
+ * The template's `.sheet` card border: a 1px rule-colored border on all
+ * four sides, overridden on the top edge by a thicker 4px accent bar
+ * (`border: 1px solid var(--rule); border-top: 4px solid var(--accent)`).
+ * In print (`@media print { .sheet { margin: 0 } }`) the sheet becomes the
+ * page itself, so this draws at the true page edges, not PAGE_MARGIN --
+ * content still starts at PAGE_MARGIN, same as the template's sheet
+ * padding sitting inside its own border. Call once per page.
+ */
+export function drawSheetFrame(doc: PDFKit.PDFDocument): void {
+  const { width, height } = doc.page;
+
+  doc
+    .lineWidth(RULE_WIDTH)
+    .strokeColor(RULE)
+    .rect(0, 0, width, height)
+    .stroke();
+
+  doc
+    .lineWidth(TOP_BAR_WIDTH)
+    .strokeColor(ACCENT)
+    .moveTo(0, TOP_BAR_WIDTH / 2)
+    .lineTo(width, TOP_BAR_WIDTH / 2)
+    .stroke();
 }
 
 export interface HeaderData {

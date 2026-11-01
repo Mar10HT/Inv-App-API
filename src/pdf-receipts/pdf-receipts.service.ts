@@ -8,6 +8,7 @@ import {
   drawFooter,
   drawHeader,
   drawScope,
+  drawSheetFrame,
   drawSignatures,
   drawTable,
   drawTitle,
@@ -92,12 +93,17 @@ interface ReceiptContext {
 
 const STRINGS = {
   es: {
-    loanTitle: 'COMPROBANTE DE PRÉSTAMO',
-    transferTitle: 'COMPROBANTE DE TRANSFERENCIA',
-    outflowTitle: 'COMPROBANTE DE SALIDA',
-    saleTitle: 'COMPROBANTE DE VENTA',
-    purchaseTitle: 'COMPROBANTE DE COMPRA',
-    quotationTitle: 'COTIZACIÓN',
+    loanTitle: 'Recibo de Préstamo',
+    transferTitle: 'Recibo de Transferencia',
+    outflowTitle: 'Recibo de Salida',
+    saleTitle: 'Recibo de Venta',
+    purchaseTitle: 'Recibo de Compra',
+    quotationTitle: 'Cotización',
+    loanSubtitle: 'Préstamo de material',
+    outflowSubtitle: 'Baja de inventario',
+    saleSubtitle: 'Comprobante de venta',
+    purchaseSubtitle: 'Comprobante de compra',
+    quotationSubtitle: 'Cotización de venta',
     voidCancelled: 'CANCELADO',
     voidRejected: 'RECHAZADO',
     id: 'ID',
@@ -172,12 +178,17 @@ const STRINGS = {
     } as Record<string, string>,
   },
   en: {
-    loanTitle: 'LOAN RECEIPT',
-    transferTitle: 'TRANSFER RECEIPT',
-    outflowTitle: 'OUTFLOW RECEIPT',
-    saleTitle: 'SALE RECEIPT',
-    purchaseTitle: 'PURCHASE RECEIPT',
-    quotationTitle: 'QUOTATION',
+    loanTitle: 'Loan Receipt',
+    transferTitle: 'Transfer Receipt',
+    outflowTitle: 'Outflow Receipt',
+    saleTitle: 'Sale Receipt',
+    purchaseTitle: 'Purchase Receipt',
+    quotationTitle: 'Quotation',
+    loanSubtitle: 'Loan of material',
+    outflowSubtitle: 'Inventory discharge',
+    saleSubtitle: 'Sale receipt',
+    purchaseSubtitle: 'Purchase receipt',
+    quotationSubtitle: 'Sales quotation',
     voidCancelled: 'CANCELLED',
     voidRejected: 'REJECTED',
     id: 'ID',
@@ -453,6 +464,7 @@ function stampFooterAndVoidWatermark(
 
   for (let i = range.start; i < range.start + range.count; i++) {
     doc.switchToPage(i);
+    drawSheetFrame(doc);
     const pageInfo = `${t.page} ${i + 1 - range.start} / ${range.count}`;
     drawFooter(
       doc,
@@ -786,6 +798,31 @@ export class PdfReceiptsService {
   }
 
   /**
+   * Transfer has no fixed subtitle in the template -- it shows the route
+   * ("Bodega Central → Bodega Norte") instead, built from the same
+   * sourceWarehouse/destinationWarehouse names buildScopePairs() uses for
+   * the Origen/Destino scope pair.
+   */
+  private resolveSubtitle(
+    ctx: Pick<
+      ReceiptContext,
+      'documentType' | 'status' | 'sourceWarehouse' | 'destinationWarehouse'
+    >,
+    t: (typeof STRINGS)[Locale],
+  ): string {
+    if (ctx.documentType === 'sale' && ctx.status === 'DRAFT') {
+      return t.quotationSubtitle;
+    }
+    if (ctx.documentType === 'loan') return t.loanSubtitle;
+    if (ctx.documentType === 'transfer') {
+      return `${ctx.sourceWarehouse} → ${ctx.destinationWarehouse}`;
+    }
+    if (ctx.documentType === 'sale') return t.saleSubtitle;
+    if (ctx.documentType === 'purchase') return t.purchaseSubtitle;
+    return t.outflowSubtitle;
+  }
+
+  /**
    * ACTIVE/CANCELLED sales and purchases show their real invoice number,
    * a DRAFT sale its quotation number, and loans, transfers and outflows
    * their own correlative (each falls back to the internal id only for a
@@ -855,7 +892,14 @@ export class PdfReceiptsService {
         PAGE_MARGIN,
       );
 
-      y = drawTitle(doc, this.resolveTitle(ctx, t), null, left, right, y);
+      y = drawTitle(
+        doc,
+        this.resolveTitle(ctx, t),
+        this.resolveSubtitle(ctx, t),
+        left,
+        right,
+        y,
+      );
       y = drawScope(doc, buildScopePairs(ctx, t, fmtDate), left, right, y);
 
       const showTax =
