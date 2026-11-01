@@ -7,8 +7,10 @@
  * points at a dedicated `obsid_decimal_test` database instead of whatever
  * DATABASE_URL names — the script runs destructive ALTER COLUMN statements
  * by table name, so it must never run against a real dev/prod database by
- * accident. Create it once with:
- *   psql -U postgres -h localhost -c "CREATE DATABASE obsid_decimal_test;"
+ * accident. `ensureTestDatabaseExists` below creates it on demand (via the
+ * connection user from DATABASE_URL, which needs CREATEDB — true for the
+ * local `postgres` superuser and for the CI postgres service's own user),
+ * so this test is self-contained in both environments.
  *
  * The 8 tables created here are deliberately minimal (id + the exact
  * money/percent columns migrate-decimal-amounts.sql touches, nothing else,
@@ -24,10 +26,33 @@ const MIGRATION_SQL = readFileSync(
   'utf-8',
 );
 
+const TEST_DB_NAME = 'obsid_decimal_test';
+
 function testDbUrl(): string {
   const base = new URL(process.env.DATABASE_URL ?? '');
-  base.pathname = '/obsid_decimal_test';
+  base.pathname = `/${TEST_DB_NAME}`;
   return base.toString();
+}
+
+/** Creates the dedicated test database if it doesn't exist yet, using the
+ * admin connection from DATABASE_URL. CREATE DATABASE can't run inside a
+ * transaction, so this is a plain $executeRawUnsafe, guarded by an existence
+ * check instead of a try/catch on a duplicate-database error. */
+async function ensureTestDatabaseExists(): Promise<void> {
+  const admin = new PrismaClient({
+    datasources: { db: { url: process.env.DATABASE_URL } },
+  });
+  try {
+    const [{ exists }] = await admin.$queryRawUnsafe<[{ exists: boolean }]>(
+      `SELECT EXISTS (SELECT 1 FROM pg_database WHERE datname = $1) AS exists`,
+      TEST_DB_NAME,
+    );
+    if (!exists) {
+      await admin.$executeRawUnsafe(`CREATE DATABASE "${TEST_DB_NAME}"`);
+    }
+  } finally {
+    await admin.$disconnect();
+  }
 }
 
 const prisma = new PrismaClient({
@@ -132,6 +157,10 @@ async function columnTypes(table: string): Promise<Record<string, string>> {
   );
   return Object.fromEntries(rows.map((r) => [r.column_name, r.data_type]));
 }
+
+beforeAll(async () => {
+  await ensureTestDatabaseExists();
+});
 
 afterAll(async () => {
   await prisma.$disconnect();
