@@ -36,6 +36,7 @@ import { SalesModule } from './sales/sales.module';
 import { PurchaseInvoicesModule } from './purchase-invoices/purchase-invoices.module';
 import { WarehouseAccessModule } from './common/warehouse-access/warehouse-access.module';
 import { WarehouseAccessInterceptor } from './common/warehouse-access/warehouse-access.interceptor';
+import { DecimalInterceptor } from './common/interceptors/decimal.interceptor';
 import { ScheduledReportsModule } from './scheduled-reports/scheduled-reports.module';
 import { RolesModule } from './roles/roles.module';
 import { FiscalConfigModule } from './fiscal-config/fiscal-config.module';
@@ -144,6 +145,11 @@ import { PaymentsModule } from './payments/payments.module';
     {
       provide: APP_INTERCEPTOR,
       useClass: WarehouseAccessInterceptor,
+    },
+    // Convert any Prisma.Decimal in a response body to a plain number
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: DecimalInterceptor,
     },
   ],
 })

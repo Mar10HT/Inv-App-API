@@ -169,7 +169,7 @@ model InventoryItem {
   categoryRef  Category?         @relation(fields: [categoryId], references: [id])
   categoryId   String?           // New: relation to Category model
   status       InventoryStatus   @default(IN_STOCK)
-  price        Float?
+  price        Decimal?          @db.Decimal(14, 2)
   currency     Currency          @default(USD) // Currency type
   sku          String?           @unique
   barcode      String?
@@ -793,7 +793,7 @@ model OutflowItem {
   // renames, price changes, or hard-delete attempts.
   itemName        String?
   serviceTag      String?
-  unitPrice       Float?
+  unitPrice       Decimal? @db.Decimal(14, 2)
   currency        String?
   notes           String?
   createdAt       DateTime @default(now())
@@ -876,13 +876,13 @@ model Sale {
   // Pre-tax sum of line totals. Keeps its pre-Phase-3 meaning unchanged so
   // every existing consumer (PDF, stats, frontend) keeps working untouched;
   // the grand total is totalAmount + taxAmount, computed at read time.
-  totalAmount         Float        @default(0)
+  totalAmount         Decimal      @default(0) @db.Decimal(14, 2)
   // Suggested default is FiscalConfig.isvPercent but always editable per
   // document; null means no tax on this sale unless a line overrides it.
-  taxPercent          Float?
+  taxPercent          Decimal?     @db.Decimal(5, 2)
   // Stored sum of each line's computed tax, same persisted-not-computed
   // pattern as totalAmount/lineTotal.
-  taxAmount           Float?       @default(0)
+  taxAmount           Decimal?     @default(0) @db.Decimal(14, 2)
   status              SaleStatus   @default(ACTIVE)
   notes               String?
   createdById         String
@@ -926,12 +926,12 @@ model SaleItem {
   saleId          String
   inventoryItemId String
   quantity        Int      @default(1)
-  unitPrice       Float    // Entered manually at sale time
-  lineTotal       Float    @default(0) // quantity * unitPrice, snapshot
+  unitPrice       Decimal  @db.Decimal(14, 2) // Entered manually at sale time
+  lineTotal       Decimal  @default(0) @db.Decimal(14, 2) // quantity * unitPrice, snapshot
   // Null inherits the sale's effective taxPercent; an explicit value
   // (including 0) overrides it for this line only.
-  taxPercent      Float?
-  taxAmount       Float?   @default(0)
+  taxPercent      Decimal? @db.Decimal(5, 2)
+  taxAmount       Decimal? @default(0) @db.Decimal(14, 2)
   // Snapshots captured at sale time so receipts/reports survive item
   // renames, price changes, or hard-delete attempts.
   itemName        String?
@@ -972,7 +972,7 @@ model FiscalConfig {
   fiscalPhone String?
   address     String?
   currency    Currency @default(HNL)
-  isvPercent  Float    @default(15) // Honduras general ISV rate; suggested default, overridable per sale/line in a later phase
+  isvPercent  Decimal  @default(15) @db.Decimal(5, 2) // Honduras general ISV rate; suggested default, overridable per sale/line in a later phase
   // Correlative used for Sale.number when no active CaiRange exists. Same
   // get-or-create singleton as the rest of this model; locked via a raw
   // SELECT ... FOR UPDATE at consumption time by SaleNumberingService.
@@ -1039,9 +1039,9 @@ model PurchaseInvoice {
   status             PurchaseInvoiceStatus @default(ACTIVE)
   currency           String                @default("USD")
   // Pre-tax sum of line totals, same meaning as Sale.totalAmount.
-  totalAmount        Float                 @default(0)
-  taxPercent         Float?
-  taxAmount          Float?                @default(0)
+  totalAmount        Decimal               @default(0) @db.Decimal(14, 2)
+  taxPercent         Decimal?              @db.Decimal(5, 2)
+  taxAmount          Decimal?              @default(0) @db.Decimal(14, 2)
   // No `balance` field: computed on demand from totalAmount + taxAmount -
   // SUM(payments.amount WHERE status = ACTIVE), see src/common/balance.
   paymentCondition   PaymentCondition      @default(CASH)
@@ -1077,12 +1077,12 @@ model PurchaseInvoiceItem {
   // row per unit, not one row per product type with N serials nested).
   inventoryItemId   String
   quantity          Int      @default(1)
-  unitPrice         Float
-  lineTotal         Float    @default(0)
+  unitPrice         Decimal  @db.Decimal(14, 2)
+  lineTotal         Decimal  @default(0) @db.Decimal(14, 2)
   // Null inherits the invoice's taxPercent; an explicit value (including 0)
   // overrides it for this line only — same mechanism as SaleItem.
-  taxPercent        Float?
-  taxAmount         Float?   @default(0)
+  taxPercent        Decimal? @db.Decimal(5, 2)
+  taxAmount         Decimal? @default(0) @db.Decimal(14, 2)
   // Snapshots captured at purchase time so the invoice survives item
   // renames or hard-delete attempts.
   itemName          String?
@@ -1136,7 +1136,7 @@ model Payment {
   id                 String        @id @default(cuid())
   saleId             String?
   purchaseInvoiceId  String?
-  amount             Float
+  amount             Decimal       @db.Decimal(14, 2)
   method             PaymentMethod
   reference          String? // Check number / bank transfer confirmation code
   notes              String?
@@ -1175,7 +1175,7 @@ model Client {
   paymentCondition PaymentCondition @default(CASH)
   // Credit limit (Phase 5): only CREDIT sales with an outstanding balance
   // count toward it. Null means unrestricted credit.
-  creditLimit      Float?
+  creditLimit      Decimal?         @db.Decimal(14, 2)
   // Currency the credit limit is in. Only CREDIT sales in this currency count
   // toward it; a CREDIT sale in another currency is refused while a limit is
   // set (amounts in HNL and USD can't be added up).

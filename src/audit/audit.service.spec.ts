@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { type AuditLog } from '@prisma/client';
+import { Prisma, type AuditLog } from '@prisma/client';
 import { mockDeep, type DeepMockProxy } from 'jest-mock-extended';
 import { AuditService } from './audit.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -83,6 +83,33 @@ describe('AuditService', () => {
           userId: 'user-123',
           changes: null,
         },
+      });
+    });
+
+    it('converts a Prisma.Decimal nested in changes to a plain number before persisting', async () => {
+      // Prisma.Decimal.toJSON() returns toString(), so a raw Decimal surviving
+      // into JSON.stringify would persist as "150.00" (string) instead of 150
+      // (number) — inconsistent with the rest of the API, which always
+      // returns numbers for money fields via DecimalInterceptor.
+      prisma.auditLog.create.mockResolvedValue(mockAuditLog);
+
+      await service.log({
+        action: 'UPDATE',
+        entity: 'Sale',
+        entityId: 'sale-1',
+        changes: {
+          after: { totalAmount: new Prisma.Decimal('150.00') },
+        },
+      });
+
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(prisma.auditLog.create).toHaveBeenCalledWith({
+        // jest's expect.objectContaining() return type is `any` in the
+        // installed @types/jest — a known, long-standing typing gap.
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        data: expect.objectContaining({
+          changes: { after: { totalAmount: 150 } },
+        }),
       });
     });
 

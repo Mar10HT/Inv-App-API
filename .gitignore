@@ -28,3 +28,6 @@ logs/
 
 # Fake data seeder (local dev only, not for version control)
 scripts/seed-fake.ts
+
+# Graphify local code graph
+graphify-out/

@@ -21,14 +21,17 @@ import {
   parseSortOrder,
 } from '../common/dto';
 import { apiError } from '../common/errors/api-error';
-
-const round2 = (n: number) => Math.round(n * 100) / 100;
+import { round2, sum, toNumber } from '../common/money';
 
 interface LockedDocRow {
   id: string;
   status: string;
-  totalAmount: number;
-  taxAmount: number | null;
+  // Real runtime type once the schema migrated these columns to
+  // numeric(14,2): Prisma's raw query engine returns Prisma.Decimal for a
+  // numeric column, not a plain number. Never combine these with `+`/`-`
+  // directly (see src/common/money.ts) — always go through round2/sum.
+  totalAmount: Prisma.Decimal;
+  taxAmount: Prisma.Decimal | null;
 }
 
 @Injectable()
@@ -171,7 +174,7 @@ export class PaymentsService {
     });
 
     return round2(
-      current.totalAmount + (current.taxAmount ?? 0) - (_sum.amount ?? 0),
+      sum([current.totalAmount, current.taxAmount]) - toNumber(_sum.amount),
     );
   }
 

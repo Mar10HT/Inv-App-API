@@ -8,6 +8,7 @@ import {
   selectedWarehouseFilter,
 } from '../common/warehouse-access/warehouse-filter.util';
 import type ExcelJSType from 'exceljs';
+import { sum, toNumber } from '../common/money';
 
 type Locale = 'en' | 'es';
 
@@ -299,7 +300,7 @@ export class ReportsService {
         quantity: item.quantity,
         minQuantity: item.minQuantity,
         status: item.status,
-        price: item.price || 0,
+        price: toNumber(item.price),
         currency: item.currency,
         warehouse: item.warehouse?.name || '',
         supplier: item.supplier?.name || '',
@@ -331,10 +332,7 @@ export class ReportsService {
     totalRow.font = { bold: true };
     const valueRow = worksheet.addRow({
       name: this.t('totalValue', locale),
-      price: items.reduce(
-        (sum, item) => sum + (item.price || 0) * item.quantity,
-        0,
-      ),
+      price: sum(items.map((item) => toNumber(item.price) * item.quantity)),
     });
     valueRow.font = { bold: true };
 
@@ -383,9 +381,8 @@ export class ReportsService {
         );
       doc.moveDown(2);
 
-      const totalValue = items.reduce(
-        (sum, item) => sum + (item.price || 0) * item.quantity,
-        0,
+      const totalValue = sum(
+        items.map((item) => toNumber(item.price) * item.quantity),
       );
       const inStock = items.filter((i) => i.status === 'IN_STOCK').length;
       const lowStock = items.filter((i) => i.status === 'LOW_STOCK').length;

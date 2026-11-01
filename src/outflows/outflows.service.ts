@@ -35,7 +35,10 @@ interface OutflowItemSeed {
   quantity: number;
   itemName?: string | null;
   serviceTag?: string | null;
-  unitPrice?: number | null;
+  // A pass-through snapshot of InventoryItem.price (Prisma.Decimal once
+  // numeric(14,2)), never arithmetic'd here — just written straight back
+  // into OutflowItem.unitPrice, so no number conversion is needed.
+  unitPrice?: Prisma.Decimal | number | null;
   currency?: string | null;
   notes?: string | null;
 }
