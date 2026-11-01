@@ -505,7 +505,10 @@ export function drawTotals(
       doc.font('Helvetica').fontSize(FONT.totalsRow).fillColor(TEXT_DIM);
     }
 
-    doc.text(row.label, left, y, { width: labelWidth, align: 'right' });
+    // Template uses `justify-content: space-between`: label flush at the
+    // left edge, value flush at the right edge, with the gap between them
+    // left empty -- not the label right-aligned up against the value.
+    doc.text(row.label, left, y, { width: labelWidth, align: 'left' });
     doc.text(row.value, left + labelWidth, y, {
       width: valueWidth,
       align: 'right',
