@@ -8,6 +8,10 @@ import {
   selectedWarehouseFilter,
 } from '../common/warehouse-access/warehouse-filter.util';
 import type ExcelJSType from 'exceljs';
+import {
+  StockMovementsService,
+  type MovementOrigin,
+} from './stock-movements.service';
 import { sum, toNumber } from '../common/money';
 
 type Locale = 'en' | 'es';
@@ -42,6 +46,8 @@ const translations: Record<string, Record<Locale, string>> = {
   items: { en: 'Items', es: 'Items' },
   user: { en: 'User', es: 'Usuario' },
   notes: { en: 'Notes', es: 'Notas' },
+  document: { en: 'Document', es: 'Documento' },
+  origin: { en: 'Origin', es: 'Origen' },
   // Loans
   item: { en: 'Item', es: 'Item' },
   source: { en: 'Source', es: 'Origen' },
@@ -154,9 +160,23 @@ const OUTFLOW_REASON_LABELS: Record<string, Record<Locale, string>> = {
   OTHER: { en: 'Other', es: 'Otro' },
 };
 
+// Mirrors Inv-App's REPORTS.MOVEMENT_ORIGIN i18n keys, so the Excel export
+// reads the same as the Transactions tab it is sourced from.
+const MOVEMENT_ORIGIN_LABELS: Record<MovementOrigin, Record<Locale, string>> = {
+  TRANSACTION: { en: 'Manual transaction', es: 'Transacción manual' },
+  SALE: { en: 'Sale', es: 'Venta' },
+  PURCHASE: { en: 'Purchase', es: 'Compra' },
+  OUTFLOW: { en: 'Outflow', es: 'Salida' },
+  TRANSFER: { en: 'Transfer', es: 'Transferencia' },
+  STOCK_TAKE: { en: 'Stock take', es: 'Conteo físico' },
+};
+
 @Injectable()
 export class ReportsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private readonly stockMovements: StockMovementsService,
+  ) {}
 
   private t(key: string, locale: Locale = 'es'): string {
     return translations[key]?.[locale] || key;
@@ -164,6 +184,10 @@ export class ReportsService {
 
   private tStatus(status: string, locale: Locale): string {
     return STATUS_LABELS[status]?.[locale] || status;
+  }
+
+  private tOrigin(origin: MovementOrigin, locale: Locale): string {
+    return MOVEMENT_ORIGIN_LABELS[origin]?.[locale] || origin;
   }
 
   // Apply branded header row to a worksheet
@@ -509,35 +533,19 @@ export class ReportsService {
     this.applyWorkbookMeta(workbook, this.t('wsTransactions', locale));
     const worksheet = workbook.addWorksheet(this.t('wsTransactions', locale));
 
-    const where: Prisma.TransactionWhereInput = {
-      ...warehouseFilterMultiField(warehouseIds, [
-        'sourceWarehouseId',
-        'destinationWarehouseId',
-      ]),
-      ...(startDate || endDate
-        ? {
-            date: {
-              ...(startDate ? { gte: startDate } : {}),
-              ...(endDate ? { lte: endDate } : {}),
-            },
-          }
-        : {}),
-    };
-
-    const transactions = await this.prisma.transaction.findMany({
-      where,
-      include: {
-        sourceWarehouse: true,
-        destinationWarehouse: true,
-        user: { select: { name: true, email: true } },
-        items: { include: { inventoryItem: true } },
-      },
-      orderBy: { date: 'desc' },
+    // Every stock movement (manual transactions, sales, purchases, outflows,
+    // transfers and applied stock takes), same source as the Transactions
+    // tab, so the export and the screen never drift apart again.
+    const movements = await this.stockMovements.findAll(warehouseIds ?? null, {
+      from: startDate ?? new Date(0),
+      to: endDate ?? new Date(),
     });
 
     worksheet.columns = [
       { header: this.t('id', locale), key: 'id', width: 25 },
       { header: this.t('type', locale), key: 'type', width: 14 },
+      { header: this.t('origin', locale), key: 'origin', width: 20 },
+      { header: this.t('document', locale), key: 'document', width: 16 },
       { header: this.t('date', locale), key: 'date', width: 16 },
       { header: this.t('sourceWarehouse', locale), key: 'source', width: 22 },
       {
@@ -552,20 +560,22 @@ export class ReportsService {
 
     this.applyHeader(worksheet, COLORS.transactions);
     worksheet.views = [{ state: 'frozen', ySplit: 1 }];
-    worksheet.autoFilter = { from: 'A1', to: 'H1' };
+    worksheet.autoFilter = { from: 'A1', to: 'J1' };
 
     const dateLocale = locale === 'en' ? 'en-US' : 'es-HN';
 
-    transactions.forEach((tx, idx) => {
+    movements.forEach((m, idx) => {
       const row = worksheet.addRow({
-        id: tx.id,
-        type: this.tStatus(tx.type, locale),
-        date: tx.date.toLocaleDateString(dateLocale),
-        source: tx.sourceWarehouse?.name || '-',
-        destination: tx.destinationWarehouse?.name || '-',
-        itemCount: tx.items.length,
-        user: tx.user?.name || tx.user?.email || '',
-        notes: tx.notes || '',
+        id: m.id,
+        type: this.tStatus(m.type, locale),
+        origin: this.tOrigin(m.origin, locale),
+        document: m.reference || '-',
+        date: m.date.toLocaleDateString(dateLocale),
+        source: m.sourceWarehouse?.name || '-',
+        destination: m.destinationWarehouse?.name || '-',
+        itemCount: m.items.length,
+        user: m.user?.name || m.user?.email || '',
+        notes: m.notes || '',
       });
       row.height = 20;
       if (idx % 2 === 0) {
