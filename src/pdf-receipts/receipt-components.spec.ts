@@ -156,7 +156,7 @@ describe('receipt-components', () => {
       expect(raw.fillAndStroke).toHaveBeenCalledWith(SOFT, RULE);
       expect(textCalls).toContain('Cliente: ');
       expect(textCalls).toContain('Juan Pérez');
-      expect(textCalls).toContain('Forma de pago: ');
+      expect(textCalls).toContain('    Forma de pago: ');
       expect(textCalls).toContain('Contado');
       expect(y).toBeGreaterThan(200);
     });

@@ -491,25 +491,28 @@ function buildTotalsRows(
   t: (typeof STRINGS)[Locale],
   fmtAmount: (amount: number | null, currency: string | null) => string,
 ): TotalsRow[] {
+  // Sale and PurchaseInvoice (the only two documentTypes drawTotals is
+  // called for) are single-currency documents -- every line is created
+  // with the document's own currency -- so unlike a multi-currency report
+  // total, there's never a second "Subtotal USD" row to disambiguate from.
+  // The template's labels are plain "Subtotal"/"Total"; the currency only
+  // shows up in the value itself (fmtAmount already prefixes it).
   const currency = ctx.items[0]?.currency ?? null;
   const amount = ctx.totalAmount ?? 0;
   const tax = ctx.taxAmount ?? 0;
   const rows: TotalsRow[] = [
-    {
-      label: currency ? `${t.subtotal} ${currency}` : t.subtotal,
-      value: fmtAmount(amount, currency),
-    },
+    { label: t.subtotal, value: fmtAmount(amount, currency) },
   ];
   if (tax > 0) {
     rows.push({ label: t.tax, value: fmtAmount(tax, currency) });
     rows.push({
-      label: currency ? `${t.total} ${currency}` : t.total,
+      label: t.total,
       value: fmtAmount(amount + tax, currency),
       grand: true,
     });
   } else {
     rows.push({
-      label: currency ? `${t.total} ${currency}` : t.total,
+      label: t.total,
       value: fmtAmount(amount, currency),
       grand: true,
     });

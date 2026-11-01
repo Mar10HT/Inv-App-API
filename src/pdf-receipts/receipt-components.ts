@@ -311,14 +311,13 @@ export function drawScope(
         .fillColor(TEXT)
         .text(`${pair.label}: `, x, y, { continued: true });
     } else {
-      doc
-        .font('Helvetica')
-        .fillColor(TEXT_DIM)
-        .text(' · ', { continued: true });
+      // Template uses `gap: 20px` between flex items, no separator glyph --
+      // approximate that gap with plain spaces rather than inventing a "·"
+      // the design doesn't have.
       doc
         .font('Helvetica-Bold')
         .fillColor(TEXT)
-        .text(`${pair.label}: `, { continued: true });
+        .text(`    ${pair.label}: `, { continued: true });
     }
     const isLast = i === pairs.length - 1;
     doc
