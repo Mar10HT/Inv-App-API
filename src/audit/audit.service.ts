@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { convertDecimals } from '../common/interceptors/decimal.interceptor';
 
 export type AuditAction =
   | 'CREATE'
@@ -38,8 +39,17 @@ export class AuditService {
         entity: data.entity,
         entityId: data.entityId,
         userId: data.userId,
+        // convertDecimals runs first so any Prisma.Decimal becomes a plain
+        // number — otherwise Decimal.prototype.toJSON() (which returns
+        // toString()) would make JSON.stringify persist it as a string,
+        // inconsistent with the numbers the rest of the API returns for
+        // money fields. JSON.parse(JSON.stringify(...)) still runs after to
+        // keep the existing JSON-safety net (Date -> ISO string, drops
+        // undefined/functions) for everything else in `changes`.
         changes: data.changes
-          ? (JSON.parse(JSON.stringify(data.changes)) as Prisma.InputJsonValue)
+          ? (JSON.parse(
+              JSON.stringify(convertDecimals(data.changes)),
+            ) as Prisma.InputJsonValue)
           : null,
       },
     });

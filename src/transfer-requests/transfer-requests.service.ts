@@ -644,7 +644,10 @@ export class TransferRequestsService {
           quantity: number;
           minQuantity: number;
           category: string | null;
-          price: number | null;
+          // Prisma.Decimal once price is numeric(14,2); passed straight
+          // through to inventoryItem.create()'s data below, which accepts
+          // a Decimal directly, so no conversion is needed here.
+          price: Prisma.Decimal | null;
           currency: string | null;
           sku: string | null;
           supplierId: string | null;
