@@ -60,6 +60,7 @@ async function bootstrap() {
   app.use(cookieParser());
 
   // CORS middleware — must run BEFORE CSRF so all responses (including errors) have CORS headers
+  // deploy-verify-2026-11-03: trivial marker commit to confirm Railway deploys this commit
   const corsOrigins = process.env.CORS_ORIGIN?.split(',').map((o) =>
     o.trim(),
   ) || ['http://localhost:4200'];
