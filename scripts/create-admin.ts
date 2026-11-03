@@ -7,7 +7,7 @@ const prisma = new PrismaClient();
 // duplicated here rather than imported so this plain ts-node script doesn't have to
 // pull in class-validator/DTO machinery for one check.
 const STRONG_PASSWORD =
-  /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
+  /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&.])[A-Za-z\d@$!%*?&.]{8,}$/;
 
 async function main() {
   console.log('🔐 Creating admin user...');
@@ -26,7 +26,7 @@ async function main() {
   }
   if (envPassword && !STRONG_PASSWORD.test(envPassword)) {
     console.error(
-      '❌ ADMIN_PASSWORD must be 8+ chars with an uppercase letter, a lowercase letter, a digit and a special character (@$!%*?&).',
+      '❌ ADMIN_PASSWORD must be 8+ chars with an uppercase letter, a lowercase letter, a digit and a special character (@$!%*?&.).',
     );
     process.exit(1);
   }
