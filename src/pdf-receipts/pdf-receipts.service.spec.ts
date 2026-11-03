@@ -485,7 +485,7 @@ describe('PdfReceiptsService', () => {
       const rendered = renderedStrings();
       expect(rendered).toContain('Cotización');
       expect(rendered).toContain(
-        'Documento generado automáticamente por Obsid. Este comprobante es un recibo interno de control; no sustituye una factura fiscal con CAI.',
+        'Documento generado automáticamente por Olancho Net. Este comprobante es un recibo interno de control; no sustituye una factura fiscal con CAI.',
       );
     });
   });
