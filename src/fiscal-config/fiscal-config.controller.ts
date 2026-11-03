@@ -18,9 +18,16 @@ export class FiscalConfigController {
   constructor(private readonly fiscalConfigService: FiscalConfigService) {}
 
   // Whoever writes sales or purchases needs the default tax rate to prefill
-  // the form, so reading it isn't limited to the settings screen.
+  // the form, and whoever can view or export reports needs the RTN/address/
+  // phone for the PDF header, so reading it isn't limited to the settings screen.
   @Get()
-  @Permissions('settings:view', 'sales:create', 'purchases:create')
+  @Permissions(
+    'settings:view',
+    'sales:create',
+    'purchases:create',
+    'reports:view',
+    'reports:export',
+  )
   get() {
     return this.fiscalConfigService.get();
   }
