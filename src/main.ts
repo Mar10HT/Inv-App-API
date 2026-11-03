@@ -60,7 +60,6 @@ async function bootstrap() {
   app.use(cookieParser());
 
   // CORS middleware — must run BEFORE CSRF so all responses (including errors) have CORS headers
-  // deploy-verify-2026-11-03: trivial marker commit to confirm Railway deploys this commit
   const corsOrigins = process.env.CORS_ORIGIN?.split(',').map((o) =>
     o.trim(),
   ) || ['http://localhost:4200'];
@@ -68,11 +67,6 @@ async function bootstrap() {
   app.use(
     cors({
       origin: (origin, callback) => {
-        // TEMP DEBUG 2026-11-03: unconditional log on every call, remove once CORS is diagnosed.
-        logger.warn(
-          `CORS check: origin="${origin}", corsOrigins=${JSON.stringify(corsOrigins)}`,
-        );
-
         // Allow requests with no origin (like mobile apps or curl)
         if (!origin) return callback(null, true);
 
@@ -83,7 +77,6 @@ async function bootstrap() {
               origin.endsWith(allowed.replace('https://', '.')),
           )
         ) {
-          logger.warn(`CORS check: ALLOWED origin="${origin}"`);
           return callback(null, true);
         }
 
