@@ -3,11 +3,36 @@ import * as bcrypt from 'bcrypt';
 
 const prisma = new PrismaClient();
 
+// Same rule as IsStrongPassword() (src/auth/decorators/strong-password.decorator.ts),
+// duplicated here rather than imported so this plain ts-node script doesn't have to
+// pull in class-validator/DTO machinery for one check.
+const STRONG_PASSWORD =
+  /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
+
 async function main() {
   console.log('🔐 Creating admin user...');
 
-  const email = 'admin@example.com';
-  const password = 'password123';
+  const isProduction = process.env.NODE_ENV === 'production';
+  const envEmail = process.env.ADMIN_EMAIL;
+  const envPassword = process.env.ADMIN_PASSWORD;
+
+  // In production there is no demo fallback — refusing to run is safer than silently
+  // creating admin@example.com/password123 on a real client's database.
+  if (isProduction && (!envEmail || !envPassword)) {
+    console.error(
+      '❌ ADMIN_EMAIL and ADMIN_PASSWORD are required when NODE_ENV=production (no demo fallback in production).',
+    );
+    process.exit(1);
+  }
+  if (envPassword && !STRONG_PASSWORD.test(envPassword)) {
+    console.error(
+      '❌ ADMIN_PASSWORD must be 8+ chars with an uppercase letter, a lowercase letter, a digit and a special character (@$!%*?&).',
+    );
+    process.exit(1);
+  }
+
+  const email = envEmail ?? 'admin@example.com';
+  const password = envPassword ?? 'password123';
   const hashedPassword = await bcrypt.hash(password, 10);
 
   // Check if admin already exists
@@ -25,7 +50,7 @@ async function main() {
     data: {
       email,
       password: hashedPassword,
-      name: 'Administrator',
+      name: process.env.ADMIN_NAME ?? 'Administrator',
       role: UserRole.SYSTEM_ADMIN,
     },
   });
