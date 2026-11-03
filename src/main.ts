@@ -68,6 +68,11 @@ async function bootstrap() {
   app.use(
     cors({
       origin: (origin, callback) => {
+        // TEMP DEBUG 2026-11-03: unconditional log on every call, remove once CORS is diagnosed.
+        logger.warn(
+          `CORS check: origin="${origin}", corsOrigins=${JSON.stringify(corsOrigins)}`,
+        );
+
         // Allow requests with no origin (like mobile apps or curl)
         if (!origin) return callback(null, true);
 
@@ -78,6 +83,7 @@ async function bootstrap() {
               origin.endsWith(allowed.replace('https://', '.')),
           )
         ) {
+          logger.warn(`CORS check: ALLOWED origin="${origin}"`);
           return callback(null, true);
         }
 
