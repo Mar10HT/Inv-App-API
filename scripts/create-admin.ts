@@ -1,5 +1,5 @@
 import { PrismaClient, UserRole } from '@prisma/client';
-import * as bcrypt from 'bcrypt';
+import * as bcrypt from 'bcryptjs';
 
 const prisma = new PrismaClient();
 
@@ -35,8 +35,10 @@ async function main() {
   const password = envPassword ?? 'password123';
   const hashedPassword = await bcrypt.hash(password, 10);
 
-  // Check if admin already exists
-  const existingAdmin = await prisma.user.findUnique({
+  // Check if admin already exists. email isn't @unique in the schema, so
+  // findUnique() doesn't type-check here — same findFirst() pattern
+  // users.service.ts's findByEmail() uses for the real login lookup.
+  const existingAdmin = await prisma.user.findFirst({
     where: { email },
   });
 
