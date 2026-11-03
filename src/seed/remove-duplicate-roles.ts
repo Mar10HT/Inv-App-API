@@ -23,7 +23,10 @@ type RolesClient = Pick<PrismaClient, 'role' | 'user' | 'userWarehouse'>;
 export async function removeDuplicateRoles(
   prisma: RolesClient,
 ): Promise<string[]> {
-  const canonicalNames = new Set(INITIAL_ROLES.map((r) => r.name));
+  // Role.name is a plain String column in the schema (arbitrary role names, not
+  // the UserRole enum), but INITIAL_ROLES is `as const` so its `name` narrows to
+  // a literal union — widen to Set<string> so `.has(role.name)` below type-checks.
+  const canonicalNames: Set<string> = new Set(INITIAL_ROLES.map((r) => r.name));
   const roles = await prisma.role.findMany({
     select: { id: true, name: true },
   });
