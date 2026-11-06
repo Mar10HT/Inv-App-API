@@ -315,6 +315,8 @@ model Service {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
+  saleItems SaleItem[]
+
   @@map("services")
 }
 
@@ -939,7 +941,11 @@ model Sale {
 model SaleItem {
   id              String   @id @default(cuid())
   saleId          String
-  inventoryItemId String
+  // A line is an inventory item (moves stock), a catalog service, or neither:
+  // a one-off line described only by itemName. Never both ids; validated in
+  // SalesService, like Payment's sale/purchase XOR.
+  inventoryItemId String?
+  serviceId       String?
   quantity        Int      @default(1)
   unitPrice       Decimal  @db.Decimal(14, 2) // Entered manually at sale time
   lineTotal       Decimal  @default(0) @db.Decimal(14, 2) // quantity * unitPrice, snapshot
@@ -958,10 +964,13 @@ model SaleItem {
   sale          Sale          @relation(fields: [saleId], references: [id], onDelete: Cascade)
   // Restrict deletes on the underlying inventory item: sales history must
   // not silently disappear if someone hard-deletes an item.
-  inventoryItem InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Restrict)
+  inventoryItem InventoryItem? @relation(fields: [inventoryItemId], references: [id], onDelete: Restrict)
+  // Same for a service: one on a sale can't be deleted (SERVICE_IN_USE)
+  service       Service?       @relation(fields: [serviceId], references: [id], onDelete: Restrict)
 
   @@index([saleId])
   @@index([inventoryItemId])
+  @@index([serviceId])
   @@map("sale_items")
 }
 

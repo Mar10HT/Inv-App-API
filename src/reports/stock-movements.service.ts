@@ -184,7 +184,11 @@ export class StockMovementsService {
             warehouse: warehouseSelect,
             createdBy: userSelect,
             cancelledBy: userSelect,
-            items: linesSelect,
+            // Services and one-off lines never moved stock
+            items: {
+              ...linesSelect,
+              where: { inventoryItemId: { not: null } },
+            },
           },
         }),
         this.prisma.purchaseInvoice.findMany({
@@ -318,8 +322,20 @@ export class StockMovementsService {
     };
 
     // A quotation moved stock when confirmed, not when created.
-    for (const s of sales)
-      pushDocument('SALE', s, s.confirmedAt ?? s.createdAt, 'OUT');
+    // A sale of only services moved no stock at all.
+    for (const s of sales) {
+      const items = s.items.filter(
+        (l): l is typeof l & { inventoryItemId: string } =>
+          l.inventoryItemId !== null,
+      );
+      if (items.length)
+        pushDocument(
+          'SALE',
+          { ...s, items },
+          s.confirmedAt ?? s.createdAt,
+          'OUT',
+        );
+    }
     for (const p of purchases) pushDocument('PURCHASE', p, p.createdAt, 'IN');
     for (const o of outflows) pushDocument('OUTFLOW', o, o.createdAt, 'OUT');
 
