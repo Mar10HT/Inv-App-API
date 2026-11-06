@@ -303,6 +303,21 @@ model Category {
   @@map("categories")
 }
 
+// Services that can be quoted and sold next to inventory items (installation,
+// support...). Kept as minimal as Category: no stock and no active flag.
+model Service {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  // Suggested price, prefilled on a sale line and editable there
+  price       Decimal? @db.Decimal(14, 2)
+  currency    Currency @default(HNL)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("services")
+}
+
 // Transaction model for tracking item movements between warehouses
 model Transaction {
   id                     String    @id @default(cuid())
