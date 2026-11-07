@@ -14,6 +14,7 @@ import { InventoryModule } from './inventory/inventory.module';
 import { WarehousesModule } from './warehouses/warehouses.module';
 import { SuppliersModule } from './suppliers/suppliers.module';
 import { CategoriesModule } from './categories/categories.module';
+import { ServicesModule } from './services/services.module';
 import { UsersModule } from './users/users.module';
 import { TransactionsModule } from './transactions/transactions.module';
 import { LoansModule } from './loans/loans.module';
@@ -109,6 +110,7 @@ import { PaymentsModule } from './payments/payments.module';
     WarehousesModule,
     SuppliersModule,
     CategoriesModule,
+    ServicesModule,
     UsersModule,
     TransactionsModule,
     LoansModule,
