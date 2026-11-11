@@ -333,6 +333,159 @@ describe('SalesService', () => {
       );
     });
 
+    describe('service and one-off lines', () => {
+      const install = { id: 'svc-1', name: 'Instalación de fibra' };
+
+      it('sells a catalog service without touching stock, snapshotting its name', async () => {
+        prisma.service.findMany.mockResolvedValue([install] as never);
+        prisma.sale.create.mockResolvedValue(mockSale);
+
+        await service.create(
+          {
+            ...baseDto(),
+            items: [{ serviceId: 'svc-1', quantity: 1, unitPrice: 850 }],
+          },
+          'user-1',
+        );
+
+        const { data } = prisma.sale.create.mock.calls[0][0];
+        expect(data.items).toEqual({
+          create: [
+            expect.objectContaining({
+              inventoryItemId: null,
+              serviceId: 'svc-1',
+              itemName: 'Instalación de fibra',
+              lineTotal: 850,
+            }),
+          ],
+        });
+        // eslint-disable-next-line @typescript-eslint/unbound-method
+        expect(prisma.inventoryItem.findMany).not.toHaveBeenCalled();
+        // eslint-disable-next-line @typescript-eslint/unbound-method
+        expect(prisma.inventoryItem.updateMany).not.toHaveBeenCalled();
+      });
+
+      it('mixes a product and a service: only the product takes stock', async () => {
+        prisma.inventoryItem.findMany
+          .mockResolvedValueOnce([mockItem])
+          .mockResolvedValueOnce([mockItem]);
+        prisma.service.findMany.mockResolvedValue([install] as never);
+        prisma.sale.create.mockResolvedValue(mockSale);
+
+        await service.create(
+          {
+            ...baseDto(),
+            items: [
+              { inventoryItemId: 'item-1', quantity: 2, unitPrice: 50 },
+              { serviceId: 'svc-1', quantity: 1, unitPrice: 850 },
+            ],
+          },
+          'user-1',
+        );
+
+        const { data } = prisma.sale.create.mock.calls[0][0];
+        expect(data.totalAmount).toBe(950);
+        // eslint-disable-next-line @typescript-eslint/unbound-method
+        expect(prisma.inventoryItem.updateMany).toHaveBeenCalledTimes(1);
+        // eslint-disable-next-line @typescript-eslint/unbound-method
+        expect(prisma.inventoryItem.updateMany).toHaveBeenCalledWith({
+          where: { id: 'item-1', deletedAt: null, quantity: { gte: 2 } },
+          data: { quantity: { decrement: 2 } },
+        });
+      });
+
+      it('allows the same service on two lines', async () => {
+        prisma.service.findMany.mockResolvedValue([install] as never);
+        prisma.sale.create.mockResolvedValue(mockSale);
+
+        await service.create(
+          {
+            ...baseDto(),
+            items: [
+              { serviceId: 'svc-1', quantity: 1, unitPrice: 850 },
+              { serviceId: 'svc-1', quantity: 1, unitPrice: 400 },
+            ],
+          },
+          'user-1',
+        );
+
+        // eslint-disable-next-line @typescript-eslint/unbound-method
+        expect(prisma.sale.create).toHaveBeenCalled();
+      });
+
+      it('sells a one-off line by its typed name', async () => {
+        prisma.sale.create.mockResolvedValue(mockSale);
+
+        await service.create(
+          {
+            ...baseDto(),
+            items: [{ itemName: '  Viáticos  ', quantity: 1, unitPrice: 200 }],
+          },
+          'user-1',
+        );
+
+        const { data } = prisma.sale.create.mock.calls[0][0];
+        expect(data.items).toEqual({
+          create: [
+            expect.objectContaining({
+              inventoryItemId: null,
+              serviceId: null,
+              itemName: 'Viáticos',
+            }),
+          ],
+        });
+        // eslint-disable-next-line @typescript-eslint/unbound-method
+        expect(prisma.inventoryItem.updateMany).not.toHaveBeenCalled();
+      });
+
+      it('refuses a one-off line without a name', async () => {
+        await expect(
+          service.create(
+            {
+              ...baseDto(),
+              items: [{ itemName: '   ', quantity: 1, unitPrice: 200 }],
+            },
+            'user-1',
+          ),
+        ).rejects.toMatchObject({
+          response: { code: 'SALE_LINE_NAME_REQUIRED' },
+        });
+      });
+
+      it('refuses a line that is both an item and a service', async () => {
+        await expect(
+          service.create(
+            {
+              ...baseDto(),
+              items: [
+                {
+                  inventoryItemId: 'item-1',
+                  serviceId: 'svc-1',
+                  quantity: 1,
+                  unitPrice: 200,
+                },
+              ],
+            },
+            'user-1',
+          ),
+        ).rejects.toMatchObject({ response: { code: 'SALE_LINE_AMBIGUOUS' } });
+      });
+
+      it('throws NotFoundException for an unknown service', async () => {
+        prisma.service.findMany.mockResolvedValue([] as never);
+
+        await expect(
+          service.create(
+            {
+              ...baseDto(),
+              items: [{ serviceId: 'gone', quantity: 1, unitPrice: 1 }],
+            },
+            'user-1',
+          ),
+        ).rejects.toThrow(NotFoundException);
+      });
+    });
+
     it('throws BadRequestException when stock is insufficient', async () => {
       prisma.inventoryItem.findMany
         .mockResolvedValueOnce([mockItem])
@@ -792,6 +945,47 @@ describe('SalesService', () => {
       });
     });
 
+    it('takes stock only for the inventory lines of a quotation with a service', async () => {
+      const mixed = {
+        ...mockDraftSale,
+        items: [
+          ...(mockDraftSale as unknown as { items: object[] }).items,
+          {
+            id: 'si-2',
+            inventoryItemId: null,
+            serviceId: 'svc-1',
+            quantity: 1,
+            unitPrice: 850,
+            lineTotal: 850,
+            itemName: 'Instalación de fibra',
+            serviceTag: null,
+            currency: 'USD',
+            notes: null,
+          },
+        ],
+      } as unknown as Sale;
+      prisma.sale.findUnique
+        .mockResolvedValueOnce(mixed)
+        .mockResolvedValueOnce(mixed);
+      prisma.inventoryItem.findMany.mockResolvedValueOnce([mockItem]);
+      prisma.sale.update.mockResolvedValue({
+        ...mixed,
+        status: SaleStatus.ACTIVE,
+      });
+
+      await service.confirm('sale-1', 'user-1');
+
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(prisma.inventoryItem.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+          where: expect.objectContaining({ id: { in: ['item-1'] } }),
+        }),
+      );
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(prisma.inventoryItem.updateMany).toHaveBeenCalledTimes(1);
+    });
+
     it('throws BadRequestException on insufficient stock, without assigning a number', async () => {
       prisma.sale.findUnique
         .mockResolvedValueOnce(mockDraftSale)
@@ -907,6 +1101,44 @@ describe('SalesService', () => {
         data: { quantity: { increment: 2 } },
       });
       expect(stockLevel.scheduleRefresh).toHaveBeenCalledTimes(1);
+    });
+
+    it('restores stock only for the inventory lines (a service took none)', async () => {
+      const mixed = {
+        ...mockSale,
+        items: [
+          ...(mockSale as unknown as { items: object[] }).items,
+          {
+            id: 'si-2',
+            inventoryItemId: null,
+            serviceId: 'svc-1',
+            quantity: 1,
+            unitPrice: 850,
+            lineTotal: 850,
+            itemName: 'Instalación de fibra',
+            serviceTag: null,
+            currency: 'USD',
+            notes: null,
+          },
+        ],
+      } as unknown as Sale;
+      prisma.sale.findUnique
+        .mockResolvedValueOnce(mixed)
+        .mockResolvedValueOnce(mixed);
+      prisma.sale.update.mockResolvedValue({
+        ...mixed,
+        status: SaleStatus.CANCELLED,
+      });
+
+      await service.cancel('sale-1', 'user-2', 'Returned');
+
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(prisma.inventoryItem.update).toHaveBeenCalledTimes(1);
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(prisma.inventoryItem.update).toHaveBeenCalledWith({
+        where: { id: 'item-1' },
+        data: { quantity: { increment: 2 } },
+      });
     });
 
     it('throws BadRequestException when sale is already CANCELLED', async () => {

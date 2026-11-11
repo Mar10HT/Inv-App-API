@@ -18,7 +18,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { PermissionsService } from '../permissions/permissions.service';
 import { SaleNumberingService } from './sale-numbering.service';
-import { CreateSaleDto } from './dto/create-sale.dto';
+import { CreateSaleDto, SaleItemDto } from './dto/create-sale.dto';
 import { UpdateSaleDto } from './dto/update-sale.dto';
 import { FilterSaleDto } from './dto/filter-sale.dto';
 import {
@@ -38,7 +38,9 @@ import { takeStock } from '../inventory/stock.util';
 import { round2, sum, toNumber, type MoneyInput } from '../common/money';
 
 interface SaleItemSeed {
-  inventoryItemId: string;
+  /** Null for a service or one-off line: those never move stock. */
+  inventoryItemId: string | null;
+  serviceId?: string | null;
   quantity: number;
   unitPrice: number;
   lineTotal: number;
@@ -49,6 +51,14 @@ interface SaleItemSeed {
   currency?: string | null;
   notes?: string | null;
 }
+
+/** The lines that move stock: only those with an inventory item. */
+const stockLines = <T extends { inventoryItemId: string | null }>(
+  lines: T[],
+): (T & { inventoryItemId: string })[] =>
+  lines.filter((l): l is T & { inventoryItemId: string } =>
+    Boolean(l.inventoryItemId),
+  );
 
 interface CreateInternalArgs {
   warehouseId: string;
@@ -87,6 +97,110 @@ export class SalesService {
    * migrated. create()/update() still pass plain numbers computed in
    * memory from the DTO — MoneyInput covers both without a second overload.
    */
+  /**
+   * Turns the lines of a sale form into what gets stored. Each line is an
+   * inventory item (it has to exist and belong to the sale's warehouse), a
+   * catalog service, or a one-off line that only has a name. The name of
+   * the item or service is snapshotted so receipts survive renames.
+   */
+  private async resolveLines(
+    db: Prisma.TransactionClient,
+    lines: SaleItemDto[],
+    warehouseId: string,
+    currency: string,
+  ): Promise<Omit<SaleItemSeed, 'taxAmount'>[]> {
+    for (const line of lines) {
+      if (line.inventoryItemId && line.serviceId) {
+        throw new BadRequestException(
+          apiError(
+            'SALE_LINE_AMBIGUOUS',
+            'A sale line is either an inventory item or a service, not both',
+          ),
+        );
+      }
+      if (!line.inventoryItemId && !line.serviceId && !line.itemName?.trim()) {
+        throw new BadRequestException(
+          apiError(
+            'SALE_LINE_NAME_REQUIRED',
+            'A line without an item or a service needs a name',
+          ),
+        );
+      }
+    }
+
+    // Only inventory items can't repeat (the same stock taken twice); the
+    // same service can appear on several lines
+    const itemIds = lines
+      .map((l) => l.inventoryItemId)
+      .filter((id): id is string => Boolean(id));
+    if (new Set(itemIds).size !== itemIds.length) {
+      throw new BadRequestException(
+        apiError(
+          'DUPLICATE_INVENTORY_ITEM',
+          'Duplicate inventory item in sale payload',
+        ),
+      );
+    }
+    const items = itemIds.length
+      ? await db.inventoryItem.findMany({
+          where: { id: { in: itemIds }, deletedAt: null },
+          select: { id: true, name: true, serviceTag: true, warehouseId: true },
+        })
+      : [];
+    if (items.length !== itemIds.length) {
+      throw new NotFoundException('One or more inventory items not found');
+    }
+    const itemMap = new Map(items.map((i) => [i.id, i]));
+    for (const item of items) {
+      if (item.warehouseId !== warehouseId) {
+        throw new BadRequestException(
+          apiError(
+            'ITEM_NOT_IN_WAREHOUSE',
+            `Item ${item.id} does not belong to the selected warehouse`,
+            { item: item.id },
+          ),
+        );
+      }
+    }
+
+    const serviceIds = [
+      ...new Set(
+        lines.map((l) => l.serviceId).filter((id): id is string => Boolean(id)),
+      ),
+    ];
+    const services = serviceIds.length
+      ? await db.service.findMany({
+          where: { id: { in: serviceIds } },
+          select: { id: true, name: true },
+        })
+      : [];
+    if (services.length !== serviceIds.length) {
+      throw new NotFoundException('One or more services not found');
+    }
+    const serviceMap = new Map(services.map((s) => [s.id, s]));
+
+    return lines.map((line) => {
+      const item = line.inventoryItemId
+        ? itemMap.get(line.inventoryItemId)
+        : undefined;
+      const service = line.serviceId
+        ? serviceMap.get(line.serviceId)
+        : undefined;
+      return {
+        inventoryItemId: line.inventoryItemId ?? null,
+        serviceId: line.serviceId ?? null,
+        quantity: line.quantity,
+        unitPrice: line.unitPrice,
+        lineTotal: round2(line.unitPrice * line.quantity),
+        taxPercent: line.taxPercent ?? null,
+        itemName: item?.name ?? service?.name ?? line.itemName?.trim() ?? null,
+        serviceTag: item?.serviceTag ?? null,
+        currency,
+        notes: line.notes ?? null,
+      };
+    });
+  }
+
   private computeTotals(
     items: Array<{ lineTotal: MoneyInput; taxPercent?: MoneyInput }>,
     saleTaxPercent?: MoneyInput,
@@ -247,65 +361,13 @@ export class SalesService {
       );
     }
 
-    const ids = dto.items.map((i) => i.inventoryItemId);
-    if (new Set(ids).size !== ids.length) {
-      throw new BadRequestException(
-        apiError(
-          'DUPLICATE_INVENTORY_ITEM',
-          'Duplicate inventory item in sale payload',
-        ),
-      );
-    }
-
-    // Snapshot name/serviceTag at sale time so PDFs and reports survive item
-    // renames or hard-delete attempts. Prices come from the DTO (entered by the
-    // seller per customer tier), NOT from the item.
-    const items = await this.prisma.inventoryItem.findMany({
-      where: { id: { in: ids }, deletedAt: null },
-      select: {
-        id: true,
-        name: true,
-        serviceTag: true,
-        warehouseId: true,
-        quantity: true,
-      },
-    });
-    if (items.length !== ids.length) {
-      throw new NotFoundException('One or more inventory items not found');
-    }
-    const itemMap = new Map(items.map((i) => [i.id, i]));
-
-    for (const line of dto.items) {
-      const item = itemMap.get(line.inventoryItemId);
-      if (!item) {
-        throw new NotFoundException(`Item ${line.inventoryItemId} not found`);
-      }
-      if (item.warehouseId !== dto.warehouseId) {
-        throw new BadRequestException(
-          apiError(
-            'ITEM_NOT_IN_WAREHOUSE',
-            `Item ${line.inventoryItemId} does not belong to the selected warehouse`,
-            { item: line.inventoryItemId },
-          ),
-        );
-      }
-    }
-
     const currency = dto.currency ?? 'USD';
-    const lineSeedsBase = dto.items.map((line) => {
-      const snapshot = itemMap.get(line.inventoryItemId);
-      return {
-        inventoryItemId: line.inventoryItemId,
-        quantity: line.quantity,
-        unitPrice: line.unitPrice,
-        lineTotal: round2(line.unitPrice * line.quantity),
-        taxPercent: line.taxPercent ?? null,
-        itemName: snapshot?.name ?? null,
-        serviceTag: snapshot?.serviceTag ?? null,
-        currency,
-        notes: line.notes ?? null,
-      };
-    });
+    const lineSeedsBase = await this.resolveLines(
+      this.prisma,
+      dto.items,
+      dto.warehouseId,
+      currency,
+    );
     const { totalAmount, taxAmount, lineTaxAmounts } = this.computeTotals(
       lineSeedsBase,
       dto.taxPercent,
@@ -338,9 +400,12 @@ export class SalesService {
    * concurrent sales/outflows on the same item.
    */
   async createInternal(args: CreateInternalArgs) {
-    const ids = args.items.map((i) => i.inventoryItemId);
+    // Services and one-off lines are sold, not taken from a shelf
+    const stocked = stockLines(args.items);
+    const ids = stocked.map((i) => i.inventoryItemId);
     const itemsData = args.items.map((line) => ({
       inventoryItemId: line.inventoryItemId,
+      serviceId: line.serviceId ?? null,
       quantity: line.quantity,
       unitPrice: line.unitPrice,
       lineTotal: line.lineTotal,
@@ -390,13 +455,15 @@ export class SalesService {
         currency: args.currency,
       });
 
-      const currentItems = await tx.inventoryItem.findMany({
-        where: { id: { in: ids }, deletedAt: null },
-        select: { id: true, quantity: true, name: true },
-      });
+      const currentItems = ids.length
+        ? await tx.inventoryItem.findMany({
+            where: { id: { in: ids }, deletedAt: null },
+            select: { id: true, quantity: true, name: true },
+          })
+        : [];
       const currentMap = new Map(currentItems.map((i) => [i.id, i]));
 
-      for (const line of args.items) {
+      for (const line of stocked) {
         const current = currentMap.get(line.inventoryItemId);
         if (!current) {
           throw new BadRequestException(
@@ -424,7 +491,7 @@ export class SalesService {
 
       // The check above gives the friendly error; takeStock is what makes
       // two concurrent sales unable to take the same last units.
-      for (const line of args.items) {
+      for (const line of stocked) {
         await takeStock(tx, line.inventoryItemId, line.quantity);
       }
 
@@ -591,55 +658,22 @@ export class SalesService {
 
       let lineSeeds: SaleItemSeed[];
       if (dto.items) {
-        const ids = dto.items.map((i) => i.inventoryItemId);
-        if (new Set(ids).size !== ids.length) {
-          throw new BadRequestException(
-            apiError(
-              'DUPLICATE_INVENTORY_ITEM',
-              'Duplicate inventory item in sale payload',
-            ),
-          );
-        }
-        const items = await tx.inventoryItem.findMany({
-          where: { id: { in: ids }, deletedAt: null },
-          select: { id: true, name: true, serviceTag: true, warehouseId: true },
-        });
-        if (items.length !== ids.length) {
-          throw new NotFoundException('One or more inventory items not found');
-        }
-        const itemMap = new Map(items.map((i) => [i.id, i]));
-        for (const line of dto.items) {
-          const item = itemMap.get(line.inventoryItemId);
-          if (item && item.warehouseId !== targetWarehouseId) {
-            throw new BadRequestException(
-              apiError(
-                'ITEM_NOT_IN_WAREHOUSE',
-                `Item ${line.inventoryItemId} does not belong to the selected warehouse`,
-                { item: line.inventoryItemId },
-              ),
-            );
-          }
-        }
-        lineSeeds = dto.items.map((line) => {
-          const snapshot = itemMap.get(line.inventoryItemId);
-          return {
-            inventoryItemId: line.inventoryItemId,
-            quantity: line.quantity,
-            unitPrice: line.unitPrice,
-            lineTotal: round2(line.unitPrice * line.quantity),
-            taxPercent: line.taxPercent ?? null,
-            itemName: snapshot?.name ?? null,
-            serviceTag: snapshot?.serviceTag ?? null,
-            currency: targetCurrency,
-            notes: line.notes ?? null,
-          };
-        });
+        lineSeeds = await this.resolveLines(
+          tx,
+          dto.items,
+          targetWarehouseId,
+          targetCurrency,
+        );
       } else {
         // Same lines in a new warehouse: they have to be stocked there too,
         // or confirming would take units from the old warehouse
         if (targetWarehouseId !== current.warehouseId) {
           const items = await tx.inventoryItem.findMany({
-            where: { id: { in: current.items.map((i) => i.inventoryItemId) } },
+            where: {
+              id: {
+                in: stockLines(current.items).map((i) => i.inventoryItemId),
+              },
+            },
             select: { id: true, warehouseId: true },
           });
           const elsewhere = items.find(
@@ -657,6 +691,7 @@ export class SalesService {
         }
         lineSeeds = current.items.map((item) => ({
           inventoryItemId: item.inventoryItemId,
+          serviceId: item.serviceId,
           quantity: item.quantity,
           // These come back as Prisma.Decimal from the read above (current
           // is a Prisma result); SaleItemSeed is number-typed, so convert
@@ -702,6 +737,7 @@ export class SalesService {
             deleteMany: {},
             create: lineSeeds.map((seed, i) => ({
               inventoryItemId: seed.inventoryItemId,
+              serviceId: seed.serviceId ?? null,
               quantity: seed.quantity,
               unitPrice: seed.unitPrice,
               lineTotal: seed.lineTotal,
@@ -779,14 +815,18 @@ export class SalesService {
         excludeSaleId: current.id,
       });
 
-      const ids = current.items.map((i) => i.inventoryItemId);
-      const currentItems = await tx.inventoryItem.findMany({
-        where: { id: { in: ids }, deletedAt: null },
-        select: { id: true, quantity: true, name: true },
-      });
+      // Only the inventory lines take stock; services and one-off lines don't
+      const stocked = stockLines(current.items);
+      const ids = stocked.map((i) => i.inventoryItemId);
+      const currentItems = ids.length
+        ? await tx.inventoryItem.findMany({
+            where: { id: { in: ids }, deletedAt: null },
+            select: { id: true, quantity: true, name: true },
+          })
+        : [];
       const currentMap = new Map(currentItems.map((i) => [i.id, i]));
 
-      for (const line of current.items) {
+      for (const line of stocked) {
         const item = currentMap.get(line.inventoryItemId);
         if (!item) {
           throw new BadRequestException(
@@ -812,7 +852,7 @@ export class SalesService {
         }
       }
 
-      for (const line of current.items) {
+      for (const line of stocked) {
         await takeStock(tx, line.inventoryItemId, line.quantity);
       }
 
@@ -913,9 +953,9 @@ export class SalesService {
           );
         }
 
-        // Restore stock for each item
+        // Restore stock for each inventory line (services never took any)
         await Promise.all(
-          current.items.map((line) =>
+          stockLines(current.items).map((line) =>
             tx.inventoryItem.update({
               where: { id: line.inventoryItemId },
               data: { quantity: { increment: line.quantity } },
