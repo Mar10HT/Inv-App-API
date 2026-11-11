@@ -81,6 +81,38 @@ describe('StockMovementsService', () => {
     );
   });
 
+  it('leaves out service lines, and a sale of only services moved no stock', async () => {
+    // The query already drops the service lines, so a services-only sale
+    // comes back with no lines
+    prisma.sale.findMany.mockResolvedValue([
+      {
+        id: 's1',
+        number: 'V-0001',
+        createdAt: day(1),
+        confirmedAt: day(1),
+        cancelledAt: null,
+        warehouse: wh('a'),
+        createdBy: ana,
+        cancelledBy: null,
+        items: [],
+      },
+    ] as never);
+
+    expect(await service.findAll(null, october)).toEqual([]);
+    // eslint-disable-next-line @typescript-eslint/unbound-method
+    expect(prisma.sale.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        include: expect.objectContaining({
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+          items: expect.objectContaining({
+            where: { inventoryItemId: { not: null } },
+          }),
+        }),
+      }),
+    );
+  });
+
   it('falls back to the creation date for sales confirmed before confirmedAt existed', async () => {
     prisma.sale.findMany.mockResolvedValue([
       {

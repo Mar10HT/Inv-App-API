@@ -10,14 +10,33 @@ import {
   ValidateNested,
   IsEnum,
   IsBoolean,
+  MaxLength,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { CustomerType, Currency, PaymentCondition } from '@prisma/client';
 
+/**
+ * One line of a sale or quotation: an inventory item (moves stock), a
+ * catalog service, or a one-off line with just a name (itemName). The three
+ * are told apart by which of inventoryItemId / serviceId is set; sending both
+ * is refused in SalesService.
+ */
 export class SaleItemDto {
   @IsString()
   @IsNotEmpty()
-  inventoryItemId: string;
+  @IsOptional()
+  inventoryItemId?: string;
+
+  @IsString()
+  @IsNotEmpty()
+  @IsOptional()
+  serviceId?: string;
+
+  /** Required for a one-off line; ignored otherwise (the name is snapshotted). */
+  @IsString()
+  @MaxLength(200)
+  @IsOptional()
+  itemName?: string;
 
   @IsNumber()
   @Min(1)
