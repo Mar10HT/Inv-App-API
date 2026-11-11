@@ -14,10 +14,10 @@ import { ReportsService } from './reports.service';
 import { StockMovementsService } from './stock-movements.service';
 import { JwtAuthGuard, PermissionsGuard } from '../auth/guards';
 import { Permissions, CurrentUser } from '../auth/decorators';
-import { FilterInventoryDto } from '../inventory/dto/filter-inventory.dto';
 import { AuthenticatedUser } from '../auth/interfaces/auth-user.interface';
 import { resolveWarehouseScope } from '../common/warehouse-access/warehouse-filter.util';
 import { apiError } from '../common/errors/api-error';
+import { InventoryExcelQueryDto } from './dto/inventory-excel-query.dto';
 import { MovementsQueryDto } from './dto/movements-query.dto';
 import {
   toEndOfBusinessDay,
@@ -77,11 +77,11 @@ export class ReportsController {
   @Get('inventory/excel')
   @Permissions('reports:export')
   async exportInventoryExcel(
-    @Query(ValidationPipe) filters: FilterInventoryDto,
-    @Query('locale') locale: 'en' | 'es' = 'es',
+    @Query() query: InventoryExcelQueryDto,
     @CurrentUser() user: AuthenticatedUser,
     @Res() res: Response,
   ) {
+    const { locale = 'es', ...filters } = query;
     const buffer = await this.reportsService.generateInventoryExcel(
       filters,
       user.warehouseIds,
