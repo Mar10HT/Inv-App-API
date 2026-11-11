@@ -20,18 +20,18 @@ const translations: Record<string, Record<Locale, string>> = {
   // Inventory headers
   sku: { en: 'SKU', es: 'SKU' },
   name: { en: 'Name', es: 'Nombre' },
-  description: { en: 'Description', es: 'Descripcion' },
-  category: { en: 'Category', es: 'Categoria' },
+  description: { en: 'Description', es: 'Descripción' },
+  category: { en: 'Category', es: 'Categoría' },
   quantity: { en: 'Quantity', es: 'Cantidad' },
-  minQuantity: { en: 'Min Quantity', es: 'Cantidad Minima' },
+  minQuantity: { en: 'Min Quantity', es: 'Cantidad Mínima' },
   status: { en: 'Status', es: 'Estado' },
   price: { en: 'Price', es: 'Precio' },
   currency: { en: 'Currency', es: 'Moneda' },
-  warehouse: { en: 'Warehouse', es: 'Almacen' },
+  warehouse: { en: 'Warehouse', es: 'Bodega' },
   supplier: { en: 'Supplier', es: 'Proveedor' },
   itemType: { en: 'Type', es: 'Tipo' },
   serviceTag: { en: 'Service Tag', es: 'Service Tag' },
-  serialNumber: { en: 'Serial Number', es: 'Numero Serie' },
+  serialNumber: { en: 'Serial Number', es: 'Número de Serie' },
   // Low stock
   currentQuantity: { en: 'Current Quantity', es: 'Cantidad Actual' },
   difference: { en: 'Difference', es: 'Diferencia' },
@@ -40,45 +40,44 @@ const translations: Record<string, Record<Locale, string>> = {
   number: { en: 'Number', es: 'Número' },
   type: { en: 'Type', es: 'Tipo' },
   date: { en: 'Date', es: 'Fecha' },
-  sourceWarehouse: { en: 'Source Warehouse', es: 'Almacen Origen' },
-  destWarehouse: { en: 'Destination Warehouse', es: 'Almacen Destino' },
-  items: { en: 'Items', es: 'Items' },
+  sourceWarehouse: { en: 'Source Warehouse', es: 'Bodega Origen' },
+  destWarehouse: { en: 'Destination Warehouse', es: 'Bodega Destino' },
+  items: { en: 'Items', es: 'Ítems' },
   user: { en: 'User', es: 'Usuario' },
   notes: { en: 'Notes', es: 'Notas' },
   document: { en: 'Document', es: 'Documento' },
   origin: { en: 'Origin', es: 'Origen' },
   // Loans
-  item: { en: 'Item', es: 'Item' },
+  item: { en: 'Item', es: 'Ítem' },
   source: { en: 'Source', es: 'Origen' },
   destination: { en: 'Destination', es: 'Destino' },
-  loanDate: { en: 'Loan Date', es: 'Fecha Prestamo' },
+  loanDate: { en: 'Loan Date', es: 'Fecha Préstamo' },
   dueDate: { en: 'Due Date', es: 'Fecha Vencimiento' },
-  returnDate: { en: 'Return Date', es: 'Fecha Devolucion' },
+  returnDate: { en: 'Return Date', es: 'Fecha Devolución' },
   createdBy: { en: 'Created By', es: 'Creado Por' },
   // Summary
-  totalItems: { en: 'Total Items:', es: 'Total de Items:' },
+  totalItems: { en: 'Total Items:', es: 'Total de Ítems:' },
   totalValue: { en: 'Total Value:', es: 'Valor Total:' },
   inventoryReport: { en: 'Inventory Report', es: 'Reporte de Inventario' },
   // Worksheet names
   wsInventory: { en: 'Inventory', es: 'Inventario' },
   wsLowStock: { en: 'Low Stock', es: 'Stock Bajo' },
   wsTransactions: { en: 'Transactions', es: 'Transacciones' },
-  wsLoans: { en: 'Loans', es: 'Prestamos' },
+  wsLoans: { en: 'Loans', es: 'Préstamos' },
   wsTransfers: { en: 'Transfer Requests', es: 'Transferencias' },
-  wsStockTakes: { en: 'Stock Takes', es: 'Conteos Fisicos' },
+  wsStockTakes: { en: 'Stock Takes', es: 'Conteos Físicos' },
   wsDischarges: { en: 'Discharges', es: 'Bajas' },
   wsOutflows: { en: 'Outflows', es: 'Salidas' },
   wsDetail: { en: 'Detail', es: 'Detalle' },
   // Outflow headers
   reason: { en: 'Reason', es: 'Motivo' },
-  name: { en: 'Name', es: 'Nombre' },
   totalQty: { en: 'Total Qty', es: 'Cant. Total' },
   cancelledBy: { en: 'Cancelled By', es: 'Cancelado Por' },
-  cancelledAt: { en: 'Cancelled At', es: 'Fecha Cancelacion' },
+  cancelledAt: { en: 'Cancelled At', es: 'Fecha Cancelación' },
   // Transfer headers
   requestedBy: { en: 'Requested By', es: 'Solicitado Por' },
   approvedBy: { en: 'Approved By', es: 'Aprobado Por' },
-  itemCount: { en: 'Item Count', es: 'Cant. Items' },
+  itemCount: { en: 'Item Count', es: 'Cant. Ítems' },
   // Stock take headers
   startedBy: { en: 'Started By', es: 'Iniciado Por' },
   completedBy: { en: 'Completed By', es: 'Completado Por' },
@@ -90,16 +89,42 @@ const translations: Record<string, Record<Locale, string>> = {
   // Discharge headers
   resolvedBy: { en: 'Resolved By', es: 'Resuelto Por' },
   requestDate: { en: 'Request Date', es: 'Fecha Solicitud' },
-  resolvedDate: { en: 'Resolved Date', es: 'Fecha Resolucion' },
+  resolvedDate: { en: 'Resolved Date', es: 'Fecha Resolución' },
+  stockTake: { en: 'Stock Take', es: 'Conteo' },
+  lowStockReport: { en: 'Low Stock Report', es: 'Reporte de Stock Bajo' },
+  transactionsReport: {
+    en: 'Transactions Report',
+    es: 'Reporte de Transacciones',
+  },
+  loansReport: { en: 'Loans Report', es: 'Reporte de Préstamos' },
+  transfersReport: { en: 'Transfers Report', es: 'Reporte de Transferencias' },
+  stockTakesReport: {
+    en: 'Stock Takes Report',
+    es: 'Reporte de Conteos Físicos',
+  },
+  dischargesReport: { en: 'Discharges Report', es: 'Reporte de Bajas' },
+  outflowsReport: { en: 'Outflows Report', es: 'Reporte de Salidas' },
+  // Branded heading
+  generatedBy: {
+    en: 'Generated on {date} by {user}',
+    es: 'Generado el {date} por {user}',
+  },
+  scheduledReport: { en: 'scheduled report', es: 'reporte programado' },
+  allWarehouses: { en: 'All warehouses', es: 'Todas las bodegas' },
+  warehousesCount: { en: '{n} warehouses', es: '{n} bodegas' },
+  warehouseLabel: { en: 'Warehouse: {name}', es: 'Bodega: {name}' },
+  period: { en: 'Period: {from} to {to}', es: 'Período: {from} al {to}' },
+  rows: { en: '{n} rows', es: '{n} registros' },
+  page: { en: 'Page &P of &N', es: 'Página &P de &N' },
 };
 
-// Brand colors (ARGB format for ExcelJS = FF + hex without #)
+// Olancho Net palette (ARGB for ExcelJS), the same as the PDF reports
+const COMPANY_NAME = 'Olancho Net';
 const COLORS = {
-  // Header backgrounds per report type
-  inventory: 'FF4D7C6F', // primary teal
-  lowStock: 'FFF59E0B', // warning amber
-  transactions: 'FF60A5FA', // blue
-  loans: 'FF6B7BB5', // indigo
+  accent: 'FF3A5F54',
+  text: 'FF1C1C18',
+  dim: 'FF58553F',
+  rule: 'FFCFC9B8',
 
   // Status cell backgrounds (light) and text (dark)
   inStock: { bg: 'FFD1FAE5', text: 'FF065F46' },
@@ -109,17 +134,21 @@ const COLORS = {
   active: { bg: 'FFE0E7FF', text: 'FF3730A3' },
   returned: { bg: 'FFD1FAE5', text: 'FF065F46' },
 
-  transfers: 'FF8B5CF6', // purple
-  stockTakes: 'FF0EA5E9', // sky blue
-  discharges: 'FFEF4444', // red
-  outflows: 'FFEA580C', // orange
-
   // Alternating row tint
-  altRow: 'FFF9FAFB',
+  altRow: 'FFF7F6F1',
 
   white: 'FFFFFFFF',
   headerText: 'FFFFFFFF',
 } as const;
+
+// Rows the branded heading takes above each sheet's column header
+const HEADING_ROWS = 6;
+
+/** Who and what a report was generated for, shown under its title. */
+export interface ReportContext {
+  generatedById?: string;
+  period?: { from: Date; to: Date };
+}
 
 // Status label translation
 const STATUS_LABELS: Record<string, Record<Locale, string>> = {
@@ -181,16 +210,14 @@ export class ReportsService {
   }
 
   // Apply branded header row to a worksheet
-  private applyHeader(
-    worksheet: ExcelJSType.Worksheet,
-    headerArgb: string,
-  ): void {
+  private applyHeader(worksheet: ExcelJSType.Worksheet): void {
+    const headerArgb = COLORS.accent;
     const headerRow = worksheet.getRow(1);
-    headerRow.height = 28;
+    headerRow.height = 22;
     headerRow.font = {
       bold: true,
       color: { argb: COLORS.headerText },
-      size: 11,
+      size: 10,
       name: 'Calibri',
     };
     headerRow.fill = {
@@ -209,13 +236,13 @@ export class ReportsService {
     workbook: ExcelJSType.Workbook,
     title: string,
   ): void {
-    workbook.creator = 'Obsid';
-    workbook.lastModifiedBy = 'Obsid';
+    workbook.creator = COMPANY_NAME;
+    workbook.lastModifiedBy = COMPANY_NAME;
     workbook.created = new Date();
     workbook.modified = new Date();
     workbook.title = title;
     workbook.subject = title;
-    workbook.keywords = 'Obsid inventory';
+    workbook.keywords = `${COMPANY_NAME} inventario`;
   }
 
   // Style a single status cell
@@ -224,7 +251,7 @@ export class ReportsService {
     status: string,
     locale: Locale,
   ): void {
-    let colors = COLORS.active;
+    let colors: { bg: string; text: string } = COLORS.active;
     if (status === 'IN_STOCK' || status === 'RETURNED') colors = COLORS.inStock;
     else if (status === 'LOW_STOCK') colors = COLORS.lowStockRow;
     else if (status === 'OUT_OF_STOCK' || status === 'OVERDUE')
@@ -256,10 +283,182 @@ export class ReportsService {
     }
   }
 
+  private fill(key: string, locale: Locale, params: Record<string, string>) {
+    return Object.entries(params).reduce(
+      (text, [k, v]) => text.replace(`{${k}}`, v),
+      this.t(key, locale),
+    );
+  }
+
+  /** "Bodega: Norte", "Todas las bodegas" or "3 bodegas" for the heading. */
+  private async scopeLabel(
+    warehouseIds: string[] | null | undefined,
+    locale: Locale,
+  ): Promise<string> {
+    if (!warehouseIds) return this.t('allWarehouses', locale);
+    if (warehouseIds.length !== 1) {
+      return this.fill('warehousesCount', locale, {
+        n: String(warehouseIds.length),
+      });
+    }
+    const warehouse = await this.prisma.warehouse.findUnique({
+      where: { id: warehouseIds[0] },
+      select: { name: true },
+    });
+    return this.fill('warehouseLabel', locale, {
+      name: warehouse?.name ?? warehouseIds[0],
+    });
+  }
+
+  /**
+   * Puts the Olancho Net heading above every sheet (company, fiscal data,
+   * report title, who generated it and for what), and the frozen header,
+   * filters, hairlines, print setup and page footer, then writes the file.
+   */
+  private async finish(
+    workbook: ExcelJSType.Workbook,
+    locale: Locale,
+    warehouseIds: string[] | null | undefined,
+    ctx: ReportContext,
+  ): Promise<Buffer> {
+    const [fiscal, user, scope] = await Promise.all([
+      this.prisma.fiscalConfig.findFirst({
+        select: {
+          rtn: true,
+          address: true,
+          fiscalPhone: true,
+          fiscalEmail: true,
+        },
+      }),
+      ctx.generatedById
+        ? this.prisma.user.findUnique({
+            where: { id: ctx.generatedById },
+            select: { name: true, email: true },
+          })
+        : null,
+      this.scopeLabel(warehouseIds, locale),
+    ]);
+
+    const dateLocale = locale === 'en' ? 'en-US' : 'es-HN';
+    const timeZone = 'America/Tegucigalpa';
+    const fmtDate = (d: Date) => d.toLocaleDateString(dateLocale, { timeZone });
+    const now = new Date();
+    const fiscalLine = [
+      fiscal?.rtn ? `RTN ${fiscal.rtn}` : null,
+      fiscal?.address,
+      fiscal?.fiscalPhone,
+      fiscal?.fiscalEmail,
+    ]
+      .filter(Boolean)
+      .join(' · ');
+    const title = workbook.title;
+
+    workbook.worksheets.forEach((ws, index) => {
+      const columns = ws.columnCount;
+      // Data rows run until the first blank row (a summary may follow it)
+      let dataRows = 0;
+      while (ws.getRow(dataRows + 2).hasValues) dataRows++;
+      ws.spliceRows(1, 0, ...Array.from({ length: HEADING_ROWS }, () => []));
+
+      const line = (
+        row: number,
+        text: string,
+        font: Partial<ExcelJSType.Font>,
+      ) => {
+        if (columns > 1) ws.mergeCells(row, 1, row, columns);
+        const cell = ws.getCell(row, 1);
+        cell.value = text;
+        cell.font = { name: 'Calibri', ...font };
+        cell.alignment = { vertical: 'middle' };
+      };
+      line(1, COMPANY_NAME, {
+        size: 16,
+        bold: true,
+        color: { argb: COLORS.accent },
+      });
+      ws.getRow(1).height = 24;
+      line(2, fiscalLine, { size: 9, color: { argb: COLORS.dim } });
+      ws.getRow(3).height = 6;
+      for (let c = 1; c <= columns; c++) {
+        ws.getCell(3, c).border = {
+          bottom: { style: 'medium', color: { argb: COLORS.accent } },
+        };
+      }
+      line(4, index === 0 ? title : `${title} · ${ws.name}`, {
+        size: 13,
+        bold: true,
+        color: { argb: COLORS.text },
+      });
+      ws.getRow(4).height = 22;
+      const meta = [
+        this.fill('generatedBy', locale, {
+          date: now.toLocaleString(dateLocale, {
+            timeZone,
+            dateStyle: 'short',
+            timeStyle: 'short',
+          }),
+          user: user?.name || user?.email || this.t('scheduledReport', locale),
+        }),
+        ctx.period
+          ? this.fill('period', locale, {
+              from: fmtDate(ctx.period.from),
+              to: fmtDate(ctx.period.to),
+            })
+          : null,
+        scope,
+        this.fill('rows', locale, { n: String(dataRows) }),
+      ];
+      line(5, meta.filter(Boolean).join(' · '), {
+        size: 9,
+        color: { argb: COLORS.dim },
+      });
+
+      const headerRow = HEADING_ROWS + 1;
+      for (let r = headerRow + 1; r <= ws.rowCount; r++) {
+        const row = ws.getRow(r);
+        if (!row.hasValues) continue;
+        for (let c = 1; c <= columns; c++) {
+          const cell = row.getCell(c);
+          cell.font = {
+            name: 'Calibri',
+            size: 10,
+            color: { argb: COLORS.text },
+            ...(cell.font ?? {}),
+          };
+          cell.border = {
+            bottom: { style: 'hair', color: { argb: COLORS.rule } },
+          };
+        }
+      }
+
+      ws.views = [{ state: 'frozen', ySplit: headerRow, showGridLines: false }];
+      ws.autoFilter = {
+        from: { row: headerRow, column: 1 },
+        to: { row: headerRow, column: columns },
+      };
+      ws.pageSetup = {
+        ...ws.pageSetup,
+        orientation: 'landscape',
+        paperSize: 1 as ExcelJSType.PaperSize, // Letter
+        fitToPage: true,
+        fitToWidth: 1,
+        fitToHeight: 0,
+        printTitlesRow: `${headerRow}:${headerRow}`,
+      };
+      ws.headerFooter = {
+        oddFooter: `&L&8${COMPANY_NAME} · ${title}&R&8${this.t('page', locale)}`,
+      };
+    });
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    return Buffer.from(buffer);
+  }
+
   async generateInventoryExcel(
     filters?: FilterInventoryDto,
     warehouseIds?: string[] | null,
     locale: Locale = 'es',
+    ctx: ReportContext = {},
   ): Promise<Buffer> {
     const ExcelJS = await import('exceljs');
     const workbook = new ExcelJS.Workbook();
@@ -301,9 +500,8 @@ export class ReportsService {
       },
     ];
 
-    this.applyHeader(worksheet, COLORS.inventory);
-    worksheet.views = [{ state: 'frozen', ySplit: 1 }];
-    worksheet.autoFilter = { from: 'A1', to: 'N1' };
+    this.applyHeader(worksheet);
+    worksheet.getColumn('price').numFmt = '#,##0.00';
 
     items.forEach((item, idx) => {
       const row = worksheet.addRow({
@@ -350,17 +548,17 @@ export class ReportsService {
     });
     valueRow.font = { bold: true };
 
-    const buffer = await workbook.xlsx.writeBuffer();
-    return Buffer.from(buffer);
+    return this.finish(workbook, locale, warehouseIds, ctx);
   }
 
   async generateLowStockReport(
     warehouseIds?: string[] | null,
     locale: Locale = 'es',
+    ctx: ReportContext = {},
   ): Promise<Buffer> {
     const ExcelJS = await import('exceljs');
     const workbook = new ExcelJS.Workbook();
-    this.applyWorkbookMeta(workbook, this.t('wsLowStock', locale));
+    this.applyWorkbookMeta(workbook, this.t('lowStockReport', locale));
     const worksheet = workbook.addWorksheet(this.t('wsLowStock', locale));
 
     const items = await this.prisma.inventoryItem.findMany({
@@ -385,7 +583,7 @@ export class ReportsService {
       { header: this.t('supplier', locale), key: 'supplier', width: 22 },
     ];
 
-    this.applyHeader(worksheet, COLORS.lowStock);
+    this.applyHeader(worksheet);
     // Override header text to dark since amber bg is light
     worksheet.getRow(1).font = {
       bold: true,
@@ -393,8 +591,6 @@ export class ReportsService {
       size: 11,
       name: 'Calibri',
     };
-    worksheet.views = [{ state: 'frozen', ySplit: 1 }];
-    worksheet.autoFilter = { from: 'A1', to: 'I1' };
 
     items.forEach((item, idx) => {
       const row = worksheet.addRow({
@@ -420,8 +616,7 @@ export class ReportsService {
       }
     });
 
-    const buffer = await workbook.xlsx.writeBuffer();
-    return Buffer.from(buffer);
+    return this.finish(workbook, locale, warehouseIds, ctx);
   }
 
   async generateTransactionsReport(
@@ -429,10 +624,11 @@ export class ReportsService {
     endDate?: Date,
     warehouseIds?: string[] | null,
     locale: Locale = 'es',
+    ctx: ReportContext = {},
   ): Promise<Buffer> {
     const ExcelJS = await import('exceljs');
     const workbook = new ExcelJS.Workbook();
-    this.applyWorkbookMeta(workbook, this.t('wsTransactions', locale));
+    this.applyWorkbookMeta(workbook, this.t('transactionsReport', locale));
     const worksheet = workbook.addWorksheet(this.t('wsTransactions', locale));
 
     // Every stock movement (manual transactions, sales, purchases, outflows,
@@ -460,9 +656,7 @@ export class ReportsService {
       { header: this.t('notes', locale), key: 'notes', width: 32 },
     ];
 
-    this.applyHeader(worksheet, COLORS.transactions);
-    worksheet.views = [{ state: 'frozen', ySplit: 1 }];
-    worksheet.autoFilter = { from: 'A1', to: 'J1' };
+    this.applyHeader(worksheet);
 
     const dateLocale = locale === 'en' ? 'en-US' : 'es-HN';
 
@@ -489,17 +683,17 @@ export class ReportsService {
       }
     });
 
-    const buffer = await workbook.xlsx.writeBuffer();
-    return Buffer.from(buffer);
+    return this.finish(workbook, locale, warehouseIds, ctx);
   }
 
   async generateLoansReport(
     warehouseIds?: string[] | null,
     locale: Locale = 'es',
+    ctx: ReportContext = {},
   ): Promise<Buffer> {
     const ExcelJS = await import('exceljs');
     const workbook = new ExcelJS.Workbook();
-    this.applyWorkbookMeta(workbook, this.t('wsLoans', locale));
+    this.applyWorkbookMeta(workbook, this.t('loansReport', locale));
     const worksheet = workbook.addWorksheet(this.t('wsLoans', locale));
 
     const where = warehouseFilterMultiField(warehouseIds, [
@@ -531,9 +725,7 @@ export class ReportsService {
       { header: this.t('createdBy', locale), key: 'createdBy', width: 22 },
     ];
 
-    this.applyHeader(worksheet, COLORS.loans);
-    worksheet.views = [{ state: 'frozen', ySplit: 1 }];
-    worksheet.autoFilter = { from: 'A1', to: 'J1' };
+    this.applyHeader(worksheet);
 
     const dateLocale = locale === 'en' ? 'en-US' : 'es-HN';
 
@@ -566,17 +758,17 @@ export class ReportsService {
       }
     });
 
-    const buffer = await workbook.xlsx.writeBuffer();
-    return Buffer.from(buffer);
+    return this.finish(workbook, locale, warehouseIds, ctx);
   }
 
   async generateTransferRequestsReport(
     warehouseIds?: string[] | null,
     locale: Locale = 'es',
+    ctx: ReportContext = {},
   ): Promise<Buffer> {
     const ExcelJS = await import('exceljs');
     const workbook = new ExcelJS.Workbook();
-    this.applyWorkbookMeta(workbook, this.t('wsTransfers', locale));
+    this.applyWorkbookMeta(workbook, this.t('transfersReport', locale));
     const worksheet = workbook.addWorksheet(this.t('wsTransfers', locale));
 
     const where: Prisma.TransferRequestWhereInput = warehouseIds?.length
@@ -616,9 +808,7 @@ export class ReportsService {
       { header: this.t('date', locale), key: 'date', width: 16 },
     ];
 
-    this.applyHeader(worksheet, COLORS.transfers);
-    worksheet.views = [{ state: 'frozen', ySplit: 1 }];
-    worksheet.autoFilter = { from: 'A1', to: 'I1' };
+    this.applyHeader(worksheet);
 
     const dateLocale = locale === 'en' ? 'en-US' : 'es-HN';
 
@@ -644,17 +834,17 @@ export class ReportsService {
       }
     });
 
-    const buffer = await workbook.xlsx.writeBuffer();
-    return Buffer.from(buffer);
+    return this.finish(workbook, locale, warehouseIds, ctx);
   }
 
   async generateStockTakeReport(
     warehouseIds?: string[] | null,
     locale: Locale = 'es',
+    ctx: ReportContext = {},
   ): Promise<Buffer> {
     const ExcelJS = await import('exceljs');
     const workbook = new ExcelJS.Workbook();
-    this.applyWorkbookMeta(workbook, this.t('wsStockTakes', locale));
+    this.applyWorkbookMeta(workbook, this.t('stockTakesReport', locale));
 
     const where: Prisma.StockTakeWhereInput = warehouseIds?.length
       ? { warehouseId: { in: warehouseIds } }
@@ -684,8 +874,7 @@ export class ReportsService {
       { header: this.t('completedBy', locale), key: 'completedBy', width: 22 },
       { header: this.t('completedAt', locale), key: 'completedAt', width: 18 },
     ];
-    this.applyHeader(summary, COLORS.stockTakes);
-    summary.views = [{ state: 'frozen', ySplit: 1 }];
+    this.applyHeader(summary);
 
     const dateLocale = locale === 'en' ? 'en-US' : 'es-HN';
 
@@ -718,7 +907,7 @@ export class ReportsService {
     // Detail worksheet
     const detail = workbook.addWorksheet(this.t('wsDetail', locale));
     detail.columns = [
-      { header: 'Stock Take ID', key: 'stockTakeId', width: 25 },
+      { header: this.t('stockTake', locale), key: 'stockTakeId', width: 25 },
       { header: this.t('name', locale), key: 'name', width: 32 },
       { header: this.t('sku', locale), key: 'sku', width: 16 },
       { header: this.t('expectedQty', locale), key: 'expected', width: 16 },
@@ -726,8 +915,7 @@ export class ReportsService {
       { header: this.t('variance', locale), key: 'variance', width: 12 },
       { header: this.t('notes', locale), key: 'notes', width: 32 },
     ];
-    this.applyHeader(detail, COLORS.stockTakes);
-    detail.views = [{ state: 'frozen', ySplit: 1 }];
+    this.applyHeader(detail);
 
     let detailIdx = 0;
     for (const st of stockTakes) {
@@ -753,17 +941,17 @@ export class ReportsService {
       }
     }
 
-    const buffer = await workbook.xlsx.writeBuffer();
-    return Buffer.from(buffer);
+    return this.finish(workbook, locale, warehouseIds, ctx);
   }
 
   async generateDischargesReport(
     warehouseIds?: string[] | null,
     locale: Locale = 'es',
+    ctx: ReportContext = {},
   ): Promise<Buffer> {
     const ExcelJS = await import('exceljs');
     const workbook = new ExcelJS.Workbook();
-    this.applyWorkbookMeta(workbook, this.t('wsDischarges', locale));
+    this.applyWorkbookMeta(workbook, this.t('dischargesReport', locale));
     const worksheet = workbook.addWorksheet(this.t('wsDischarges', locale));
 
     const where: Prisma.DischargeRequestWhereInput = warehouseIds?.length
@@ -796,9 +984,7 @@ export class ReportsService {
       { header: this.t('notes', locale), key: 'notes', width: 32 },
     ];
 
-    this.applyHeader(worksheet, COLORS.discharges);
-    worksheet.views = [{ state: 'frozen', ySplit: 1 }];
-    worksheet.autoFilter = { from: 'A1', to: 'I1' };
+    this.applyHeader(worksheet);
 
     const dateLocale = locale === 'en' ? 'en-US' : 'es-HN';
 
@@ -824,17 +1010,17 @@ export class ReportsService {
       }
     });
 
-    const buffer = await workbook.xlsx.writeBuffer();
-    return Buffer.from(buffer);
+    return this.finish(workbook, locale, warehouseIds, ctx);
   }
 
   async generateOutflowsReport(
     warehouseIds?: string[] | null,
     locale: Locale = 'es',
+    ctx: ReportContext = {},
   ): Promise<Buffer> {
     const ExcelJS = await import('exceljs');
     const workbook = new ExcelJS.Workbook();
-    this.applyWorkbookMeta(workbook, this.t('wsOutflows', locale));
+    this.applyWorkbookMeta(workbook, this.t('outflowsReport', locale));
     const worksheet = workbook.addWorksheet(this.t('wsOutflows', locale));
 
     const where: Prisma.OutflowWhereInput = warehouseIds?.length
@@ -866,9 +1052,7 @@ export class ReportsService {
       { header: this.t('notes', locale), key: 'notes', width: 32 },
     ];
 
-    this.applyHeader(worksheet, COLORS.outflows);
-    worksheet.views = [{ state: 'frozen', ySplit: 1 }];
-    worksheet.autoFilter = { from: 'A1', to: 'K1' };
+    this.applyHeader(worksheet);
 
     const dateLocale = locale === 'en' ? 'en-US' : 'es-HN';
 
@@ -896,7 +1080,6 @@ export class ReportsService {
       }
     });
 
-    const buffer = await workbook.xlsx.writeBuffer();
-    return Buffer.from(buffer);
+    return this.finish(workbook, locale, warehouseIds, ctx);
   }
 }

@@ -86,6 +86,7 @@ export class ReportsController {
       filters,
       user.warehouseIds,
       locale,
+      { generatedById: user.userId },
     );
 
     res.set({
@@ -110,6 +111,7 @@ export class ReportsController {
     const buffer = await this.reportsService.generateLowStockReport(
       scope,
       locale,
+      { generatedById: user.userId },
     );
 
     res.set({
@@ -152,6 +154,10 @@ export class ReportsController {
       end,
       scope,
       locale,
+      {
+        generatedById: user.userId,
+        period: start ? { from: start, to: end ?? new Date() } : undefined,
+      },
     );
 
     res.set({
@@ -173,7 +179,13 @@ export class ReportsController {
     @Res() res: Response,
   ) {
     const scope = this.scope(user, warehouseId);
-    const buffer = await this.reportsService.generateLoansReport(scope, locale);
+    const buffer = await this.reportsService.generateLoansReport(
+      scope,
+      locale,
+      {
+        generatedById: user.userId,
+      },
+    );
 
     res.set({
       'Content-Type':
@@ -197,6 +209,7 @@ export class ReportsController {
     const buffer = await this.reportsService.generateTransferRequestsReport(
       scope,
       locale,
+      { generatedById: user.userId },
     );
 
     res.set({
@@ -221,6 +234,7 @@ export class ReportsController {
     const buffer = await this.reportsService.generateStockTakeReport(
       scope,
       locale,
+      { generatedById: user.userId },
     );
 
     res.set({
@@ -245,6 +259,7 @@ export class ReportsController {
     const buffer = await this.reportsService.generateDischargesReport(
       scope,
       locale,
+      { generatedById: user.userId },
     );
 
     res.set({
@@ -269,6 +284,7 @@ export class ReportsController {
     const buffer = await this.reportsService.generateOutflowsReport(
       scope,
       locale,
+      { generatedById: user.userId },
     );
 
     res.set({
