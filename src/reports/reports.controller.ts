@@ -14,10 +14,10 @@ import { ReportsService } from './reports.service';
 import { StockMovementsService } from './stock-movements.service';
 import { JwtAuthGuard, PermissionsGuard } from '../auth/guards';
 import { Permissions, CurrentUser } from '../auth/decorators';
-import { FilterInventoryDto } from '../inventory/dto/filter-inventory.dto';
 import { AuthenticatedUser } from '../auth/interfaces/auth-user.interface';
 import { resolveWarehouseScope } from '../common/warehouse-access/warehouse-filter.util';
 import { apiError } from '../common/errors/api-error';
+import { InventoryExcelQueryDto } from './dto/inventory-excel-query.dto';
 import { MovementsQueryDto } from './dto/movements-query.dto';
 import {
   toEndOfBusinessDay,
@@ -77,15 +77,16 @@ export class ReportsController {
   @Get('inventory/excel')
   @Permissions('reports:export')
   async exportInventoryExcel(
-    @Query(ValidationPipe) filters: FilterInventoryDto,
-    @Query('locale') locale: 'en' | 'es' = 'es',
+    @Query() query: InventoryExcelQueryDto,
     @CurrentUser() user: AuthenticatedUser,
     @Res() res: Response,
   ) {
+    const { locale = 'es', ...filters } = query;
     const buffer = await this.reportsService.generateInventoryExcel(
       filters,
       user.warehouseIds,
       locale,
+      { generatedById: user.userId },
     );
 
     res.set({
@@ -110,6 +111,7 @@ export class ReportsController {
     const buffer = await this.reportsService.generateLowStockReport(
       scope,
       locale,
+      { generatedById: user.userId },
     );
 
     res.set({
@@ -152,6 +154,10 @@ export class ReportsController {
       end,
       scope,
       locale,
+      {
+        generatedById: user.userId,
+        period: start ? { from: start, to: end ?? new Date() } : undefined,
+      },
     );
 
     res.set({
@@ -173,7 +179,13 @@ export class ReportsController {
     @Res() res: Response,
   ) {
     const scope = this.scope(user, warehouseId);
-    const buffer = await this.reportsService.generateLoansReport(scope, locale);
+    const buffer = await this.reportsService.generateLoansReport(
+      scope,
+      locale,
+      {
+        generatedById: user.userId,
+      },
+    );
 
     res.set({
       'Content-Type':
@@ -197,6 +209,7 @@ export class ReportsController {
     const buffer = await this.reportsService.generateTransferRequestsReport(
       scope,
       locale,
+      { generatedById: user.userId },
     );
 
     res.set({
@@ -221,6 +234,7 @@ export class ReportsController {
     const buffer = await this.reportsService.generateStockTakeReport(
       scope,
       locale,
+      { generatedById: user.userId },
     );
 
     res.set({
@@ -245,6 +259,7 @@ export class ReportsController {
     const buffer = await this.reportsService.generateDischargesReport(
       scope,
       locale,
+      { generatedById: user.userId },
     );
 
     res.set({
@@ -269,6 +284,7 @@ export class ReportsController {
     const buffer = await this.reportsService.generateOutflowsReport(
       scope,
       locale,
+      { generatedById: user.userId },
     );
 
     res.set({

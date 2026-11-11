@@ -30,18 +30,21 @@ const movement = (overrides: Partial<StockMovement>): StockMovement => ({
   ...overrides,
 });
 
+// The Olancho Net heading takes six rows; the column header is the 7th
+const HEADER_ROW = 7;
+
 // Reads back the "Transactions" worksheet of a generated buffer so tests
 // assert against the real xlsx output, not an internal data structure.
 async function readSheet(buffer: Buffer) {
   const workbook = new ExcelJS.Workbook();
-  await workbook.xlsx.load(buffer);
+  await workbook.xlsx.load(buffer as unknown as ArrayBuffer);
   const worksheet = workbook.worksheets[0];
-  const headers = (worksheet.getRow(1).values as unknown[]).slice(
+  const headers = (worksheet.getRow(HEADER_ROW).values as unknown[]).slice(
     1,
   ) as string[];
   const rows: Record<string, unknown>[] = [];
   worksheet.eachRow((row, rowNumber) => {
-    if (rowNumber === 1) return;
+    if (rowNumber <= HEADER_ROW) return;
     const values = (row.values as unknown[]).slice(1);
     const entry: Record<string, unknown> = {};
     headers.forEach((header, idx) => (entry[header] = values[idx]));
@@ -196,5 +199,61 @@ describe('ReportsService.generateTransactionsReport', () => {
     expect(headers).toContain('Origin');
     expect(rows[0].Document).toBe('COM-0001');
     expect(rows[0].Origin).toBe('Purchase');
+  });
+
+  it('puts the Olancho Net heading above the table: fiscal data, title, who generated it, period and scope', async () => {
+    prisma.fiscalConfig.findFirst.mockResolvedValue({
+      rtn: '08019015123456',
+      address: 'Juticalpa, Olancho',
+      fiscalPhone: '2785-1234',
+      fiscalEmail: null,
+    } as never);
+    prisma.user.findUnique.mockResolvedValue({ name: 'Mario' } as never);
+    prisma.warehouse.findUnique.mockResolvedValue({ name: 'Norte' } as never);
+    stockMovements.findAll.mockResolvedValue([
+      movement({ id: 'SALE:s1', origin: 'SALE', reference: 'V-0001' }),
+    ]);
+
+    const buffer = await service.generateTransactionsReport(
+      new Date('2026-10-01T12:00:00Z'),
+      new Date('2026-10-31T12:00:00Z'),
+      ['wh-1'],
+      'es',
+      {
+        generatedById: 'u1',
+        period: {
+          from: new Date('2026-10-01T12:00:00Z'),
+          to: new Date('2026-10-31T12:00:00Z'),
+        },
+      },
+    );
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(buffer as unknown as ArrayBuffer);
+    const ws = workbook.worksheets[0];
+    const text = (row: number) => ws.getCell(row, 1).value as string;
+
+    expect(workbook.creator).toBe('Olancho Net');
+    expect(text(1)).toBe('Olancho Net');
+    expect(text(2)).toBe('RTN 08019015123456 · Juticalpa, Olancho · 2785-1234');
+    expect(text(4)).toBe('Reporte de Transacciones');
+    expect(text(5)).toMatch(/^Generado el .+ por Mario · /);
+    expect(text(5)).toContain('Período: 1/10/2026 al 31/10/2026');
+    expect(text(5)).toContain('Bodega: Norte · 1 registros');
+    expect(ws.views[0]).toMatchObject({ state: 'frozen', ySplit: HEADER_ROW });
+  });
+
+  it('says a scheduled report has no user, and counts all warehouses', async () => {
+    const buffer = await service.generateTransactionsReport(
+      undefined,
+      undefined,
+      null,
+      'es',
+    );
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(buffer as unknown as ArrayBuffer);
+
+    expect(workbook.worksheets[0].getCell(5, 1).value as string).toMatch(
+      /por reporte programado · Todas las bodegas · 0 registros$/,
+    );
   });
 });
